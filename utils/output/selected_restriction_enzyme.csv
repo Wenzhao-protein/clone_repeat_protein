@@ -1,0 +1,74 @@
+ovhg,ovhgseq,site,size,suppl,name,isoschizomers,stick_end_hbond_number
+-4,AATT,AATT,4,"('B',)",TasI,TasI,8
+-4,AATT,GAATTC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",EcoRI,EcoRI,8
+-4,ACGA,CACGAG,6,"('B', 'I')",BauI,BauI__Bst2BI,10
+4,ACGT,ACGT,4,"('B',)",TaiI,TaiI,10
+4,ACGT,GACGTC,6,"('B', 'I', 'K', 'M', 'N', 'V')",AatII,AatII,10
+-4,AGCT,AAGCTT,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",HindIII,HindIII,10
+4,AGCT,GAGCTC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SacI,Psp124BI__SacI__SstI,10
+2,AT,CGATCG,6,"('B', 'I', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",PvuI,Ple19I__PvuI,4
+2,AT,GATC,4,"('I',)",BstKTI,BstKTI,4
+2,AT,GCGATCGC,8,"('B', 'I', 'R')",RgaI,RgaI__SfaAI__SgfI,4
+2,AT,TTAATTAA,8,"('B', 'N', 'O')",PacI,PacI,4
+-4,CATG,ACATGT,6,"('B', 'I', 'N')",PciI,PciI__PscI,10
+-4,CATG,CCATGG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",NcoI,Bsp19I__NcoI,10
+-4,CATG,TCATGA,6,"('B', 'I', 'N')",BspHI,BspHI__CciI__PagI,10
+4,CATG,CATG,4,"('B', 'I', 'N', 'R')",NlaIII,FaeI__Hin1II__Hsp92II__NlaIII,10
+4,CATG,GCATGC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SphI,PaeI__SphI,10
+-4,CCAG,CCCAGC,6,"('B', 'N')",BseYI,BseYI__PspFI,11
+4,CCAG,CCCAGC,6,"('I',)",GsaI,GsaI,11
+-4,CCGG,ACCGGT,6,"('B', 'C', 'I', 'J', 'N', 'Q', 'R', 'V', 'X')",AgeI,AgeI__AsiGI__BshTI__CspAI__PinAI,12
+-4,CCGG,CCCGGG,6,"('B', 'I', 'N', 'R', 'V')",XmaI,Cfr9I__XmaI,12
+-4,CCGG,CGCCGGCG,8,"('B',)",MreI,MreI,12
+-4,CCGG,GCCGGC,6,"('I', 'V')",KroI,KroI__MroNI,12
+-4,CCGG,TCCGGA,6,"('C', 'I', 'K', 'M', 'N', 'O', 'V')",BspEI,Aor13HI__BseAI__Bsp13I__BspEI__MroI,12
+4,CCGG,GGCCGGCC,8,"('I', 'N')",FseI,FseI__RigI,12
+-2,CG,AACGTT,6,"('B', 'I', 'K', 'N', 'V')",AclI,AclI__Psp1406I,6
+-2,CG,ACGT,4,"('I', 'M')",HpySE526I,HpySE526I__MaeII,6
+-2,CG,ATCGAT,6,"('B', 'I', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",BspDI,Bsa29I__BshVI__BspDI__BsuTUI__ClaI,6
+-2,CG,CCGC,4,"('B', 'N')",AciI,AciI__SsiI,6
+-2,CG,CCGG,4,"('B', 'C', 'I', 'N', 'Q', 'R', 'V', 'X', 'Y')",HpaII,BsiSI__HpaII,6
+-2,CG,GCGC,4,"('B',)",Hin6I,Hin6I,6
+-2,CG,GGCGCC,6,"('I', 'J', 'M', 'N', 'Q', 'R', 'X')",NarI,Mly113I__NarI,6
+-2,CG,TCGA,4,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",TaqI,TaqI,6
+-2,CG,TTCGAA,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'S', 'V')",BstBI,AsuII__Bpu14I__Bsp119I__BspT104I__BstBI__NspV__SfuI,6
+2,CG,GCGC,4,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",HhaI,AspLEI__BstHHI__CfoI__HhaI,6
+-4,CGCG,ACGCGT,6,"('B', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",MluI,MluI,12
+-4,CGCG,CGCGCGCG,8,"('B',)",MauBI,MauBI,12
+-4,CGCG,GCGCGC,6,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'V', 'X')",BssHII,BsePI__BssHII__PauI__PteI,12
+-4,CGCG,GGCGCGCC,8,"('B', 'I', 'N')",AscI,AscI__PalAI__SgsI,12
+-4,CTAG,ACTAGT,6,"('B', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SpeI,AhlI__BcuI__SpeI,10
+-4,CTAG,CCTAGG,6,"('B', 'I', 'K', 'M', 'N', 'S', 'V')",AvrII,AspA2I__AvrII__BlnI__XmaJI,10
+-4,CTAG,GCTAGC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",NheI,AsuNHI__NheI,10
+-4,CTAG,TCTAGA,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",XbaI,XbaI,10
+4,CTAG,GCTAGC,6,"('B',)",BspOI,BspOI,10
+-4,GATC,AGATCT,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",BglII,BglII,10
+-4,GATC,GATC,4,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'V', 'X', 'Y')",MboI,Bsp143I__BssMI__BstMBI__Kzo9I__MboI__NdeII,10
+-4,GATC,GGATCC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",BamHI,BamHI,10
+-4,GATC,TGATCA,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'R', 'S', 'V')",BclI,BclI__FbaI__Ksp22I,10
+2,GC,CCGCGG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SacII,KspI__SacII__Sfr303I__SgrBI,6
+-4,GCGC,GGCGCC,6,"('B',)",SspDI,SspDI,12
+-4,GGCC,CGGCCG,6,"('B', 'I', 'K', 'R', 'S', 'V')",BseX3I,BseX3I__BstZI__EclXI__Eco52I,12
+-4,GGCC,GCGGCCGC,8,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",NotI,CciNI__NotI,12
+-4,GGCC,GGCC,4,"('I',)",AoxI,AoxI,12
+-4,GGCC,GGGCCC,6,"('B', 'I', 'N', 'V')",PspOMI,Bsp120I__PspOMI,12
+4,GGCC,GGGCCC,6,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",ApaI,ApaI,12
+-4,GTAC,CGTACG,6,"('B', 'I', 'N')",BsiWI,BsiWI__Pfl23II__PspLI,10
+-4,GTAC,GGTACC,6,"('M', 'S')",Asp718I,Asp718I,10
+-4,GTAC,TGTACA,6,"('B', 'I', 'K', 'N', 'V')",BsrGI,Bsp1407I__BsrGI__BstAUI,10
+4,GTAC,GGTACC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",KpnI,KpnI,10
+-2,TA,ATTAAT,6,"('B', 'I', 'K', 'R', 'V')",PshBI,PshBI__VspI,4
+-2,TA,CATATG,6,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",NdeI,FauNDI__NdeI,4
+-2,TA,CTAG,4,"('B', 'I', 'K', 'M', 'N')",BfaI,BfaI__FspBI__MaeI__SspMI__XspI,4
+-2,TA,GTAC,4,"('B', 'I')",Csp6I,Csp6I__RsaNI,4
+-2,TA,TTAA,4,"('B', 'I', 'M', 'N', 'R', 'V')",MseI,MseI__SaqAI__Tru1I__Tru9I,4
+-3,TCA,CCTCAGC,7,"('N',)",BbvCI,BbvCI,7
+-4,TCGA,CCTCGAGG,8,"('I',)",AbsI,AbsI,10
+-4,TCGA,CGTCGACG,8,"('B',)",SgrDI,SgrDI,10
+-4,TCGA,CTCGAG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",XhoI,Sfr274I__SlaI__XhoI,10
+-4,TCGA,GTCGAC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SalI,SalI,10
+-4,TGCA,GTGCAC,6,"('B', 'C', 'I', 'J', 'K', 'N', 'V')",ApaLI,Alw44I__ApaLI__VneI,10
+4,TGCA,ATGCAT,6,"('B', 'I', 'K', 'V')",EcoT22I,EcoT22I__Mph1103I__Zsp2I,10
+4,TGCA,CCTGCAGG,8,"('B', 'K')",SdaI,SdaI__Sse8387I,10
+4,TGCA,CTGCAG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",PstI,BspMAI__PstI,10
+-4,TTAA,CTTAAG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'S', 'V')",AflII,AflII__BfrI__BspTI__BstAFI__MspCI__Vha464I,8

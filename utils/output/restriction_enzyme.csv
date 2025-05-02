@@ -1,0 +1,76 @@
+ovhg,ovhgseq,site,size,suppl,name,elucidate,stick_end_hbond_number,palindromic,isoschizomers,reverse_complement
+-4,AATT,GAATTC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",EcoRI,G^AATT_C,8,True,EcoRI,False
+-4,ACGA,CACGAG,6,"('B', 'I')",BauI,C^ACGA_G,10,False,BauI__Bst2BI,False
+4,ACGT,ACGT,4,"('B',)",TaiI,_ACGT^,10,True,TaiI,False
+4,ACGT,GACGTC,6,"('B', 'I', 'K', 'M', 'N', 'V')",AatII,G_ACGT^C,10,True,AatII,False
+-4,AGCT,AAGCTT,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",HindIII,A^AGCT_T,10,True,HindIII,False
+4,AGCT,GAGCTC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SacI,G_AGCT^C,10,True,Psp124BI__SacI__SstI,False
+2,AT,CGATCG,6,"('B', 'I', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",PvuI,CG_AT^CG,4,True,Ple19I__PvuI,False
+2,AT,GATC,4,"('I',)",BstKTI,G_AT^C,4,True,BstKTI,False
+2,AT,GCGATCGC,8,"('B', 'I', 'R')",RgaI,GCG_AT^CGC,4,True,RgaI__SfaAI__SgfI,False
+2,AT,TTAATTAA,8,"('B', 'N', 'O')",PacI,TTA_AT^TAA,4,True,PacI,False
+-4,CATG,ACATGT,6,"('B', 'I', 'N')",PciI,A^CATG_T,10,True,PciI__PscI,False
+-4,CATG,CCATGG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",NcoI,C^CATG_G,10,True,Bsp19I__NcoI,False
+-4,CATG,TCATGA,6,"('B', 'I', 'N')",BspHI,T^CATG_A,10,True,BspHI__CciI__PagI,False
+4,CATG,CATG,4,"('B', 'I', 'N', 'R')",NlaIII,_CATG^,10,True,FaeI__Hin1II__Hsp92II__NlaIII,False
+4,CATG,GCATGC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SphI,G_CATG^C,10,True,PaeI__SphI,False
+-4,CCAG,CCCAGC,6,"('B', 'N')",BseYI,C^CCAG_C,11,False,BseYI__PspFI,False
+4,CCAG,CCCAGC,6,"('I',)",GsaI,C_CCAG^C,11,False,GsaI,False
+-4,CCGG,ACCGGT,6,"('B', 'C', 'I', 'J', 'N', 'Q', 'R', 'V', 'X')",AgeI,A^CCGG_T,12,True,AgeI__AsiGI__BshTI__CspAI__PinAI,False
+-4,CCGG,CCCGGG,6,"('B', 'I', 'N', 'R', 'V')",XmaI,C^CCGG_G,12,True,Cfr9I__XmaI,False
+-4,CCGG,CGCCGGCG,8,"('B',)",MreI,CG^CCGG_CG,12,True,MreI,False
+-4,CCGG,GCCGGC,6,"('I', 'V')",KroI,G^CCGG_C,12,True,KroI__MroNI,False
+-4,CCGG,TCCGGA,6,"('C', 'I', 'K', 'M', 'N', 'O', 'V')",BspEI,T^CCGG_A,12,True,Aor13HI__BseAI__Bsp13I__BspEI__MroI,False
+4,CCGG,GGCCGGCC,8,"('I', 'N')",FseI,GG_CCGG^CC,12,True,FseI__RigI,False
+-2,CG,AACGTT,6,"('B', 'I', 'K', 'N', 'V')",AclI,AA^CG_TT,6,True,AclI__Psp1406I,False
+-2,CG,ACGT,4,"('I', 'M')",HpySE526I,A^CG_T,6,True,HpySE526I__MaeII,False
+-2,CG,ATCGAT,6,"('B', 'I', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",BspDI,AT^CG_AT,6,True,Bsa29I__BshVI__BspDI__BsuTUI__ClaI,False
+-2,CG,CCGC,4,"('B', 'N')",AciI,C^CG_C,6,False,AciI__SsiI,False
+-2,CG,CCGG,4,"('B', 'C', 'I', 'N', 'Q', 'R', 'V', 'X', 'Y')",HpaII,C^CG_G,6,True,BsiSI__HpaII,False
+-2,CG,GCGC,4,"('B',)",Hin6I,G^CG_C,6,True,Hin6I,False
+-2,CG,GGCGCC,6,"('I', 'J', 'M', 'N', 'Q', 'R', 'X')",NarI,GG^CG_CC,6,True,Mly113I__NarI,False
+-2,CG,TCGA,4,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",TaqI,T^CG_A,6,True,TaqI,False
+-2,CG,TTCGAA,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'S', 'V')",BstBI,TT^CG_AA,6,True,AsuII__Bpu14I__Bsp119I__BspT104I__BstBI__NspV__SfuI,False
+2,CG,GCGC,4,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",HhaI,G_CG^C,6,True,AspLEI__BstHHI__CfoI__HhaI,False
+-4,CGCG,ACGCGT,6,"('B', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",MluI,A^CGCG_T,12,True,MluI,False
+-4,CGCG,CGCGCGCG,8,"('B',)",MauBI,CG^CGCG_CG,12,True,MauBI,False
+-4,CGCG,GCGCGC,6,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'V', 'X')",BssHII,G^CGCG_C,12,True,BsePI__BssHII__PauI__PteI,False
+-4,CGCG,GGCGCGCC,8,"('B', 'I', 'N')",AscI,GG^CGCG_CC,12,True,AscI__PalAI__SgsI,False
+-4,CTAG,ACTAGT,6,"('B', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SpeI,A^CTAG_T,10,True,AhlI__BcuI__SpeI,False
+-4,CTAG,CCTAGG,6,"('B', 'I', 'K', 'M', 'N', 'S', 'V')",AvrII,C^CTAG_G,10,True,AspA2I__AvrII__BlnI__XmaJI,False
+-4,CTAG,GCTAGC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",NheI,G^CTAG_C,10,True,AsuNHI__NheI,False
+-4,CTAG,TCTAGA,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",XbaI,T^CTAG_A,10,True,XbaI,False
+4,CTAG,GCTAGC,6,"('B',)",BspOI,G_CTAG^C,10,True,BspOI,False
+-4,GATC,AGATCT,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",BglII,A^GATC_T,10,True,BglII,False
+-4,GATC,GGATCC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",BamHI,G^GATC_C,10,True,BamHI,False
+-4,GATC,TGATCA,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'R', 'S', 'V')",BclI,T^GATC_A,10,True,BclI__FbaI__Ksp22I,False
+2,GC,CCGCGG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SacII,CC_GC^GG,6,True,KspI__SacII__Sfr303I__SgrBI,False
+-4,GCGC,GGCGCC,6,"('B',)",SspDI,G^GCGC_C,12,True,SspDI,False
+-4,GGCC,CGGCCG,6,"('B', 'I', 'K', 'R', 'S', 'V')",BseX3I,C^GGCC_G,12,True,BseX3I__BstZI__EclXI__Eco52I,False
+-4,GGCC,GCGGCCGC,8,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",NotI,GC^GGCC_GC,12,True,CciNI__NotI,False
+-4,GGCC,GGGCCC,6,"('B', 'I', 'N', 'V')",PspOMI,G^GGCC_C,12,True,Bsp120I__PspOMI,False
+4,GGCC,GGGCCC,6,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",ApaI,G_GGCC^C,12,True,ApaI,False
+-4,GTAC,CGTACG,6,"('B', 'I', 'N')",BsiWI,C^GTAC_G,10,True,BsiWI__Pfl23II__PspLI,False
+-4,GTAC,GGTACC,6,"('M', 'S')",Asp718I,G^GTAC_C,10,True,Asp718I,False
+-4,GTAC,TGTACA,6,"('B', 'I', 'K', 'N', 'V')",BsrGI,T^GTAC_A,10,True,Bsp1407I__BsrGI__BstAUI,False
+4,GTAC,GGTACC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",KpnI,G_GTAC^C,10,True,KpnI,False
+-2,TA,ATTAAT,6,"('B', 'I', 'K', 'R', 'V')",PshBI,AT^TA_AT,4,True,PshBI__VspI,False
+-2,TA,CATATG,6,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",NdeI,CA^TA_TG,4,True,FauNDI__NdeI,False
+-2,TA,CTAG,4,"('B', 'I', 'K', 'M', 'N')",BfaI,C^TA_G,4,True,BfaI__FspBI__MaeI__SspMI__XspI,False
+-2,TA,GTAC,4,"('B', 'I')",Csp6I,G^TA_C,4,True,Csp6I__RsaNI,False
+-2,TA,TTAA,4,"('B', 'I', 'M', 'N', 'R', 'V')",MseI,T^TA_A,4,True,MseI__SaqAI__Tru1I__Tru9I,False
+-3,TCA,CCTCAGC,7,"('N',)",BbvCI,CC^TCA_GC,7,False,BbvCI,False
+-4,TCGA,CCTCGAGG,8,"('I',)",AbsI,CC^TCGA_GG,10,True,AbsI,False
+-4,TCGA,CGTCGACG,8,"('B',)",SgrDI,CG^TCGA_CG,10,True,SgrDI,False
+-4,TCGA,CTCGAG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",XhoI,C^TCGA_G,10,True,Sfr274I__SlaI__XhoI,False
+-4,TCGA,GTCGAC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SalI,G^TCGA_C,10,True,SalI,False
+-4,TGCA,GTGCAC,6,"('B', 'C', 'I', 'J', 'K', 'N', 'V')",ApaLI,G^TGCA_C,10,True,Alw44I__ApaLI__VneI,False
+4,TGCA,ATGCAT,6,"('B', 'I', 'K', 'V')",EcoT22I,A_TGCA^T,10,True,EcoT22I__Mph1103I__Zsp2I,False
+4,TGCA,CCTGCAGG,8,"('B', 'K')",SdaI,CC_TGCA^GG,10,True,SdaI__Sse8387I,False
+4,TGCA,CTGCAG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",PstI,C_TGCA^G,10,True,BspMAI__PstI,False
+-4,TTAA,CTTAAG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'S', 'V')",AflII,C^TTAA_G,8,True,AflII__BfrI__BspTI__BstAFI__MspCI__Vha464I,False
+-4,TCGT,CTCGTG,6,"('B', 'I')",BauI,C_TCGT^G,10,False,BauI__Bst2BI,True
+-4,CTGG,GCTGGG,6,"('B', 'N')",BseYI,G_CTGG^G,11,False,BseYI__PspFI,True
+4,CTGG,GCTGGG,6,"('I',)",GsaI,G^CTGG_G,11,False,GsaI,True
+-2,CG,GCGG,4,"('B', 'N')",AciI,G_CG^G,6,False,AciI__SsiI,True
+-3,TGA,GCTGAGG,7,"('N',)",BbvCI,GC_TGA^GG,7,False,BbvCI,True
