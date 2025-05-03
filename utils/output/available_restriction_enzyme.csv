@@ -1,0 +1,49 @@
+ovhg,ovhgseq,site,size,suppl,name,elucidate,methylation_check,neb_check,stick_end_hbond_number,palindromic,reverse_complement
+4,ACGT,GACGTC,6,"('B', 'I', 'K', 'M', 'N', 'V')",AatII,G_ACGT^C,True,True,10,True,False
+-2,CG,CCGC,4,"('N',)",AciI,C^CG_C,True,True,6,False,False
+-2,CG,AACGTT,6,"('I', 'N', 'V')",AclI,AA^CG_TT,True,True,6,True,False
+-4,TTAA,CTTAAG,6,"('J', 'K', 'N')",AflII,C^TTAA_G,True,True,8,True,False
+-4,CCGG,ACCGGT,6,"('J', 'N', 'R')",AgeI,A^CCGG_T,True,True,12,True,False
+4,GGCC,GGGCCC,6,"('B', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",ApaI,G_GGCC^C,True,True,12,True,False
+-4,TGCA,GTGCAC,6,"('C', 'K', 'N')",ApaLI,G^TGCA_C,True,True,10,True,False
+-4,CGCG,GGCGCGCC,8,"('N',)",AscI,GG^CGCG_CC,True,True,12,True,False
+-4,CTAG,CCTAGG,6,"('N',)",AvrII,C^CTAG_G,True,True,10,True,False
+-4,GATC,TGATCA,6,"('B', 'C', 'J', 'M', 'N', 'O', 'R', 'S')",BclI,T^GATC_A,True,True,10,True,False
+-4,GATC,AGATCT,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",BglII,A^GATC_T,True,True,10,True,False
+-4,CCAG,CCCAGC,6,"('N',)",BseYI,C^CCAG_C,True,True,11,False,False
+-4,GTAC,CGTACG,6,"('N',)",BsiWI,C^GTAC_G,True,True,10,True,False
+-2,CG,ATCGAT,6,"('N',)",BspDI,AT^CG_AT,True,True,6,True,False
+-4,CCGG,TCCGGA,6,"('N',)",BspEI,T^CCGG_A,True,True,12,True,False
+-4,CATG,TCATGA,6,"('N',)",BspHI,T^CATG_A,True,True,10,True,False
+-4,GTAC,TGTACA,6,"('N',)",BsrGI,T^GTAC_A,True,True,10,True,False
+-4,CGCG,GCGCGC,6,"('J', 'K', 'M', 'N', 'Q', 'R', 'X')",BssHII,G^CGCG_C,True,True,12,True,False
+-2,CG,TTCGAA,6,"('N',)",BstBI,TT^CG_AA,True,True,6,True,False
+-2,CG,ATCGAT,6,"('B', 'K', 'M', 'N', 'Q', 'R', 'S', 'X')",ClaI,AT^CG_AT,True,True,6,True,False
+-4,AATT,GAATTC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",EcoRI,G^AATT_C,True,True,8,True,False
+4,CCGG,GGCCGGCC,8,"('N',)",FseI,GG_CCGG^CC,True,True,12,True,False
+2,CG,GCGC,4,"('B', 'J', 'K', 'N', 'Q', 'R', 'X')",HhaI,G_CG^C,True,True,6,True,False
+-4,AGCT,AAGCTT,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",HindIII,A^AGCT_T,True,True,10,True,False
+-2,CG,CCGG,4,"('B', 'I', 'N', 'Q', 'R', 'V', 'X')",HpaII,C^CG_G,True,True,6,True,False
+4,GTAC,GGTACC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X', 'Y')",KpnI,G_GTAC^C,True,True,10,True,False
+-4,CGCG,ACGCGT,6,"('B', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",MluI,A^CGCG_T,True,True,12,True,False
+-2,TA,TTAA,4,"('N',)",MseI,T^TA_A,True,True,4,True,False
+-2,CG,GGCGCC,6,"('J', 'M', 'N', 'Q', 'R', 'X')",NarI,GG^CG_CC,True,True,6,True,False
+-4,CATG,CCATGG,6,"('B', 'C', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X', 'Y')",NcoI,C^CATG_G,True,True,10,True,False
+-2,TA,CATATG,6,"('B', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'X')",NdeI,CA^TA_TG,True,True,4,True,False
+-4,CTAG,GCTAGC,6,"('B', 'C', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",NheI,G^CTAG_C,True,True,10,True,False
+4,CATG,CATG,4,"('N',)",NlaIII,_CATG^,True,True,10,True,False
+-4,GGCC,GCGGCCGC,8,"('B', 'C', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",NotI,GC^GGCC_GC,True,True,12,True,False
+2,AT,TTAATTAA,8,"('B', 'N', 'O')",PacI,TTA_AT^TAA,True,True,4,True,False
+-4,CATG,ACATGT,6,"('I', 'N')",PciI,A^CATG_T,True,True,10,True,False
+-4,GGCC,GGGCCC,6,"('I', 'N', 'V')",PspOMI,G^GGCC_C,True,True,12,True,False
+4,TGCA,CTGCAG,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",PstI,C_TGCA^G,True,True,10,True,False
+2,AT,CGATCG,6,"('B', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",PvuI,CG_AT^CG,True,True,4,True,False
+4,AGCT,GAGCTC,6,"('B', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",SacI,G_AGCT^C,True,True,10,True,False
+2,GC,CCGCGG,6,"('B', 'J', 'K', 'N', 'O', 'Q', 'R', 'X')",SacII,CC_GC^GG,True,True,6,True,False
+-4,TCGA,GTCGAC,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'V', 'X')",SalI,G^TCGA_C,True,True,10,True,False
+-4,CTAG,ACTAGT,6,"('B', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",SpeI,A^CTAG_T,True,True,10,True,False
+-2,CG,TCGA,4,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",TaqI,T^CG_A,True,True,6,True,False
+-4,CTAG,TCTAGA,6,"('B', 'C', 'I', 'J', 'K', 'M', 'N', 'Q', 'R', 'S', 'V', 'X')",XbaI,T^CTAG_A,True,True,10,True,False
+-4,TCGA,CTCGAG,6,"('B', 'J', 'K', 'M', 'N', 'O', 'Q', 'R', 'S', 'X')",XhoI,C^TCGA_G,True,True,10,True,False
+-2,CG,GCGG,4,"('N',)",AciI,G_CG^G,True,True,6,False,True
+-4,CTGG,GCTGGG,6,"('N',)",BseYI,G_CTGG^G,True,True,11,False,True
