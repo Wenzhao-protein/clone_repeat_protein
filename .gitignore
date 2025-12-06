@@ -172,3 +172,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+SEC/input/20250530_sec_result_total.mat
+SEC/output/processed_sec_data.csv.gzip
