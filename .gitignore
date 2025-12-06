@@ -174,3 +174,10 @@ cython_debug/
 .pypirc
 SEC/input/20250530_sec_result_total.mat
 SEC/output/processed_sec_data.csv.gzip
+
+# GA output artifacts (large)
+codon_opt_benchmark-1/codon_opt_results*/
+codon_opt_benchmark-1/codon_opt_results_m12/
+codon_opt_benchmark-1/codon_opt_results_m13/
+codon_opt_benchmark-1/codon_opt_results_m13_low/
+codon_opt_benchmark-1/*.xlsx
