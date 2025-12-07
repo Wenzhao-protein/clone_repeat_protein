@@ -1,40 +1,31 @@
-# codon_optimization.py
+#!/bin/bash
+#SBATCH -J step5_codon_opt
+#SBATCH --cpus-per-task=8
+#SBATCH -t 23:55:00
+#SBATCH -c 8
+#SBATCH --mem=24g
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=wenzhao.dai@chem.uzh.ch
+#SBATCH --error=/scratch/wdai/conda/Wenzhao-protein/cyclic_assembly_stacking/step5_mpnn/log/%A_%a.err
+#SBATCH --output=/scratch/wdai/conda/Wenzhao-protein/cyclic_assembly_stacking/step5_mpnn/log/%A_%a.out
 
-import pandas as pd
-import numpy as np
-import sys
-import os
+module load anaconda3
+source activate codon_opt
 
-def optimize_codon(sequence):
-    # Placeholder for the actual codon optimization logic
-    # This function should return the optimized AA sequence, DNA sequence, and a score
-    optimized_aa_seq = sequence  # Replace with actual optimization logic
-    optimized_dna_seq = sequence  # Replace with actual optimization logic
-    score = np.random.rand()  # Random score for demonstration
-    return optimized_aa_seq, optimized_dna_seq, score
+# Determine if the script is running under SLURM and set TASK_ID
+if [ -z "$SLURM_ARRAY_TASK_ID" ]; then
+    echo "Running outside of SLURM. It is a test run. Setting TASK_ID manually."
+    TASK_ID=1
+else
+    echo "Running under SLURM.  It is a production run. Using SLURM_ARRAY_TASK_ID."
+    TASK_ID=$(($SLURM_ARRAY_TASK_ID))
+fi
 
-def log_results(task_id, iteration, aa_seq, dna_seq, score):
-    log_file = f"results_{task_id}.log"
-    with open(log_file, 'a') as f:
-        f.write(f"Iteration: {iteration}, AA Seq: {aa_seq}, DNA Seq: {dna_seq}, Score: {score}\n")
+export HYDRA_FULL_ERROR=1
 
-def main(task_id):
-    # Load input from CSV file
-    input_file = 'input_sequences.csv'
-    df = pd.read_csv(input_file)
-    
-    # Get the sequence for the current task
-    sequence = df.iloc[task_id]['sequence']
-    
-    # Perform optimization
-    for iteration in range(1, 11):  # Example: 10 iterations
-        aa_seq, dna_seq, score = optimize_codon(sequence)
-        log_results(task_id, iteration, aa_seq, dna_seq, score)
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python codon_optimization.py <task_id>")
-        sys.exit(1)
-    
-    task_id = int(sys.argv[1])
-    main(task_id)
+# Get the task command from the tasks file
+task=$(sed -n "${TASK_ID}p" tasks)
+
+# Execute the task command
+eval $task

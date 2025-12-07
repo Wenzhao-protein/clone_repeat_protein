@@ -34,6 +34,13 @@ from sko.GA import GA
 from sko.tools import set_run_mode
 
 
+# Defaults aligned with full-scale runs
+DEFAULT_POP_SIZE = 800
+DEFAULT_MAX_ITER = 1000
+DEFAULT_RUN_MODE = "multiprocessing"
+DEFAULT_MUTATION_PROB = 0.0015
+
+
 CODON_TABLE: Dict[str, List[str]] = {
     "A": ["GCT", "GCA", "GCC", "GCG"],
     "C": ["TGT", "TGC"],
@@ -63,30 +70,23 @@ REGISTRATION_SITES: Tuple[str, ...] = ("AAGCTT", "GAGCTC", "TGTACA")  # HindIII,
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run codon optimization GA")
-    parser.add_argument("--tasks", required=True, type=Path, help="CSV with aa_seq column")
+    parser.add_argument("--name", required=False, default="task1", help="Identifier for this optimization")
+    parser.add_argument("--aa-seq", required=True, help="Amino-acid sequence to optimize")
+    parser.add_argument("--prefix", default="", help="DNA prefix to prepend")
+    parser.add_argument("--suffix", default="", help="DNA suffix to append")
     parser.add_argument("--output-dir", type=Path, default=Path("codon_opt_results"), help="Folder for outputs")
-    parser.add_argument("--pop-size", type=int, default=800, help="GA population size (ipynb default 800)")
-    parser.add_argument("--max-iter", type=int, default=1000, help="GA generations (ipynb default 1000)")
-    parser.add_argument("--mutation-prob", type=float, default=0.0015, help="GA mutation probability (ipynb default 0.0015)")
+    parser.add_argument("--pop-size", type=int, default=DEFAULT_POP_SIZE, help=f"GA population size (default {DEFAULT_POP_SIZE})")
+    parser.add_argument("--max-iter", type=int, default=DEFAULT_MAX_ITER, help=f"GA generations (default {DEFAULT_MAX_ITER})")
+    parser.add_argument("--mutation-prob", type=float, default=DEFAULT_MUTATION_PROB, help=f"GA mutation probability (default {DEFAULT_MUTATION_PROB})")
     parser.add_argument(
         "--mutation-grid",
         type=str,
         default=None,
         help="Comma-separated mutation probs to sweep; overrides --mutation-prob",
     )
-    parser.add_argument("--run-mode", choices=["common", "multithreading", "multiprocessing"], default="multiprocessing")
+    parser.add_argument("--run-mode", choices=["common", "multithreading", "multiprocessing"], default=DEFAULT_RUN_MODE, help=f"GA run mode (default {DEFAULT_RUN_MODE})")
     parser.add_argument("--verbose", action="store_true", help="Save every individual per generation")
     return parser.parse_args()
-
-
-def load_tasks(csv_path: Path) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
-    if "aa_seq" not in df.columns:
-        raise ValueError("Input CSV must contain an 'aa_seq' column")
-    df["name"] = df.get("name", pd.Series(df.index.astype(str)))
-    df["prefix"] = df.get("prefix", "")
-    df["suffix"] = df.get("suffix", "")
-    return df
 
 
 def reverse_translate_vector(aa_seq: str, vector: Iterable[float]) -> str:
@@ -247,7 +247,6 @@ def run_ga_for_sequence(
 
 def main() -> None:
     args = parse_args()
-    tasks = load_tasks(args.tasks)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mutation_grid:
@@ -255,41 +254,40 @@ def main() -> None:
     else:
         mutation_list = [args.mutation_prob]
 
+    name = str(args.name)
+    aa_seq = str(args.aa_seq).strip()
+    prefix = str(args.prefix)
+    suffix = str(args.suffix)
+
+    if not aa_seq:
+        raise ValueError("Empty aa_seq provided")
+
     for mut in mutation_list:
         sweep_dir = args.output_dir if len(mutation_list) == 1 else args.output_dir / f"mut_{mut}"
         sweep_dir.mkdir(parents=True, exist_ok=True)
 
         results: List[dict] = []
-        for _, row in tasks.iterrows():
-            name = str(row["name"])
-            aa_seq = str(row["aa_seq"]).strip()
-            prefix = str(row.get("prefix", ""))
-            suffix = str(row.get("suffix", ""))
+        run_result = run_ga_for_sequence(
+            name=name,
+            aa_seq=aa_seq,
+            prefix=prefix,
+            suffix=suffix,
+            pop_size=args.pop_size,
+            max_iter=args.max_iter,
+            mutation_prob=mut,
+            run_mode=args.run_mode,
+            verbose=args.verbose,
+            output_dir=sweep_dir,
+        )
 
-            if not aa_seq:
-                raise ValueError(f"Empty aa_seq for task '{name}'")
-
-            run_result = run_ga_for_sequence(
-                name=name,
-                aa_seq=aa_seq,
-                prefix=prefix,
-                suffix=suffix,
-                pop_size=args.pop_size,
-                max_iter=args.max_iter,
-                mutation_prob=mut,
-                run_mode=args.run_mode,
-                verbose=args.verbose,
-                output_dir=sweep_dir,
-            )
-
-            results.append({
-                "name": run_result["name"],
-                "aa_seq": run_result["aa_seq"],
-                "core_dna": run_result["core_dna"],
-                "best_dna_with_context": run_result["best_dna"],
-                "score": run_result["score"],
-                "mutation_prob": mut,
-            })
+        results.append({
+            "name": run_result["name"],
+            "aa_seq": run_result["aa_seq"],
+            "core_dna": run_result["core_dna"],
+            "best_dna_with_context": run_result["best_dna"],
+            "score": run_result["score"],
+            "mutation_prob": mut,
+        })
 
         results_df = pd.DataFrame(results)
         results_path = sweep_dir / "codon_opt_results.csv"
