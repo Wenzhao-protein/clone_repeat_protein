@@ -1,0 +1,6 @@
+enzyme,recognition_site,3mer_aa,optimal_9bp_original,codon_usage_original,can_silent_mutation,optimal_9bp_mutated,codon_usage_mutated
+SdaI,CCTGCAGG,ACR,GCCTGCAGG,13.733333333333334,False,,
+SdaI,CCTGCAGG,PAG,CCTGCAGGC,20.966666666666665,False,,
+SdaI,CCTGCAGG,PCR,CCCTGCAGG,5.333333333333333,False,,
+SdaI,CCTGCAGG,SCR,TCCTGCAGG,5.033333333333333,False,,
+SdaI,CCTGCAGG,TCR,ACCTGCAGG,10.8,False,,

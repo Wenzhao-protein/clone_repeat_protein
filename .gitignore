@@ -196,3 +196,18 @@ codon_opt_benchmark-1/*.xlsx
 # Ignore Mac system files
 .DS_Store
 ._*
+# Large data files (>50MB) - must be ignored
+output/hurdler_fast_match_package.pkl
+output/hurdler_pattern_lookup.pkl
+output/hurdler_lookup_pattern_based.pkl
+output/hurdler_combined_dataframe.csv
+output/hurdler_lookup_dataframe.csv
+output/hurdler_site_i_site_ii_combinations_df2.csv
+output/hurdler_site_i_site_ii_combinations_df2_temp.csv
+output/hurdler_plasmid_patterns.pkl
+
+# Large hurdler analysis outputs (>100MB)
+hurdler_analysis/output/hurdler_three_site_combinations_df2_optimized.csv
+
+# Large SEC data files
+SEC/output/processed_sec_data.csv.gzip

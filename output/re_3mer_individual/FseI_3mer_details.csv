@@ -1,0 +1,5 @@
+enzyme,recognition_site,3mer_aa,optimal_9bp_original,codon_usage_original,can_silent_mutation,optimal_9bp_mutated,codon_usage_mutated
+FseI,GGCCGGCC,GPA,GGGCCGGCC,22.3,False,,
+FseI,GGCCGGCC,GRP,GGCCGGCCG,21.4,False,,
+FseI,GGCCGGCC,RPA,CGGCCGGCC,20.8,False,,
+FseI,GGCCGGCC,WPA,TGGCCGGCC,23.0,False,,

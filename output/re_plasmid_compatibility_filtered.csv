@@ -1,0 +1,36 @@
+enzyme,ovhg,site,pGEX-4T-1,pMAL-c5X,pET-21a(+),pET-28a(+),pET-28a(+)_start_codon,pCold_I,pUC18,pQE-3
+AatII,4,Site I only,False,True,True,True,True,True,False,False
+AflII,-4,Site II,True,True,True,True,True,True,True,True
+AgeI,-4,Site II,True,True,True,True,True,True,True,True
+ApaI,4,Site I only,False,False,False,False,False,False,True,True
+AscI,-4,Site II,True,True,True,True,True,True,True,True
+AvrII,-4,Site II,True,True,True,True,True,True,True,True
+BclI,-4,Site II,False,False,False,False,False,False,True,True
+BglII,-4,Site II,True,False,False,False,False,True,True,True
+BsiWI,-4,Site II,True,False,True,True,True,True,True,True
+BspDI,-2,Site I only,True,True,True,False,False,False,True,True
+BspEI,-4,Site II,True,False,False,False,False,True,True,False
+BsrGI,-4,Site II,True,True,True,True,True,True,True,True
+BssHII,-4,Site II,False,False,False,False,False,False,True,True
+BstBI,-2,Site I only,False,True,True,True,True,True,True,True
+ClaI,-2,Site I only,True,True,True,False,False,False,True,True
+EcoRI,-4,Site II,True,True,True,True,True,True,True,False
+FseI,4,Site I only,True,True,True,True,True,True,True,True
+HindIII,-4,Site II,True,True,True,True,True,True,True,True
+KpnI,4,Site I only,True,True,True,True,True,True,True,True
+MluI,-4,Site II,False,False,False,False,False,False,True,True
+NarI,-2,Site I only,False,False,False,False,False,False,False,True
+NcoI,-4,Site II,True,True,True,False,True,True,True,False
+NdeI,-2,Site I only,True,True,True,False,True,True,False,False
+NheI,-4,Site II,True,True,True,False,True,False,True,False
+NotI,-4,Site II,True,True,True,True,True,True,True,True
+PacI,2,Site II,True,True,True,True,True,True,True,True
+PciI,-4,Site II,False,False,False,False,False,True,False,False
+PspOMI,-4,Site II,False,False,False,False,False,False,True,True
+PstI,4,Site I only,False,True,False,True,True,True,True,True
+SacI,4,Site I only,True,False,True,True,True,True,True,True
+SacII,2,Site II,True,True,True,True,True,True,True,True
+SalI,-4,Site II,True,True,True,True,True,True,True,True
+SpeI,-4,Site II,True,True,True,True,True,True,True,True
+XbaI,-4,Site II,True,True,False,False,False,True,True,False
+XhoI,-4,Site II,True,True,True,True,True,True,True,False

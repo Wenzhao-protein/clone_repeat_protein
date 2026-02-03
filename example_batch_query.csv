@@ -1,0 +1,6 @@
+site_i_3mer_aa,site_ii_3mer_aa,plasmid
+AAA,AAA,pET-28a(+)
+AAA,AAL,pET-28a(+)
+GAL,PAL,pGEX-4T-1
+LPA,VQL,pMAL-c5X
+NEQ,IQA,pET-21a(+)

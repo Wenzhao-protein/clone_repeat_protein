@@ -1,0 +1,17 @@
+enzyme,ovhg,site,site_length,is_type_iis
+BsrI,2,ACTGG,5,True
+BtsCI,2,GGATG,5,True
+BsaI,-4,GGTCTC,6,True
+BsmI,2,GAATGC,6,True
+BcoDI,-4,GTCTC,5,True
+BsmAI,-4,GTCTC,5,True
+BtsIMutI,2,CAGTG,5,True
+BspMI,-4,ACCTGC,6,True
+Esp3I,-4,CGTCTC,6,True
+BspCNI,2,CTCAG,5,True
+BsgI,2,GTGCAG,6,True
+BpuEI,2,CTTGAG,6,True
+NmeAIII,2,GCCGAG,6,True
+BseRI,2,GAGGAG,6,True
+BbsI,-4,GAAGAC,6,True
+BsmBI,-4,CGTCTC,6,True
