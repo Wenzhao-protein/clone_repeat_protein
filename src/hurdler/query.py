@@ -1,12 +1,37 @@
 #!/usr/bin/env python3
-"""
-HURDLER Site Query Tool
+"""HURDLER Site Query Tool.
 
-Command-line tool to query valid three-site combinations for HURDLER cloning method.
+Command-line and library interface for looking up valid HURDLER three-site
+combinations from a pre-computed ``df2`` table.
 
-Usage:
-    python hurdler_query.py --site-i-aa "ABC" --site-ii-aa "DEF" --plasmid "pET-28a(+)"
-    python hurdler_query.py --batch input.csv --output results.csv
+The lookup answers the question: *given two 3-amino-acid windows
+(Site I and Site II) within my repeat unit, and a target plasmid, which
+restriction-enzyme triples can I use?*
+
+Inputs
+------
+``./output/hurdler_three_site_combinations_df2.csv`` — produced by
+:mod:`hurdler.pipeline` (or its notebook equivalent under
+``notebooks/hurdler/``). The path is configurable via ``--df2``.
+
+Examples
+--------
+Single query::
+
+    PYTHONPATH=src python -m hurdler.query \
+        --site-i-aa "NEQ" --site-ii-aa "IQA" --plasmid "pET-28a(+)"
+
+Batch query::
+
+    PYTHONPATH=src python -m hurdler.query \
+        --batch data/example_batch_query.csv --output output/results.csv
+
+List the 3-mer AA sequences present in the lookup::
+
+    PYTHONPATH=src python -m hurdler.query --list
+
+See ``docs/workflows/hurdler_site_combinations.md`` for the broader
+workflow context.
 """
 
 import pandas as pd
@@ -15,17 +40,17 @@ import sys
 from pathlib import Path
 
 
-def load_data():
-    """Load the pre-computed df2 data"""
-    df2_path = Path("./output/hurdler_three_site_combinations_df2.csv")
-    
+def load_data(df2_path="./output/hurdler_three_site_combinations_df2.csv"):
+    """Load the pre-computed ``df2`` table produced by :mod:`hurdler.pipeline`."""
+    df2_path = Path(df2_path)
+
     if not df2_path.exists():
         print(f"Error: {df2_path} not found.")
-        print("Please run hurdler_site_combination_analysis.ipynb first to generate the data.")
+        print("Please run `python -m hurdler.pipeline` (or the equivalent "
+              "notebook under notebooks/hurdler/) to generate it.")
         sys.exit(1)
-    
-    df2 = pd.read_csv(df2_path)
-    return df2
+
+    return pd.read_csv(df2_path)
 
 
 def find_hurdler_sites(site_i_3mer_aa, site_ii_3mer_aa, plasmid, df2):

@@ -1,8 +1,25 @@
 #!/usr/bin/env python3
-"""
-HURDLER Data Validation and Statistics
+"""HURDLER data validation and statistics.
 
-Validates the generated data and provides detailed statistics.
+Sanity-checks the data products of :mod:`hurdler.pipeline` (or its
+notebook equivalent) and prints a structured statistics report.
+
+Verifies that:
+
+- All reference inputs under ``data/reference_output/`` exist.
+- ``df1`` contains the required columns and that Site II / Site III
+  overhangs match the HURDLER constraint.
+- ``df2`` contains the expected 3-mer AA / DNA columns and no
+  unexpected NaNs.
+- Per-plasmid compatibility counts are consistent.
+
+Run from the repository root::
+
+    PYTHONPATH=src python -m hurdler.validate
+    PYTHONPATH=src python -m hurdler.validate --export output/validation.txt
+
+See ``docs/workflows/hurdler_site_combinations.md`` for the broader
+workflow.
 """
 
 import pandas as pd
@@ -12,14 +29,18 @@ import sys
 
 
 def check_files_exist():
-    """Check if all required files exist"""
+    """Verify the curated reference inputs required by the HURDLER pipeline.
+
+    Returns ``True`` if every CSV under ``data/reference_output/`` that the
+    pipeline depends on is present, ``False`` otherwise.
+    """
     required_files = [
-        "./utils/output/methylation_check.csv",
-        "./utils/output/neb_buffer_activity_cleaned.csv",
-        "./utils/output/plasmid_digest_check.csv",
-        "./utils/output/restriction_enzyme_slient_mutation.csv",
-        "./utils/output/restriction_enzyme_seamless_insert.csv",
-        "./utils/output/orthogonality.csv",
+        "./data/reference_output/methylation_check.csv",
+        "./data/reference_output/neb_buffer_activity_cleaned.csv",
+        "./data/reference_output/plasmid_digest_check.csv",
+        "./data/reference_output/restriction_enzyme_slient_mutation.csv",
+        "./data/reference_output/restriction_enzyme_seamless_insert.csv",
+        "./data/reference_output/orthogonality.csv",
     ]
     
     missing_files = []

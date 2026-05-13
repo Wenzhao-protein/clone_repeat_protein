@@ -1,11 +1,23 @@
-"""
-Utility functions for HURDLER and enzyme compatibility analysis.
+"""Utility helpers for HURDLER and enzyme compatibility analysis.
 
-Contains functions for:
-- Loading and processing enzyme data
-- Checking enzyme pairing compatibility
-- Creating plasmid compatibility matrices
-- Generating heatmaps for visualization
+This module is intentionally pure-library: no CLI, no I/O paths hard-coded
+to the repository root. The helpers are consumed by the notebooks under
+``notebooks/hurdler/`` and ``notebooks/enzyme_selection/`` as well as by
+:mod:`hurdler.pipeline`.
+
+Contents
+--------
+- :func:`check_neb_quality` — NEB ligation / star-activity sanity check.
+- :func:`build_enzyme_pairing_matrix` — overhang-based pairwise
+  compatibility.
+- :func:`group_enzymes_by_overhang`, :func:`sort_enzymes_by_overhang` —
+  group / sort helpers for visualisation layouts.
+- :func:`load_plasmid_sequences` — read plasmid FASTA files from
+  ``data/reference_input/plasmids/``.
+- :func:`build_enzyme_plasmid_matrix` — cut-site detection against
+  circular plasmid sequences.
+- :func:`plot_enzyme_pairing_heatmap` — annotated heatmap for enzyme
+  pairing.
 """
 
 import pandas as pd
@@ -126,7 +138,7 @@ def sort_enzymes_by_overhang(enzyme_list, ovhg_lookup):
     return sorted_enzymes, sorted_ovhgs
 
 
-def load_plasmid_sequences(plasmid_names, plasmid_dir='./utils/input/plasmids/'):
+def load_plasmid_sequences(plasmid_names, plasmid_dir='./data/reference_input/plasmids/'):
     """Load plasmid sequences from FASTA files.
     
     Args:

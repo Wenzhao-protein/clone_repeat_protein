@@ -1,3 +1,12 @@
+# Workflow: HURDLER Success-Rate Analysis
+
+> **Layout note (May 2026 reconstruction).**
+> The pipeline now lives at [`../../src/hurdler/pipeline.py`](../../src/hurdler/pipeline.py).
+> Inputs come from [`../../data/hurdler_analysis_input/`](../../data/hurdler_analysis_input/)
+> (or set `HURDLER_INPUT_DIR`); outputs go to [`../../output/`](../../output/)
+> (or set `HURDLER_OUTPUT_DIR`). Run from the repository root with
+> `PYTHONPATH=src python -m hurdler.pipeline`.
+
 # HURDLER Success Rate Analysis
 
 Complete pipeline for analyzing HURDLER cloning strategy success rates across different plasmids and sequence lengths.

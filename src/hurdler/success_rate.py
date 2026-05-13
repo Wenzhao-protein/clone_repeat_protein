@@ -1,12 +1,31 @@
 #!/usr/bin/env python3
-"""
-HURDLER Success Rate Analysis
+"""HURDLER success-rate analysis.
 
-Tests HURDLER feasibility for random amino acid sequences of varying lengths.
-For each length (4-60), generates 1000 random sequences and checks if valid
-three-site combinations exist for each plasmid.
+For each protein-sequence length (typically 4–60 residues) this module
+generates many random amino-acid sequences and checks, for each target
+plasmid, whether a valid HURDLER three-site combination exists.
 
-Output: Success rate plot for each plasmid across different sequence lengths.
+Two flavours of the feasibility check are provided:
+
+- :func:`check_hurdler_feasibility` — straightforward set-membership
+  over Site I / Site II 3-mer AA windows.
+- :func:`check_hurdler_success_pattern` — pattern-based check that also
+  enforces the directional / distance constraint between Site I and
+  Site II within a repeat module.
+
+Inputs
+------
+``output/hurdler_three_site_combinations_df2.csv`` (basic check) or
+``output/hurdler_fast_match_package.pkl`` (pattern check), produced by
+:mod:`hurdler.pipeline` or the optimised notebook under
+``notebooks/hurdler/``.
+
+Outputs
+-------
+``output/hurdler_success_rate_analysis.png`` and
+``output/hurdler_success_rate_data.csv``.
+
+See ``docs/workflows/hurdler_success_rate.md`` for the broader workflow.
 """
 
 import pandas as pd

@@ -1,6 +1,28 @@
-"""
-HURDLER Success Rate Analysis
-Complete pipeline for analyzing HURDLER cloning strategy success rates
+"""HURDLER full pipeline: build df1, df2, lookup, success-rate analysis.
+
+This module is the canonical, top-to-bottom generation pipeline for the
+HURDLER three-site cloning strategy. It produces:
+
+- ``output/hurdler_three_site_combinations_df1.csv`` — all valid Site I ×
+  Site II × Site III combinations with per-plasmid compatibility.
+- ``output/hurdler_three_site_combinations_df2_optimized.csv`` — df1
+  expanded with concrete 9-mer / 3-mer windows and codon usage.
+- ``output/hurdler_lookup_optimized.pkl`` — fast lookup keyed by
+  ``(3mer_i, 3mer_ii)``.
+- ``output/hurdler_success_rate_*.csv`` and PDF plots.
+
+Inputs (expected under ``data/hurdler_analysis_input/``):
+``methylation_check.csv``, ``neb_buffer_activity_cleaned.csv``,
+``plasmid_digest_check.csv``, ``codon_usage.csv``,
+``seamless_insert.csv``, ``slient_mutation.csv``.
+
+Run from the repository root::
+
+    PYTHONPATH=src python -m hurdler.pipeline
+
+Historical alternative implementations are preserved under
+``archive/scripts/`` (``generate_df2_optimized*.py``,
+``create_hurdler_lookup*.py``, …) and should not be used for new work.
 """
 
 import pandas as pd
@@ -25,8 +47,15 @@ sns.set_palette("husl")
 random.seed(42)
 np.random.seed(42)
 
-# Create output directory
-output_dir = './output'
+# Input / output directories.
+#
+# Inputs are committed under ``data/hurdler_analysis_input/`` (see
+# ``data/README.md``); generated outputs go under the gitignored
+# ``output/`` working folder. Both paths can be overridden by setting
+# the ``HURDLER_INPUT_DIR`` and ``HURDLER_OUTPUT_DIR`` environment
+# variables.
+input_dir = os.environ.get('HURDLER_INPUT_DIR', './data/hurdler_analysis_input')
+output_dir = os.environ.get('HURDLER_OUTPUT_DIR', './output')
 os.makedirs(output_dir, exist_ok=True)
 
 print("="*80)
@@ -43,7 +72,7 @@ print("="*80)
 
 # Load methylation sensitivity data
 print("\n1. Loading methylation sensitivity data...")
-df_methylation = pd.read_csv('./input/methylation_check.csv')
+df_methylation = pd.read_csv(os.path.join(input_dir, 'methylation_check.csv'))
 dh5a_compatible = set(
     df_methylation.loc[~df_methylation['6mA_5mC_sensitive'], 'enzyme'].dropna().tolist() +
     df_methylation.loc[~df_methylation['6mA_5mC_sensitive'], 'prototype'].dropna().tolist()
@@ -52,12 +81,12 @@ print(f"   DH5α compatible enzymes: {len(dh5a_compatible)}")
 
 # Load NEB quality data
 print("\n2. Loading NEB quality data...")
-df_neb = pd.read_csv('./input/neb_buffer_activity_cleaned.csv')
+df_neb = pd.read_csv(os.path.join(input_dir, 'neb_buffer_activity_cleaned.csv'))
 print(f"   NEB enzymes in database: {len(df_neb)}")
 
 # Load plasmid compatibility data
 print("\n3. Loading plasmid compatibility data...")
-df_plasmid = pd.read_csv('./input/plasmid_digest_check.csv', index_col=0)
+df_plasmid = pd.read_csv(os.path.join(input_dir, 'plasmid_digest_check.csv'), index_col=0)
 plasmid_cols = ['pGEX-4T-1', 'pMAL-c5X', 'pET-21a(+)', 'pET-28a(+)', 
                 'pET-28a(+)_start_codon', 'pCold_I', 'pUC18', 'pQE-3']
 
@@ -229,7 +258,7 @@ print("="*80)
 
 # Load E.coli codon usage
 print("\n1. Loading E.coli codon usage...")
-codon_freq = pd.read_csv('./input/codon_usage.csv')
+codon_freq = pd.read_csv(os.path.join(input_dir, 'codon_usage.csv'))
 codon_freq_dict = dict(zip(codon_freq['codon'], codon_freq['frequency']))
 print(f"   Loaded {len(codon_freq_dict)} codon frequencies")
 
@@ -245,8 +274,8 @@ def calculate_codon_usage_freq(dna_seq, codon_dict):
 
 # Load restriction enzyme data
 print("\n2. Loading restriction enzyme data...")
-df_seamless = pd.read_csv('./input/seamless_insert.csv')
-df_silent = pd.read_csv('./input/slient_mutation.csv')
+df_seamless = pd.read_csv(os.path.join(input_dir, 'seamless_insert.csv'))
+df_silent = pd.read_csv(os.path.join(input_dir, 'slient_mutation.csv'))
 
 # Process Site I (seamless insert)
 print("\n3. Pre-processing Site I (seamless insert)...")
@@ -315,7 +344,7 @@ gc.collect()
 
 # Streaming expansion of df1 to df2
 print("\n5. Streaming df1 to df2...")
-output_path = './output/hurdler_three_site_combinations_df2_optimized.csv'
+output_path = os.path.join(output_dir, 'hurdler_three_site_combinations_df2_optimized.csv')
 batch_size = 100
 total_rows = 0
 first_batch = True
@@ -411,7 +440,7 @@ chunk_size = 1000000
 chunk_num = 0
 total_rows = 0
 
-for chunk in pd.read_csv('./output/hurdler_three_site_combinations_df2_optimized.csv',
+for chunk in pd.read_csv(os.path.join(output_dir, 'hurdler_three_site_combinations_df2_optimized.csv'),
                          chunksize=chunk_size,
                          usecols=['site_i_enzyme', 'site_i_3mer_aa', 'site_i_dna'] + plasmid_cols_lookup):
     chunk_num += 1
@@ -451,7 +480,7 @@ site_ii_iii_lookup = defaultdict(list)
 chunk_num = 0
 total_rows = 0
 
-for chunk in pd.read_csv('./output/hurdler_three_site_combinations_df2_optimized.csv',
+for chunk in pd.read_csv(os.path.join(output_dir, 'hurdler_three_site_combinations_df2_optimized.csv'),
                          chunksize=chunk_size,
                          usecols=['site_ii_enzyme', 'site_ii_3mer_aa', 'site_ii_dna_original',
                                  'site_ii_dna_mutated', 'site_ii_search_direction',
@@ -500,7 +529,7 @@ chunk_num = 0
 total_rows = 0
 entries_added = 0
 
-for chunk in pd.read_csv('./output/hurdler_three_site_combinations_df2_optimized.csv',
+for chunk in pd.read_csv(os.path.join(output_dir, 'hurdler_three_site_combinations_df2_optimized.csv'),
                          chunksize=chunk_size,
                          usecols=['site_i_enzyme', 'site_i_3mer_aa', 
                                  'site_ii_enzyme', 'site_ii_3mer_aa',
@@ -594,7 +623,7 @@ if len(final_lookup) > 0:
     print(f"    Plasmids: {sample_entry[3]}")
 
 # Save lookup dictionary
-lookup_path = './output/hurdler_lookup_optimized.pkl'
+lookup_path = os.path.join(output_dir, 'hurdler_lookup_optimized.pkl')
 print(f"\n7. Saving lookup dictionary to {lookup_path}...")
 with open(lookup_path, 'wb') as f:
     pickle.dump(dict(final_lookup), f)
@@ -682,7 +711,7 @@ def check_hurdler_success(sequence, hurdler_lookup, plasmid):
 
 # Load lookup dictionary
 print("\n1. Loading lookup dictionary...")
-with open('./output/hurdler_lookup_optimized.pkl', 'rb') as f:
+with open(os.path.join(output_dir, 'hurdler_lookup_optimized.pkl'), 'rb') as f:
     hurdler_lookup = pickle.load(f)
 
 plasmids = ['pGEX-4T-1', 'pMAL-c5X', 'pET-21a(+)', 'pET-28a(+)', 
@@ -719,7 +748,7 @@ for length in tqdm(module_lengths, desc="Testing lengths"):
 df_results = pd.DataFrame(results)
 
 # Save raw results
-results_path = './output/hurdler_success_rate_results.csv'
+results_path = os.path.join(output_dir, 'hurdler_success_rate_results.csv')
 df_results.to_csv(results_path, index=False)
 print(f"\n✓ Raw results saved to: {results_path}")
 
@@ -733,7 +762,7 @@ df_summary['success_rate'] = df_summary['n_success'] / df_summary['n_total']
 df_summary['success_rate_pct'] = df_summary['success_rate'] * 100
 
 # Save summary
-summary_path = './output/hurdler_success_rate_summary.csv'
+summary_path = os.path.join(output_dir, 'hurdler_success_rate_summary.csv')
 df_summary.to_csv(summary_path, index=False)
 print(f"✓ Summary saved to: {summary_path}")
 

@@ -1,100 +1,71 @@
-# Enzyme Selection Pipeline Modification Summary
+# Workflow: Restriction-Enzyme Selection
 
-## Overview
-Modified the HURDLER analysis pipeline to support pre-filtered enzyme lists from `enzyme_selection_analysis.ipynb`.
+This workflow curates the set of restriction enzymes that are eligible
+for HURDLER Site I, Site II, and Site III, and explores their pairwise
+compatibility across the eight supported plasmids.
 
-## Changes Made
+It is **upstream** of the HURDLER three-site combination workflow: it
+produces the filtered enzyme lists that
+[`hurdler_site_combinations.md`](hurdler_site_combinations.md) then
+combines.
 
-### 1. enzyme_selection_analysis.ipynb
+## Goal
 
-**Added Export Functionality** (new cells at the end):
+Starting from the full REBASE enzyme catalogue plus NEB activity data,
+produce:
 
-- **Markdown cell**: "Export Selected Enzymes for HURDLER Analysis"
-- **Code cell**: Export logic that creates:
-  - `./output/selected_site_i_enzymes.csv` - Site I enzymes (57 enzymes, ovhg ∈ {-4, +2})
-  - `./output/selected_site_ii_enzymes.csv` - Site II enzymes (57 enzymes, ovhg ∈ {-4, +2})
-  - `./output/selected_site_iii_enzymes.csv` - Site III enzymes (6 enzymes, ovhg ∈ {-4, +2})
-  - `./output/selected_enzymes_summary.json` - JSON summary with enzyme counts and distributions
+- per-site eligible enzyme tables for Site I, Site II, and Site III, and
+- per-plasmid compatibility data (no backbone cuts),
 
-**Exported Data Includes**:
-- Full enzyme metadata from the enzyme selection pipeline
-- All columns: enzyme name, site sequence, ovhg, ovhgseq, fst5, fst3, methylation compatibility, plasmid compatibility, ligation quality, star activity status
+so that downstream HURDLER analyses can iterate over a clean, curated
+universe rather than the raw enzyme database.
 
-### 2. hurdler_success_rate_analysis.ipynb
+## Inputs
 
-**Added Pre-filtered Enzyme Loading** (new cells after imports):
+All committed under `data/reference_input/` and curated into
+`data/reference_output/`:
 
-- **Markdown cell**: "Step 0: Load Pre-filtered Enzymes"
-- **Code cell**: Import logic that:
-  - Checks if filtered enzyme CSV files exist
-  - Loads enzyme lists if available
-  - Creates enzyme name sets (SELECTED_SITE_I_ENZYMES, SELECTED_SITE_II_ENZYMES, SELECTED_SITE_III_ENZYMES)
-  - Sets USE_PREFILTERED_ENZYMES flag
-  - Falls back to inline filtering if files not found
+| File | Role |
+|------|------|
+| `reference_output/restriction_enzyme.csv` | Master enzyme table from REBASE. |
+| `reference_output/methylation_check.csv` | DH5α methylation compatibility. |
+| `reference_output/neb_buffer_activity_cleaned.csv` | NEB buffer / ligation / star-activity. |
+| `reference_output/plasmid_digest_check.csv` | Does each enzyme cut each plasmid backbone? |
+| `reference_output/orthogonality.csv` | Sticky-end orthogonality between enzyme pairs. |
+| `reference_input/plasmids/*.fa` | Plasmid sequences used for cut-site detection. |
 
-**Integrated with Existing Pipeline**:
-- When USE_PREFILTERED_ENZYMES = True:
-  - `load_enzyme_data()` filters to only pre-selected enzymes
-  - `filter_site_enzymes()` uses pre-filtered enzyme sets
-  - All downstream analysis uses centrally-defined enzyme lists
+## Notebooks
 
-## Usage Workflow
+Located in [`../../notebooks/enzyme_selection/`](../../notebooks/enzyme_selection/):
 
-### Step 1: Run enzyme_selection_analysis.ipynb
-```bash
-# Execute all cells in enzyme_selection_analysis.ipynb
-# This will generate ./output/selected_site_*_enzymes.csv files
-```
+| Notebook | Purpose |
+|----------|---------|
+| `enzyme_selection_analysis.ipynb` | Applies the site-by-site filters (methylation, NEB quality, plasmid compatibility, Type IIS, overhang length) and exports `selected_site_{i,ii,iii}_enzymes.csv`. |
+| `re_plasmid_compatibility.ipynb` | Builds the enzyme × plasmid compatibility heatmap. |
+| `re_3mer_analysis.ipynb` | Estimates the protein-sequence coverage of each enzyme as a function of how many 3-mer AA windows it can cut. |
+| `inspect_site_candidates.ipynb` | Manual inspection of candidate enzyme pairs for each site. |
 
-### Step 2: Run hurdler_success_rate_analysis.ipynb
-```bash
-# Execute all cells in hurdler_success_rate_analysis.ipynb
-# Will automatically detect and use pre-filtered enzyme lists
-```
+## Outputs
 
-## Benefits
+Written into the gitignored [`../../output/`](../../output/) folder:
 
-1. **Centralized Enzyme Selection**: All enzyme filtering logic in one place
-2. **Consistency**: Same enzyme lists used across all analyses
-3. **Transparency**: Enzyme selection criteria clearly documented in enzyme_selection_analysis.ipynb
-4. **Flexibility**: Falls back to inline filtering if pre-filtered files not available
-5. **Reproducibility**: Exported files serve as analysis checkpoints
+- `selected_site_i_enzymes.csv`
+- `selected_site_ii_enzymes.csv`
+- `selected_site_iii_enzymes.csv`
+- `selected_enzymes_summary.json`
+- `re_plasmid_compatibility*.{csv,pdf,png}`
+- `re_3mer_*.{csv,svg}`
+- Funnel diagrams and Sankey HTML for the selection process.
 
-## Files Created
+## Related code
 
-```
-output/
-├── selected_site_i_enzymes.csv    # 57 enzymes for Site I
-├── selected_site_ii_enzymes.csv   # 57 enzymes for Site II
-├── selected_site_iii_enzymes.csv  # 6 enzymes for Site III
-└── selected_enzymes_summary.json  # Summary statistics
-```
+Shared helpers used by these notebooks live in
+[`../../src/hurdler/utils.py`](../../src/hurdler/utils.py):
+`check_neb_quality`, `build_enzyme_pairing_matrix`,
+`group_enzymes_by_overhang`, `load_plasmid_sequences`,
+`build_enzyme_plasmid_matrix`, `plot_enzyme_pairing_heatmap`.
 
-## Integration with hurdler_success_rate_optimized.ipynb
+## History
 
-The pre-filtered enzyme lists can also be used in `hurdler_success_rate_optimized.ipynb` by:
-
-1. Loading the CSV files at the beginning
-2. Filtering Site I/II/III data generation to only use selected enzymes
-3. Skipping inline enzyme quality checks since they're already done
-
-This creates a consistent enzyme selection pipeline across all HURDLER analysis notebooks.
-
-## Notes
-
-- Enzyme selection criteria defined in enzyme_selection_analysis.ipynb:
-  - Has overhang (ovhg defined)
-  - No degenerate bases in recognition site
-  - Commercially available
-  - Available from NEB
-  - Overhang length 2-5bp
-  - Good ligation efficiency (not "low")
-  - No star activity
-  
-- Site-specific filters:
-  - Site II: Regular enzymes (non-Type IIS), ovhg ∈ {-4, +2}
-  - Site III: Type IIS enzymes, ovhg ∈ {-4, +2}
-  - Site I: Same as Site II (for seamless insertion)
-
-- Pre-filtered enzyme mode is enabled automatically when CSV files are found
-- Falls back gracefully to inline filtering if files missing
+The original write-up of the export changes is preserved at
+[`../reports/ENZYME_SELECTION_PIPELINE_CHANGES.md`](../reports/ENZYME_SELECTION_PIPELINE_CHANGES.md).

@@ -1,3 +1,15 @@
+# Workflow: HURDLER Three-Site Combinations
+
+> **Layout note (May 2026 reconstruction).**
+> Canonical code now lives in [`../../src/hurdler/`](../../src/hurdler/):
+> `pipeline.py`, `query.py`, `validate.py`, `utils.py`. The reference
+> inputs that used to live under `utils/output/` and `hurdler_analysis/input/`
+> are now under [`../../data/reference_output/`](../../data/reference_output/)
+> and [`../../data/hurdler_analysis_input/`](../../data/hurdler_analysis_input/).
+> Generated artifacts go to [`../../output/`](../../output/) (gitignored).
+> Earlier paths mentioned below have been updated where possible; if you
+> see a stale reference, the canonical location is in the table above.
+
 # HURDLER Three-Site Combination Analysis
 
 This toolkit identifies and queries valid three-site restriction enzyme combinations for the HURDLER (Hidden Unremovable RE sites in Disposable Linker for Efficient Repeat protein cloning) method.

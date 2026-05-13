@@ -172,15 +172,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-SEC/input/20250530_sec_result_total.mat
-SEC/output/processed_sec_data.csv.gzip
-
-# GA output artifacts (large)
-codon_opt_benchmark-1/codon_opt_results*/
-codon_opt_benchmark-1/codon_opt_results_m12/
-codon_opt_benchmark-1/codon_opt_results_m13/
-codon_opt_benchmark-1/codon_opt_results_m13_low/
-codon_opt_benchmark-1/*.xlsx
+# GA output artifacts (large) - codon optimisation benchmark
+codon_opt_benchmark_extended/codon_opt_results*/
+codon_opt_benchmark_extended/codon_opt_results_m12/
+codon_opt_benchmark_extended/codon_opt_results_m13/
+codon_opt_benchmark_extended/codon_opt_results_m13_low/
+codon_opt_benchmark_extended/*.xlsx
 
 # Ignore all .mat files (MATLAB data files)
 *.mat
@@ -196,7 +193,14 @@ codon_opt_benchmark-1/*.xlsx
 # Ignore Mac system files
 .DS_Store
 ._*
-# Large data files (>50MB) - must be ignored
+
+# All generated HURDLER artifacts: keep output/ working folder out of git.
+# Reference inputs/outputs live under data/, archived snapshots under archive/.
+output/*
+!output/.gitkeep
+!output/README.md
+
+# Large data files explicitly enumerated for historical reference
 output/hurdler_fast_match_package.pkl
 output/hurdler_pattern_lookup.pkl
 output/hurdler_lookup_pattern_based.pkl
@@ -206,8 +210,10 @@ output/hurdler_site_i_site_ii_combinations_df2.csv
 output/hurdler_site_i_site_ii_combinations_df2_temp.csv
 output/hurdler_plasmid_patterns.pkl
 
-# Large hurdler analysis outputs (>100MB)
-hurdler_analysis/output/hurdler_three_site_combinations_df2_optimized.csv
-
 # Large SEC data files
 SEC/output/processed_sec_data.csv.gzip
+SEC/input/20250530_sec_result_total.mat
+
+# Executed notebook scratch
+notebooks/**/*-executed.ipynb
+notebooks/**/.ipynb_checkpoints/
