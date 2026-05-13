@@ -18,22 +18,80 @@ The repository is organised so that:
 ## What lives where
 
 ```
-README.md                  ← you are here
-LICENSE
-envs/                      Conda environment files (codon_opt, visualization)
-src/hurdler/               Maintained Python package (pipeline, query, validate, …)
-notebooks/                 Guided analyses, grouped by topic
-tests/                     Smoke / regression tests
-scripts/                   CLI helpers
-docs/                      All maintained documentation (start at docs/README.md)
-data/                      Small reference inputs and curated reference outputs
-output/                    Generated artifacts (GIT-IGNORED)
-codon_opt_benchmark_extended/  Subproject: codon-optimisation benchmark
-agarose_gel_analysis/      Subproject: agarose-gel quantification
-SEC/                       Subproject: size-exclusion chromatography
-plasmid_sequencing_result/ Reference sequencing data (Genbank / annotated HTML)
-archive/                   Historical, duplicate, and exploratory files (read-only)
+clone_repeat_protein/
+├── README.md                    ← you are here
+├── LICENSE
+├── envs/                        Conda environment files                  → envs/README.md
+│   ├── codon_opt.yml
+│   └── visualization.yml
+│
+├── src/                         Maintained Python source                 → src/README.md
+│   └── hurdler/                 HURDLER cloning toolkit                  → src/hurdler/README.md
+│       ├── pipeline.py          Full df1 → df2 → lookup pipeline
+│       ├── query.py             Lookup CLI / library
+│       ├── validate.py          Data validation + statistics
+│       ├── success_rate.py      Random-sequence success-rate analysis
+│       └── utils.py             Shared enzyme / plasmid helpers
+│
+├── notebooks/                   Topic-grouped Jupyter notebooks          → notebooks/README.md
+│   ├── hurdler/                 HURDLER three-site + success-rate        → notebooks/hurdler/README.md
+│   ├── enzyme_selection/        Site I/II/III curation                   → notebooks/enzyme_selection/README.md
+│   ├── codon_optimization/      Codon-optimisation experiments           → notebooks/codon_optimization/README.md
+│   ├── agarose_gel/             Agarose-gel analysis notebooks           → notebooks/agarose_gel/README.md
+│   ├── sec/                     Size-exclusion chromatography            → notebooks/sec/README.md
+│   └── utils/                   Reference-data curation notebooks        → notebooks/utils/README.md
+│
+├── tests/                       Maintained smoke / regression tests      → tests/README.md
+├── scripts/                     CLI helpers                              → scripts/README.md
+│
+├── docs/                        All maintained documentation             → docs/README.md
+│   ├── architecture.md          High-level architecture + data flow
+│   ├── glossary.md              Domain terminology
+│   ├── contributing.md          File-placement and naming rules
+│   ├── workflows/               Per-workflow guides                      → docs/workflows/README.md
+│   │   ├── hurdler_site_combinations.md
+│   │   ├── hurdler_success_rate.md
+│   │   └── enzyme_selection.md
+│   └── reports/                 Historical writeups (read-only)          → docs/reports/README.md
+│
+├── data/                        Small, committed reference data          → data/README.md
+│   ├── reference_input/         Source databases (REBASE, NEB, FASTA, …) → data/reference_input/README.md
+│   ├── reference_output/        Curated CSVs derived from above          → data/reference_output/README.md
+│   ├── hurdler_analysis_input/  Inputs consumed by pipeline.py           → data/hurdler_analysis_input/README.md
+│   └── example_batch_query.csv  Example input for `hurdler.query --batch`
+│
+├── output/                      Generated artifacts (GIT-IGNORED)        → output/README.md
+│
+├── codon_opt_benchmark_extended/   Subproject: GA codon optimisation     → codon_opt_benchmark_extended/README.md
+│   ├── src/                                                              → .../src/README.md
+│   ├── tasks/                                                            → .../tasks/README.md
+│   └── results/                                                          → .../results/README.md
+│
+├── agarose_gel_analysis/        Subproject: agarose-gel quantification   → agarose_gel_analysis/README.md
+│   ├── src/                     GUIs + .scn readers                      → .../src/README.md
+│   ├── data/                    Gel images / .scn files                  → .../data/README.md
+│   └── output/                  Band / lane statistics                   → .../output/README.md
+│
+├── SEC/                         Subproject: size-exclusion chromatography → SEC/README.md
+│   ├── src/                     sec_utils.py                             → SEC/src/README.md
+│   ├── input/                   Raw .mat exports (gitignored)            → SEC/input/README.md
+│   └── output/                  Per-figure PDFs                          → SEC/output/README.md
+│
+├── plasmid_sequencing_result/   Sequenced-construct reference data       → plasmid_sequencing_result/README.md
+│
+└── archive/                     Read-only historical / duplicate files   → archive/README.md
+    ├── scripts/                 Legacy generation / debug scripts        → archive/scripts/README.md
+    ├── tests/                   Ad-hoc / one-off test scripts            → archive/tests/README.md
+    ├── notebooks/               Backup / executed notebook variants      → archive/notebooks/README.md
+    ├── artifacts/               Large / one-off binary outputs           → archive/artifacts/README.md
+    ├── docs/                    Retired documentation                    → archive/docs/README.md
+    ├── agarose_gel_analysis/    Earlier GUI / test variants              → archive/agarose_gel_analysis/README.md
+    ├── get_re_dict/             First-iteration enzyme-reference work    → archive/get_re_dict/README.md
+    └── sec_temp_plots/          Scratch SEC plots                        → archive/sec_temp_plots/README.md
 ```
+
+Every folder above has its own short `README.md` that explains its
+contents in more detail. Click any entry in the tree.
 
 For a deeper view see [`docs/architecture.md`](docs/architecture.md).
 For terminology see [`docs/glossary.md`](docs/glossary.md).

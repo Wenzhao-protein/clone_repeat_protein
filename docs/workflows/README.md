@@ -1,14 +1,13 @@
-# Workflow Guides
+# docs/workflows
 
-Each file here describes one maintained workflow end-to-end: its goal,
-inputs, outputs, code entry points, and the notebooks that demonstrate
-it.
+Per-workflow guides. Each describes one maintained workflow end-to-end
+(goal, inputs, code entry points, outputs, related notebooks).
 
-| Workflow | Guide |
-|----------|-------|
-| HURDLER three-site combinations | [`hurdler_site_combinations.md`](hurdler_site_combinations.md) |
-| HURDLER success-rate analysis | [`hurdler_success_rate.md`](hurdler_success_rate.md) |
-| Restriction-enzyme selection / pairing | [`enzyme_selection.md`](enzyme_selection.md) |
+| Guide | Workflow |
+|-------|----------|
+| [`hurdler_site_combinations.md`](hurdler_site_combinations.md) | HURDLER three-site combinations: build df1, df2, lookup. |
+| [`hurdler_success_rate.md`](hurdler_success_rate.md) | Success-rate analysis over random sequences. |
+| [`enzyme_selection.md`](enzyme_selection.md) | Curating eligible enzymes for Site I/II/III. |
 
-For terminology, see [`../glossary.md`](../glossary.md).
-For the bigger picture, see [`../architecture.md`](../architecture.md).
+For terminology see [`../glossary.md`](../glossary.md);
+for the bigger picture see [`../architecture.md`](../architecture.md).
