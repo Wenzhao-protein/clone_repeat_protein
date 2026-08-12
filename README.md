@@ -8,9 +8,14 @@
 
 - **Colab:** use the badge above to open the review branch immediately. The
   notebook clones that exact branch, installs the locked project extras, and
-  exposes the full vector-aware workflow as compact forms. Choose
-  **Runtime → Run all**, then work through the input fields and menus; code is
-  hidden by default and can be inspected by double-clicking a form header.
+  exposes the full vector-aware workflow as native Colab Forms. Protein,
+  boundary, plasmid/RE, GA, IDT, and output fields are visible immediately;
+  no setup cell needs to be opened. Fill in the forms and choose
+  **Runtime → Run all** to install and query. Review the resulting route table,
+  explicitly select and confirm one RE-pair/vector route, then press the visible
+  **Optimize / export** button. Full-protein inputs without confirmed boundaries
+  intentionally stop after proposing boundary candidates. Code remains hidden
+  unless **Show code** is selected.
   After this branch is merged, the
   permanent [main-branch Colab link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb)
   provides the same entry point.
@@ -20,6 +25,10 @@
 Both interfaces use the same `hurdler.vector_design` implementation.
 Credentials and IDT scoring stay inside the active Colab or local process; the
 software produces design files only and never submits an order.
+
+For live IDT scoring in Colab, add either `IDT_ACCESS_TOKEN`, or all of
+`IDT_CLIENT_ID`, `IDT_CLIENT_SECRET`, `IDT_USERNAME`, and `IDT_PASSWORD`, in the
+left-side **Secrets** panel. Do not paste credentials into a notebook form.
 
 ## Local web designer
 

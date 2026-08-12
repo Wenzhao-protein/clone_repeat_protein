@@ -1,6 +1,6 @@
 # Notebooks
 
-Start here: **[`workflows/01_interactive_hurdler_designer.ipynb`](workflows/01_interactive_hurdler_designer.ipynb)** — the annotation-aware v2 Jupyter designer. The [current Colab preview](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb), [main-branch Colab entry](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb), and local `./scripts/start_hurdler_web.sh` page use the same controller.
+Start here: **[`workflows/01_interactive_hurdler_designer.ipynb`](workflows/01_interactive_hurdler_designer.ipynb)** — the annotation-aware v2 Jupyter designer. The [current Colab preview](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) shows native input forms before execution, then creates a manual route selector after `Runtime → Run all`; the [main-branch Colab entry](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb) and local `./scripts/start_hurdler_web.sh` page use the same scientific controller.
 
 The canonical notebooks are deliberately thin.
 
