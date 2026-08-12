@@ -178,7 +178,7 @@ def _(mo, pd, query_result):
 @app.cell
 def _(json, mo, query_result, route_choice):
     mo.stop(query_result is None or not query_result.vector_routes or route_choice is None)
-    validation = mo.ui.dropdown({"No optimization": "none", "Live IDT API score": "api", "IDT Bulk Input files": "batch"}, value="No optimization", label="Validation")
+    validation = mo.ui.dropdown({"No optimization": "none", "Live IDT API score": "api", "IDT Bulk Input files": "batch"}, value="Live IDT API score", label="Validation")
     credential_mode = mo.ui.dropdown({"External mode-600 env file": "path", "Manual OAuth": "manual", "Temporary env upload": "upload"}, value="External mode-600 env file", label="Credentials")
     credential_path = mo.ui.text(label="External credential path")
     client_id = mo.ui.text(kind="password", label="Client ID")
@@ -188,24 +188,32 @@ def _(json, mo, query_result, route_choice):
     access_token = mo.ui.text(kind="password", label="Access token")
     upload = mo.ui.file(filetypes=[".env"], multiple=False, label="Temporary env upload")
     population = mo.ui.slider(4, 256, value=16, step=4, label="GA population")
-    max_copies = mo.ui.number(value=20, start=2, stop=10000, label="Maximum repeat copies / resource limit")
+    minimum_secondary = mo.ui.number(value=12, start=1, stop=1000, label="Minimum secondary modules (N)")
+    feedback_rounds = mo.ui.number(value=100, start=1, stop=1000, label="Maximum GA→IDT feedback rounds")
+    generations_per_round = mo.ui.number(value=10, start=1, stop=1000, label="GA generations per feedback round")
+    elite_seed_count = mo.ui.number(value=10, start=1, stop=256, label="Warm-start top candidates")
     mutation = mo.ui.slider(0.001, 0.5, value=0.08, step=0.001, label="Mutation")
     crossover = mo.ui.slider(0.0, 1.0, value=0.75, step=0.01, label="Crossover")
     elite = mo.ui.slider(0.01, 0.5, value=0.15, step=0.01, label="Elite fraction")
     seed = mo.ui.number(value=42, label="Seed")
     auto_feedback = mo.ui.checkbox(True, label="Auto-adjust GA weights from IDT positive rules")
+    auto_parameter_feedback = mo.ui.checkbox(True, label="Adapt population / mutation / crossover from IDT score")
     weight_json = mo.ui.text_area(value=json.dumps({"selected_re_site_excess": 1e9, "repeated_re_site_excess": 1e4, "gc_window_violation": 1e9, "gc_window_soft_violation": 100, "repeated_8mer": 5, "repeated_13mer": 100, "repeated_14mer": 250, "hairpin_10mer_proxy": 25, "homopolymer_excess": 250, "terminal_repeat_proxy": 100, "negative_log_cai": 50}, sort_keys=True), label="GA score weights (JSON)")
     output_dir = mo.ui.text(value="output/marimo_vector_aware_design", label="Output directory")
     design_button = mo.ui.run_button(label="2. Optimize / export design files")
     mo.vstack([
         validation, credential_mode, credential_path,
         mo.hstack([client_id, client_secret]), mo.hstack([username, password]), access_token, upload,
-        mo.hstack([population, max_copies, mutation]), mo.hstack([crossover, elite]), mo.hstack([seed, auto_feedback]),
+        mo.hstack([minimum_secondary, feedback_rounds]),
+        mo.hstack([population, mutation]), mo.hstack([crossover, elite]),
+        mo.hstack([generations_per_round, elite_seed_count]),
+        mo.hstack([seed, auto_feedback]), auto_parameter_feedback,
         weight_json, output_dir, design_button,
     ])
     return (
         access_token,
         auto_feedback,
+        auto_parameter_feedback,
         client_id,
         client_secret,
         credential_mode,
@@ -213,7 +221,10 @@ def _(json, mo, query_result, route_choice):
         crossover,
         design_button,
         elite,
-        max_copies,
+        elite_seed_count,
+        feedback_rounds,
+        generations_per_round,
+        minimum_secondary,
         mutation,
         output_dir,
         password,
@@ -235,6 +246,7 @@ def _(
     Path,
     access_token,
     auto_feedback,
+    auto_parameter_feedback,
     client_id,
     client_secret,
     configure_idt_credentials,
@@ -247,8 +259,11 @@ def _(
     design_button,
     design_construct_v2,
     elite,
+    elite_seed_count,
+    feedback_rounds,
+    generations_per_round,
     json,
-    max_copies,
+    minimum_secondary,
     mo,
     mutation,
     output_dir,
@@ -282,8 +297,7 @@ def _(
         query=current_query,
         selection=DesignSelection(route["candidate_id"], route["profile_id"], route["scheme_id"], route["site_iii_options"][0]),
         validation_mode=validation.value,
-        assembly_strategy="legacy_adaptive_max" if current_query.input_mode == "split" else "single_exact",
-        max_repeat_copies=int(max_copies.value) if current_query.input_mode == "split" else None,
+        assembly_strategy="exact_reused_secondary_rdl" if current_query.input_mode == "split" else "single_exact",
         population_size=int(population.value),
         mutation_rate=float(mutation.value),
         crossover_rate=float(crossover.value),
@@ -292,6 +306,11 @@ def _(
         generation_schedule=(10, 20, 40, 60, 80, 100),
         score_weights=json.loads(weight_json.value),
         auto_adjust_weights_from_idt=auto_feedback.value,
+        minimum_secondary_copies=int(minimum_secondary.value),
+        max_idt_feedback_rounds=int(feedback_rounds.value),
+        generations_per_feedback_round=int(generations_per_round.value),
+        elite_seed_count=int(elite_seed_count.value),
+        auto_adjust_ga_parameters_from_idt=auto_parameter_feedback.value,
     )
     design_result = design_construct_v2(request, idt_scorer=scorer)
     exported = write_design_outputs_v2(design_result, output_dir.value)

@@ -6,8 +6,9 @@ import json
 import hashlib
 import math
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -51,6 +52,31 @@ GA_SCORE_PROFILE = {
 
 IDT_FEEDBACK_MULTIPLIER = 2.0
 GA_RE_SITE_POLICY = "nonselected-re-sites-soft-score-selected-sites-hard-v2"
+
+
+@dataclass
+class GAPopulationState:
+    """Serializable warm-start state for a continuous synonymous GA run."""
+
+    protein_sequence: str
+    elite_sequences: tuple[str, ...] = ()
+    total_generations: int = 0
+    rng_state: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self, *, include_sequences: bool = True) -> dict[str, Any]:
+        payload = {
+            "protein_sequence": self.protein_sequence,
+            "total_generations": int(self.total_generations),
+            "rng_state": self.rng_state,
+            "elite_count": len(self.elite_sequences),
+            "elite_sha256": [
+                hashlib.sha256(sequence.encode()).hexdigest()
+                for sequence in self.elite_sequences
+            ],
+        }
+        if include_sequences:
+            payload["elite_sequences"] = list(self.elite_sequences)
+        return payload
 
 
 def load_restriction_sites(path: str | Path) -> tuple[str, ...]:
@@ -244,6 +270,9 @@ def genetic_refine_dna(
     crossover_rate: float = 1.0,
     elite_fraction: float = 0.125,
     score_profile: dict[str, float] | None = None,
+    population_state: GAPopulationState | None = None,
+    elite_seed_count: int = 6,
+    capture_population_state: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_context: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
@@ -260,6 +289,11 @@ def genetic_refine_dna(
         codon_weights,
     )
     rng = np.random.default_rng(seed)
+    if population_state is not None:
+        if population_state.protein_sequence != protein:
+            raise ValueError("Warm-start GA state encodes a different protein")
+        if population_state.rng_state:
+            rng.bit_generator.state = population_state.rng_state
     cache: dict[str, dict[str, Any]] = {}
     profile = dict(GA_SCORE_PROFILE if score_profile is None else score_profile)
     context = dict(progress_context or {})
@@ -296,9 +330,26 @@ def genetic_refine_dna(
             child[position] = str(rng.choice(choices, p=weights))
         return "".join(child)
 
-    population = [repaired]
+    elite_seed_count = int(elite_seed_count)
+    if elite_seed_count < 1:
+        raise ValueError("elite_seed_count must be at least one")
+    warm_sequences: list[str] = []
+    if population_state is not None:
+        for sequence in population_state.elite_sequences:
+            if len(sequence) != len(repaired) or translate_dna(sequence) != protein:
+                continue
+            if any(
+                sequence[position * 3 : position * 3 + 3]
+                != dna[position * 3 : position * 3 + 3]
+                for position in locked_positions
+            ):
+                continue
+            warm_sequences.append(sequence)
+    population = list(dict.fromkeys([*warm_sequences, repaired]))
+    seed_pool = tuple(population)
     while len(population) < population_size:
-        population.append(mutate(repaired, max(mutation_rate, 0.03)))
+        parent = seed_pool[len(population) % len(seed_pool)]
+        population.append(mutate(parent, max(mutation_rate, 0.03)))
     initial_metrics = metrics(dna)
     best = repaired
     for _generation in range(generations):
@@ -308,7 +359,7 @@ def genetic_refine_dna(
         )
         if metrics(population[0])["ga_score"] < metrics(best)["ga_score"]:
             best = population[0]
-        parents = population[: max(2, min(6, len(population)))]
+        parents = population[: max(2, min(elite_seed_count, len(population)))]
         elite_count = max(1, min(len(parents), round(population_size * float(elite_fraction))))
         next_population = parents[:elite_count]
         while len(next_population) < population_size:
@@ -339,10 +390,11 @@ def genetic_refine_dna(
             elapsed_seconds=time.monotonic() - started,
             **context,
         )
-    best = min(
-        [best, *population],
+    ranked_population = sorted(
+        set([best, *population]),
         key=lambda sequence: (metrics(sequence)["ga_score"], sequence),
     )
+    best = ranked_population[0]
     best = _repair_site_limits(
         best,
         protein,
@@ -373,6 +425,50 @@ def genetic_refine_dna(
             "ga_score_profile_json": json.dumps(profile, sort_keys=True),
         }
     )
+    if capture_population_state:
+        state_candidates = set([best, *ranked_population])
+        fill_attempts = 0
+        fill_limit = max(50, elite_seed_count * 50)
+        fill_parents = tuple(state_candidates) or (repaired,)
+        while len(state_candidates) < elite_seed_count and fill_attempts < fill_limit:
+            parent = fill_parents[fill_attempts % len(fill_parents)]
+            state_candidates.add(mutate(parent, max(float(mutation_rate), 0.10)))
+            fill_attempts += 1
+        final_ranked = sorted(
+            state_candidates,
+            key=lambda sequence: (metrics(sequence)["ga_score"], sequence),
+        )[:elite_seed_count]
+        elite_rows = []
+        for rank, sequence in enumerate(final_ranked, start=1):
+            row_metrics = metrics(sequence)
+            elite_rows.append(
+                {
+                    "rank": rank,
+                    "dna_sequence": sequence,
+                    "dna_sha256": hashlib.sha256(sequence.encode()).hexdigest(),
+                    "ga_score": float(row_metrics["ga_score"]),
+                    "ga_local_constraints_passed": bool(
+                        row_metrics["ga_local_constraints_passed"]
+                    ),
+                    "selected_pair_re_site_excess": int(
+                        row_metrics["selected_pair_re_site_excess"]
+                    ),
+                    "repeated_re_site_excess": int(
+                        row_metrics["repeated_re_site_excess"]
+                    ),
+                }
+            )
+        next_state = GAPopulationState(
+            protein_sequence=protein,
+            elite_sequences=tuple(row["dna_sequence"] for row in elite_rows),
+            total_generations=(
+                int(population_state.total_generations) if population_state else 0
+            )
+            + int(generations),
+            rng_state=json.loads(json.dumps(rng.bit_generator.state)),
+        )
+        final_metrics["ga_elite_candidates"] = elite_rows
+        final_metrics["ga_population_state"] = next_state
     emit_progress(
         progress_callback,
         stage="ga",

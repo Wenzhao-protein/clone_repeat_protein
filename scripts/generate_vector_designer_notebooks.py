@@ -188,11 +188,16 @@ access_token = widgets.Password(description="Access token")
 credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False, description="Temporary env")
 population = widgets.IntSlider(value=16, min=4, max=256, step=4, description="Population")
 max_copies = widgets.BoundedIntText(value=20, min=2, max=10000, description="Max copies")
+minimum_secondary = widgets.BoundedIntText(value=12, min=1, max=1000, description="Min secondary")
+feedback_rounds = widgets.BoundedIntText(value=100, min=1, max=1000, description="IDT rounds")
+generations_per_round = widgets.BoundedIntText(value=10, min=1, max=1000, description="GA/round")
+elite_seed_count = widgets.BoundedIntText(value=10, min=1, max=256, description="Top seeds")
 mutation = widgets.FloatSlider(value=0.08, min=0.001, max=0.5, step=0.001, description="Mutation")
 crossover = widgets.FloatSlider(value=0.75, min=0, max=1, step=0.01, description="Crossover")
 elite = widgets.FloatSlider(value=0.15, min=0.01, max=0.5, step=0.01, description="Elite")
 seed = widgets.IntText(value=42, description="Seed")
 auto_feedback = widgets.Checkbox(True, description="Auto-adjust weights from IDT rules")
+auto_parameter_feedback = widgets.Checkbox(True, description="Auto-adjust GA parameters")
 weights = widgets.Textarea(value=json.dumps({
     "selected_re_site_excess": 1e9, "repeated_re_site_excess": 1e4,
     "gc_window_violation": 1e9, "gc_window_soft_violation": 100,
@@ -271,8 +276,7 @@ def _run_design(_=None):
             query=_current_query(),
             selection=DesignSelection(route["candidate_id"], route["profile_id"], route["scheme_id"], route["site_iii_options"][0]),
             validation_mode=validation_mode.value,
-            assembly_strategy="legacy_adaptive_max" if input_mode.value == "split" else "single_exact",
-            max_repeat_copies=max_copies.value if input_mode.value == "split" else None,
+            assembly_strategy="exact_reused_secondary_rdl" if input_mode.value == "split" else "single_exact",
             population_size=population.value,
             mutation_rate=mutation.value,
             crossover_rate=crossover.value,
@@ -281,6 +285,11 @@ def _run_design(_=None):
             generation_schedule=(10, 20, 40, 60, 80, 100),
             score_weights=json.loads(weights.value),
             auto_adjust_weights_from_idt=auto_feedback.value,
+            minimum_secondary_copies=minimum_secondary.value,
+            max_idt_feedback_rounds=feedback_rounds.value,
+            generations_per_feedback_round=generations_per_round.value,
+            elite_seed_count=elite_seed_count.value,
+            auto_adjust_ga_parameters_from_idt=auto_parameter_feedback.value,
         )
         result = design_construct_v2(request, idt_scorer=scorer)
         files = write_design_outputs_v2(result, output_dir.value)
@@ -308,7 +317,10 @@ run_button.on_click(_run_design)
 download_button.on_click(_download_design)
 display(widgets.VBox([
     validation_mode, credential_controls,
-    widgets.HBox([population, max_copies, mutation]), widgets.HBox([crossover, elite]), widgets.HBox([seed, auto_feedback]),
+    widgets.HBox([minimum_secondary, feedback_rounds]),
+    widgets.HBox([population, mutation]), widgets.HBox([crossover, elite]),
+    widgets.HBox([generations_per_round, elite_seed_count]),
+    widgets.HBox([seed, auto_feedback]), auto_parameter_feedback,
     weights, output_dir, run_button, download_button, run_output,
 ]))
 '''
@@ -1168,9 +1180,31 @@ population_card, population_number = _numeric_control("Population", 16, 4, 256, 
 mutation_card, mutation_number = _numeric_control("Mutation rate", 0.08, 0.001, 0.5, 0.001)
 crossover_card, crossover_number = _numeric_control("Crossover rate", 0.75, 0.0, 1.0, 0.01)
 elite_card, elite_number = _numeric_control("Elite fraction", 0.15, 0.01, 0.5, 0.01)
+minimum_secondary_card, minimum_secondary_number = _numeric_control(
+    "Minimum secondary modules (N)", 12, 1, 1000, 1, integer=True
+)
+feedback_round_card, feedback_round_number = _numeric_control(
+    "Maximum GA→IDT feedback rounds", 100, 1, 1000, 1, integer=True
+)
+generations_per_round_card, generations_per_round_number = _numeric_control(
+    "GA generations per feedback round", 10, 1, 1000, 1, integer=True
+)
+elite_seed_card, elite_seed_number = _numeric_control(
+    "Warm-start top candidates", 10, 1, 256, 1, integer=True
+)
+max_population_card, max_population_number = _numeric_control(
+    "Adaptive population cap", 256, 4, 2048, 4, integer=True
+)
+max_mutation_card, max_mutation_number = _numeric_control(
+    "Adaptive mutation cap", 0.35, 0.001, 1.0, 0.001
+)
+max_crossover_card, max_crossover_number = _numeric_control(
+    "Adaptive crossover cap", 0.95, 0.0, 1.0, 0.01
+)
 seed_number = widgets.IntText(value=42, description="Random seed")
 generation_schedule_widget = widgets.Text(value="10,20,40,60,80,100", description="Generations")
 auto_weight_feedback = widgets.Checkbox(value=True, description="Adjust weights from IDT positive rules")
+auto_parameter_feedback = widgets.Checkbox(value=True, description="Adapt population / mutation / crossover from IDT score")
 
 weight_defaults = {
     "selected_re_site_excess": 1_000_000_000.0,
@@ -1200,8 +1234,13 @@ def _two_per_row(items):
 
 advanced_panel = widgets.VBox([
     _two_per_row([population_card, mutation_card, crossover_card, elite_card]),
+    _two_per_row([
+        generations_per_round_card, elite_seed_card,
+        max_population_card, max_mutation_card, max_crossover_card,
+    ]),
     widgets.HBox([seed_number, generation_schedule_widget]),
-    widgets.HBox([auto_weight_feedback, verbose_generations]),
+    widgets.HBox([auto_weight_feedback, auto_parameter_feedback]),
+    verbose_generations,
     widgets.HTML("<b>GA score weights</b>"),
     _two_per_row(list(weight_widgets.values())),
 ])
@@ -1250,20 +1289,34 @@ def _progress_update(event: DesignProgressEvent):
         generation_progress.value = min(generation_progress.max, int(event.generation or 0))
     current_html.value = (
         f"<b>{event.fragment_kind or 'design'}</b> · copies={event.copies if event.copies is not None else '—'} "
+        f"· feedback={event.feedback_round if event.feedback_round is not None else '—'}/"
+        f"{event.max_feedback_rounds if event.max_feedback_rounds is not None else '—'} "
         f"· generation={event.generation if event.generation is not None else '—'}/"
         f"{event.generations if event.generations is not None else '—'} "
         f"· best score={event.ga_score if event.ga_score is not None else '—'} "
+        f"· IDT={event.idt_score if event.idt_score is not None else '—'} "
+        f"· pop/mut/xover={event.population_size or '—'}/"
+        f"{event.mutation_rate if event.mutation_rate is not None else '—'}/"
+        f"{event.crossover_rate if event.crossover_rate is not None else '—'} "
         f"· elapsed={event.elapsed_seconds or 0:.1f}s"
     )
-    keep = event.status in {"attempt_completed", "request_completed", "completed", "failed"}
+    keep = event.status in {
+        "attempt_completed", "request_completed", "completed", "failed",
+        "parameters_adjusted", "no_novel_candidate",
+    }
     keep = keep or (verbose_generations.value and event.stage == "ga")
     if keep:
         lines = [
             f"{row['stage']:<12} {row['status']:<18} {row.get('fragment_kind') or '-':<10} "
-            f"copies={row.get('copies')} gen={row.get('generation')}/{row.get('generations')} "
-            f"score={row.get('ga_score')}"
+            f"copies={row.get('copies')} feedback={row.get('feedback_round')}/{row.get('max_feedback_rounds')} "
+            f"gen={row.get('generation')}/{row.get('generations')} score={row.get('ga_score')} "
+            f"idt={row.get('idt_score')} pop={row.get('population_size')} "
+            f"mut={row.get('mutation_rate')} xover={row.get('crossover_rate')}"
             for row in state["progress_events"][-16:]
-            if row["status"] in {"attempt_completed", "request_completed", "completed", "failed"}
+            if row["status"] in {
+                "attempt_completed", "request_completed", "completed", "failed",
+                "parameters_adjusted", "no_novel_candidate",
+            }
             or (verbose_generations.value and row["stage"] == "ga")
         ]
         attempt_log_html.value = "<pre>" + "\n".join(lines[-12:]) + "</pre>"
@@ -1396,6 +1449,14 @@ def _run_design(_button=None):
             generation_schedule=_generation_schedule(),
             score_weights={name: float(widget.value) for name, widget in weight_widgets.items()},
             auto_adjust_weights_from_idt=bool(auto_weight_feedback.value),
+            minimum_secondary_copies=int(minimum_secondary_number.value),
+            max_idt_feedback_rounds=int(feedback_round_number.value),
+            generations_per_feedback_round=int(generations_per_round_number.value),
+            elite_seed_count=int(elite_seed_number.value),
+            auto_adjust_ga_parameters_from_idt=bool(auto_parameter_feedback.value),
+            max_population_size=int(max_population_number.value),
+            max_mutation_rate=float(max_mutation_number.value),
+            max_crossover_rate=float(max_crossover_number.value),
         )
         result = design_construct_v2(request, idt_scorer=scorer, progress_callback=_progress_update)
         files = write_design_outputs_v2(result, output_directory)
@@ -1437,6 +1498,7 @@ credential_upload_row = widgets.HBox([credential_path, credential_upload])
 basic_panel = widgets.VBox([
     settings_mode,
     widgets.HBox([validation_mode_widget, auto_download_widget]),
+    _two_per_row([minimum_secondary_card, feedback_round_card]),
     credential_source,
     credential_upload_row,
     credential_help,

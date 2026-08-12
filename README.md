@@ -65,8 +65,17 @@ aware cutter-silencing decision. For split inputs, the Colab workflow treats
 the requested copy count as exact. It independently optimizes a cap-containing
 primary and one reusable secondary, then proves
 `primary + rounds × secondary = target` at every RDL intermediate. Live
-progress reports fragment, copy count, generation, GA score, IDT result, and
-elapsed time. Every successful bundle also contains IDT Bulk Input
+progress reports fragment, copy count, GA→IDT feedback round, generation,
+population/mutation/crossover settings, GA score, IDT score, and elapsed time.
+The bundled 25-copy example requires a reusable secondary of at least 12
+modules by default. Unless the whole target fits one accepted primary, the
+search must first pass that floor and will never silently fall back to a shorter
+donor. Each live-IDT rejection warm-starts from the ten best distinct GA
+candidates; score tiers automatically increase population and mutation/
+crossover settings within documented caps. The default limit is 100 feedback
+rounds of 10 GA generations per tested copy count. Missing or non-numeric IDT
+scores stop with an explicit error rather than being treated as a rejection.
+Every successful bundle also contains IDT Bulk Input
 CSV/TSV/FASTA. It never uses IDT codon optimization and never submits an order.
 Run the local page with `hurdler web`.
 
@@ -227,7 +236,9 @@ summed and the exact GA DNA passes only when the total is strictly below 10
 sequence by itself. Positive-score rule names, actual values and thresholds are
 retained and mapped back to GA weights for GC, hairpins/palindromes,
 homopolymers, terminal repeats, restriction sites, and 8/13/14-mer repeats.
-Missing or non-numeric scores are unclassified and cannot pass. Credentials are
+Missing or non-numeric scores are unclassified and cannot pass; in the
+interactive live-API workflow they are fatal `idt_score_error` results so the
+GA cannot optimize against absent feedback. Credentials are
 loaded only from a user-selected, repo-external mode-600 env file; values and
 the resolved private path are never copied to code,
 notebooks, manifests, logs, or Git.

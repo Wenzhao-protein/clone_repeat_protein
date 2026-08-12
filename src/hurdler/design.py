@@ -705,6 +705,10 @@ def _score_fragments(
                 "idt_violation_names_json": summary.get("idt_violation_names_json", "[]"),
                 "idt_response_sha256": summary.get("idt_response_sha256", ""),
                 "idt_scored_sequence_sha256": observed_sha,
+                "idt_score_complete": summary.get("idt_score_complete", False),
+                "idt_invalid_score_names_json": summary.get(
+                    "idt_invalid_score_names_json", "[]"
+                ),
             }
         )
         scored.append(row)
@@ -721,6 +725,10 @@ def _score_fragments(
                 "idt_violation_names_json": summary.get("idt_violation_names_json", "[]"),
                 "response_sha256": summary.get("idt_response_sha256", ""),
                 "idt_error_type": summary.get("idt_error_type", ""),
+                "idt_score_complete": summary.get("idt_score_complete", False),
+                "idt_invalid_score_names_json": summary.get(
+                    "idt_invalid_score_names_json", "[]"
+                ),
             }
         )
     return all_passed, scored, audit

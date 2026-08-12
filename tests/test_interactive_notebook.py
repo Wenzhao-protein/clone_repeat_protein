@@ -145,6 +145,14 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert 'assembly_strategy="exact_reused_secondary_rdl"' in controller
     assert "widgets.BoundedIntText" in controller
     assert "widgets.BoundedFloatText" in controller
+    assert '"Minimum secondary modules (N)", 12' in controller
+    assert '"Maximum GA→IDT feedback rounds", 100' in controller
+    assert '"GA generations per feedback round", 10' in controller
+    assert '"Warm-start top candidates", 10' in controller
+    assert "minimum_secondary_copies=int(minimum_secondary_number.value)" in controller
+    assert "max_idt_feedback_rounds=int(feedback_round_number.value)" in controller
+    assert "auto_adjust_ga_parameters_from_idt=bool(auto_parameter_feedback.value)" in controller
+    assert "feedback={event.feedback_round" in controller
     assert 'ga_panel.layout.display = "none"' in controller
     assert "credential_upload.value = ()" not in controller
     assert "_clear_credential_upload()" in controller
@@ -311,11 +319,17 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
     summary = json.loads((tmp_path / "batch" / "design_summary.json").read_text())
     assert summary["status"] == "optimized_unvalidated_batch"
     assert summary["idt_audit"] == []
+    assert summary["rdl_plan"]["secondary_repeat_copies"] >= 12
+    assert summary["rdl_plan"]["minimum_secondary_satisfied"] is True
     assert (tmp_path / "batch" / "rdl_plan.json").is_file()
     assert (tmp_path / "batch" / "secondary_fragments.csv").is_file()
     assert (tmp_path / "batch" / "idt_bulk_input.csv").is_file()
     assert (tmp_path / "batch" / "idt_bulk_input.tsv").is_file()
     assert (tmp_path / "batch" / "idt_bulk_input.fasta").is_file()
+    assert (tmp_path / "batch" / "ga_elite_candidates.csv").is_file()
+    assert (tmp_path / "batch" / "ga_elite_candidates.fasta").is_file()
+    assert (tmp_path / "batch" / "ga_parameter_history.csv").is_file()
+    assert (tmp_path / "batch" / "idt_feedback_history.csv").is_file()
     assert Path(namespace["state"]["archive"]).is_file()
 
 

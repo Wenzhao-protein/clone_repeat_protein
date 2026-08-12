@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 
+import pytest
+
 from hurdler.index import PatternIndex
 from hurdler.optimization import translate_dna
 from hurdler.plasmid_reference import (
@@ -18,6 +20,7 @@ from hurdler.vector_design import (
     DesignRequestV2,
     DesignSelection,
     _exact_split_boundary,
+    _adapt_ga_parameters_from_idt,
     design_construct_v2,
     design_query,
 )
@@ -131,6 +134,7 @@ def test_batch_mode_never_calls_idt_and_preserves_translation():
         validation_mode="batch",
         population_size=4,
         generation_schedule=(10, 100),
+        minimum_secondary_copies=100,
     )
     result = design_construct_v2(request, idt_scorer=MustNotBeCalled())
     assert result.status == "optimized_unvalidated_batch"
@@ -139,6 +143,7 @@ def test_batch_mode_never_calls_idt_and_preserves_translation():
     assert result.final_plasmid["cds_translation_exact"] is True
     assert result.final_plasmid["protected_feature_sequences_preserved"] is True
     assert result.final_plasmid["restoration_exact"] is True
+    assert result.rdl_plan["minimum_secondary_bypassed_by_single_purchase"] is True
 
 
 def test_api_mode_scores_exact_purchase_fragment_hashes():
@@ -177,6 +182,164 @@ def test_api_mode_scores_exact_purchase_fragment_hashes():
     for fragment, audit in zip(result.primary_fragments, result.idt_audit, strict=True):
         assert fragment["purchase_sha256"] == audit["dna_sha256"]
         assert float(fragment["idt_complexity_score"]) < 10
+
+
+def test_live_idt_missing_numeric_score_is_a_fatal_visible_result():
+    query = _compatible_query()
+    route = design_query(query).vector_routes[0]
+
+    class MissingScoreScorer:
+        def score(self, name: str, sequence: str):
+            digest = hashlib.sha256(sequence.encode()).hexdigest()
+            return {
+                "idt_status": "scored_unclassified",
+                "idt_explicit_pass": None,
+                "idt_complexity_score": None,
+                "idt_score_complete": False,
+                "idt_invalid_score_names_json": '["Overall Repeat"]',
+                "idt_rule_details_json": '[{"name":"Overall Repeat","score":null}]',
+                "idt_positive_score_names_json": "[]",
+                "idt_violation_names_json": "[]",
+                "idt_scored_sequence_sha256": digest,
+                "idt_response_sha256": "response-hash",
+            }
+
+    result = design_construct_v2(
+        DesignRequestV2(
+            schema_version=DESIGN_SCHEMA_VERSION_V2,
+            query=query,
+            selection=DesignSelection(
+                route["candidate_id"], route["profile_id"], route["scheme_id"],
+                route["site_iii_options"][0],
+            ),
+            validation_mode="api",
+            population_size=4,
+            max_idt_feedback_rounds=2,
+            generation_schedule=(10, 100),
+        ),
+        idt_scorer=MissingScoreScorer(),
+    )
+    assert result.status == "idt_score_error"
+    assert result.termination_reason == "idt_score_error"
+    assert "Overall Repeat" in result.message
+    assert not result.final_dna_sequence
+    assert result.idt_feedback_history[-1]["response_sha256"] == "response-hash"
+
+
+def test_live_idt_transport_failure_is_not_misclassified_as_ga_rejection():
+    query = _compatible_query()
+    route = design_query(query).vector_routes[0]
+
+    class BrokenScorer:
+        def score(self, name: str, sequence: str):
+            raise TimeoutError("retry budget exhausted")
+
+    result = design_construct_v2(
+        DesignRequestV2(
+            schema_version=DESIGN_SCHEMA_VERSION_V2,
+            query=query,
+            selection=DesignSelection(
+                route["candidate_id"], route["profile_id"], route["scheme_id"],
+                route["site_iii_options"][0],
+            ),
+            validation_mode="api",
+            population_size=4,
+            generation_schedule=(10, 100),
+        ),
+        idt_scorer=BrokenScorer(),
+    )
+    assert result.status == "idt_api_error"
+    assert "TimeoutError" in result.message
+    assert not result.final_dna_sequence
+
+
+def test_rejected_idt_feedback_is_bounded_adaptive_and_never_resubmits_same_dna():
+    query = _compatible_query()
+    route = design_query(query).vector_routes[0]
+
+    class RejectingScorer:
+        def __init__(self):
+            self.hashes: list[str] = []
+
+        def score(self, name: str, sequence: str):
+            digest = hashlib.sha256(sequence.encode()).hexdigest()
+            self.hashes.append(digest)
+            return {
+                "idt_status": "failed",
+                "idt_explicit_pass": False,
+                "idt_complexity_score": 12.0,
+                "idt_score_complete": True,
+                "idt_rule_details_json": '[{"name":"Overall Repeat","score":12.0}]',
+                "idt_positive_score_names_json": '["Overall Repeat"]',
+                "idt_violation_names_json": "[]",
+                "idt_scored_sequence_sha256": digest,
+                "idt_response_sha256": hashlib.sha256(("response:" + digest).encode()).hexdigest(),
+            }
+
+    scorer = RejectingScorer()
+    result = design_construct_v2(
+        DesignRequestV2(
+            schema_version=DESIGN_SCHEMA_VERSION_V2,
+            query=query,
+            selection=DesignSelection(
+                route["candidate_id"], route["profile_id"], route["scheme_id"],
+                route["site_iii_options"][0],
+            ),
+            validation_mode="api",
+            population_size=16,
+            minimum_secondary_copies=100,
+            max_idt_feedback_rounds=2,
+            generations_per_feedback_round=1,
+            generation_schedule=(10, 100),
+        ),
+        idt_scorer=scorer,
+    )
+    direct = [
+        row for row in result.optimization_attempts
+        if row.get("component") == "direct_primary"
+    ]
+    assert len(direct) == 2
+    assert len(scorer.hashes) == len(set(scorer.hashes))
+    assert result.termination_reason == "minimum_secondary_exceeds_capacity"
+    assert result.ga_parameter_history
+    assert result.ga_parameter_history[0]["parameter_tier"] == "10_to_20"
+    assert result.ga_parameter_history[0]["new_population_size"] == 20
+    assert result.ga_parameter_history[0]["new_mutation_rate"] == pytest.approx(0.088)
+
+
+@pytest.mark.parametrize(
+    ("score", "expected_population", "expected_mutation", "expected_crossover", "tier"),
+    [
+        (12.0, 20, 0.088, 0.77, "10_to_20"),
+        (25.0, 24, 0.10, 0.80, "20_to_50"),
+        (60.0, 32, 0.12, 0.85, "50_or_more"),
+    ],
+)
+def test_idt_score_tiers_adapt_ga_parameters(
+    score, expected_population, expected_mutation, expected_crossover, tier
+):
+    query = _compatible_query()
+    route = design_query(query).vector_routes[0]
+    request = DesignRequestV2(
+        schema_version=DESIGN_SCHEMA_VERSION_V2,
+        query=query,
+        selection=DesignSelection(
+            route["candidate_id"], route["profile_id"], route["scheme_id"],
+            route["site_iii_options"][0],
+        ),
+        population_size=16,
+    )
+    population, mutation, crossover, policy = _adapt_ga_parameters_from_idt(
+        request,
+        score,
+        population_size=16,
+        mutation_rate=0.08,
+        crossover_rate=0.75,
+    )
+    assert population == expected_population
+    assert mutation == pytest.approx(expected_mutation)
+    assert crossover == pytest.approx(expected_crossover)
+    assert policy["tier"] == tier
 
 
 def test_split_adaptive_search_reaches_hard_upper_bound_with_machine_readable_proof():
@@ -246,6 +409,8 @@ def test_exact_target_rdl_reuses_one_secondary_and_emits_progress():
             validation_mode="api",
             population_size=4,
             generation_schedule=(10, 100),
+            minimum_secondary_copies=12,
+            max_idt_feedback_rounds=3,
         ),
         idt_scorer=PassingScorer(),
         progress_callback=events.append,
@@ -256,6 +421,14 @@ def test_exact_target_rdl_reuses_one_secondary_and_emits_progress():
     assert plan["primary_repeat_copies"] >= 1
     assert plan["secondary_reuse_count"] == 1
     assert plan["secondary_repeat_copies"] == result.maximum_secondary_evidence["maximum_verified_copies"]
+    assert plan["secondary_repeat_copies"] >= 12
+    assert plan["minimum_secondary_satisfied"] is True
+    assert result.ga_elite_candidates
+    assert {
+        row["fragment_kind"] for row in result.ga_elite_candidates
+    } == {"primary", "secondary"}
+    assert all(row["dna_sequence"] for row in result.ga_elite_candidates)
+    assert result.idt_feedback_history
     assert plan["same_secondary_reused_every_round"] is True
     assert result.final_protein_sequence == n_cap + module * 25 + c_cap
     assert len(result.final_protein_sequence) == 1_524

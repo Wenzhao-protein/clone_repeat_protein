@@ -22,6 +22,7 @@ from .design import (
     confirm_repeat_boundary,
 )
 from .ga_optimization import (
+    GAPopulationState,
     GA_SCORE_PROFILE,
     adaptive_copy_search,
     adjust_ga_score_profile_from_idt,
@@ -67,6 +68,23 @@ ASSEMBLY_STRATEGIES = (
 
 class ComplexityScorer(Protocol):
     def score(self, name: str, sequence: str) -> dict[str, Any]: ...
+
+
+class IDTScoringError(RuntimeError):
+    """Fatal interactive scoring failure that must not become a GA rejection."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        response_sha256: str = "",
+        invalid_rules: Sequence[str] = (),
+    ) -> None:
+        super().__init__(message)
+        self.code = str(code)
+        self.response_sha256 = str(response_sha256)
+        self.invalid_rules = tuple(str(value) for value in invalid_rules)
 
 
 @dataclass(frozen=True)
@@ -149,6 +167,15 @@ class DesignRequestV2:
     generation_schedule: tuple[int, ...] = GENERATION_SCHEDULE
     score_weights: Mapping[str, float] = field(default_factory=lambda: dict(GA_SCORE_PROFILE))
     auto_adjust_weights_from_idt: bool = True
+    minimum_secondary_copies: int = 1
+    max_idt_feedback_rounds: int = 100
+    generations_per_feedback_round: int = 10
+    elite_seed_count: int = 10
+    auto_adjust_ga_parameters_from_idt: bool = True
+    max_population_size: int = 256
+    max_mutation_rate: float = 0.35
+    max_crossover_rate: float = 0.95
+    max_weight_multiplier: float = 1024.0
     max_purchase_bp: int = GBLOCK_MAX_BP
 
     def __post_init__(self) -> None:
@@ -165,6 +192,22 @@ class DesignRequestV2:
             )
         if int(self.population_size) < 2:
             raise ValueError("population_size must be at least two")
+        if int(self.minimum_secondary_copies) < 1:
+            raise ValueError("minimum_secondary_copies must be at least one")
+        if not 1 <= int(self.max_idt_feedback_rounds) <= 1000:
+            raise ValueError("max_idt_feedback_rounds must be between 1 and 1000")
+        if not 1 <= int(self.generations_per_feedback_round) <= 1000:
+            raise ValueError("generations_per_feedback_round must be between 1 and 1000")
+        if not 1 <= int(self.elite_seed_count) <= int(self.max_population_size):
+            raise ValueError("elite_seed_count must be between one and max_population_size")
+        if int(self.max_population_size) < int(self.population_size):
+            raise ValueError("max_population_size cannot be smaller than population_size")
+        if not float(self.mutation_rate) <= float(self.max_mutation_rate) <= 1.0:
+            raise ValueError("max_mutation_rate must be between mutation_rate and one")
+        if not float(self.crossover_rate) <= float(self.max_crossover_rate) <= 1.0:
+            raise ValueError("max_crossover_rate must be between crossover_rate and one")
+        if float(self.max_weight_multiplier) < 1.0:
+            raise ValueError("max_weight_multiplier must be at least one")
         schedule = tuple(sorted({int(value) for value in self.generation_schedule}))
         if not schedule or schedule[-1] != 100:
             raise ValueError("generation_schedule must terminate at 100 generations")
@@ -201,6 +244,9 @@ class DesignResultV2:
     stop_rescue_records: list[dict[str, Any]] = field(default_factory=list)
     cloning_steps: list[dict[str, Any]] = field(default_factory=list)
     optimization_attempts: list[dict[str, Any]] = field(default_factory=list)
+    ga_elite_candidates: list[dict[str, Any]] = field(default_factory=list)
+    ga_parameter_history: list[dict[str, Any]] = field(default_factory=list)
+    idt_feedback_history: list[dict[str, Any]] = field(default_factory=list)
     maximum_secondary_evidence: dict[str, Any] = field(default_factory=dict)
     rdl_plan: dict[str, Any] = field(default_factory=dict)
     intermediate_validations: list[dict[str, Any]] = field(default_factory=list)
@@ -733,6 +779,102 @@ def _exact_split_boundary(query: CompatibilityQuery, copies: int) -> ConfirmedBo
     )
 
 
+def _strict_idt_audit(audits: Sequence[Mapping[str, Any]]) -> None:
+    """Raise when a live response cannot be classified by the score-sum policy."""
+    for row in audits:
+        status = str(row.get("idt_status") or "unknown")
+        response_sha = str(row.get("response_sha256") or "")
+        if status == "api_failure":
+            error_type = str(row.get("idt_error_type") or "IDT API failure")
+            raise IDTScoringError(
+                "idt_api_error",
+                f"IDT complexity scoring failed after retry handling: {error_type}",
+                response_sha256=response_sha,
+            )
+        score = row.get("idt_complexity_score")
+        numeric = (
+            isinstance(score, (int, float))
+            and not isinstance(score, bool)
+            and math.isfinite(float(score))
+        )
+        if not bool(row.get("idt_score_complete")) or not numeric:
+            try:
+                invalid = json.loads(str(row.get("idt_invalid_score_names_json") or "[]"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                invalid = []
+            invalid = invalid if isinstance(invalid, list) else []
+            detail = ", ".join(str(value) for value in invalid) or "missing aggregate score"
+            raise IDTScoringError(
+                "idt_score_error",
+                f"IDT returned an unclassifiable complexity score ({detail})",
+                response_sha256=response_sha,
+                invalid_rules=tuple(str(value) for value in invalid),
+            )
+
+
+def _adapt_ga_parameters_from_idt(
+    request: DesignRequestV2,
+    score: float,
+    *,
+    population_size: int,
+    mutation_rate: float,
+    crossover_rate: float,
+) -> tuple[int, float, float, dict[str, Any]]:
+    """Apply the frozen score-tier parameter policy after an IDT rejection."""
+    if score < 10:
+        return population_size, mutation_rate, crossover_rate, {"tier": "passed"}
+    if score < 20:
+        population_factor, mutation_factor, crossover_delta, tier = 1.25, 1.10, 0.02, "10_to_20"
+    elif score < 50:
+        population_factor, mutation_factor, crossover_delta, tier = 1.50, 1.25, 0.05, "20_to_50"
+    else:
+        population_factor, mutation_factor, crossover_delta, tier = 2.0, 1.50, 0.10, "50_or_more"
+    proposed_population = int(math.ceil(population_size * population_factor / 4.0) * 4)
+    updated_population = min(int(request.max_population_size), proposed_population)
+    updated_mutation = min(float(request.max_mutation_rate), mutation_rate * mutation_factor)
+    updated_crossover = min(float(request.max_crossover_rate), crossover_rate + crossover_delta)
+    return updated_population, updated_mutation, updated_crossover, {
+        "tier": tier,
+        "population_factor": population_factor,
+        "mutation_factor": mutation_factor,
+        "crossover_delta": crossover_delta,
+    }
+
+
+def _rdl_purchase_fragments(
+    request: DesignRequestV2,
+    route: Mapping[str, Any],
+    *,
+    fragment_kind: str,
+    copies: int,
+    dna_sequence: str,
+    secondary_adapters: tuple[str, str],
+) -> tuple[list[dict[str, Any]], bool]:
+    if fragment_kind == "primary":
+        fragments = _actual_fragments(
+            f"{request.query.sequence_id}_primary_{copies}copies",
+            dna_sequence,
+            route,
+            max_purchase_bp=request.max_purchase_bp,
+        )
+        return fragments, len(fragments) == 1
+    left_adapter, right_adapter = secondary_adapters
+    purchase = left_adapter + dna_sequence + right_adapter
+    length = len(purchase)
+    return [{
+        "fragment_id": f"{request.query.sequence_id}_secondary_{copies}copies",
+        "fragment_index": 1,
+        "purchase_sequence": purchase,
+        "purchase_length_bp": length,
+        "purchase_sha256": hashlib.sha256(purchase.encode()).hexdigest(),
+        "product_type": "gBlock" if 125 <= length <= 3000 else "duplexed_ultramer" if 20 <= length < 125 else "unsupported",
+        "product_length_valid": 20 <= length <= request.max_purchase_bp,
+        "left_adapter": left_adapter,
+        "right_adapter": right_adapter,
+        "adapter_bases_removed_after_digest": True,
+    }], True
+
+
 def _rdl_fragment_attempt(
     request: DesignRequestV2,
     candidate: Mapping[str, Any],
@@ -747,6 +889,12 @@ def _rdl_fragment_attempt(
     idt_scorer: ComplexityScorer | None,
     aggregate_audit: list[dict[str, Any]],
     secondary_adapters: tuple[str, str] = ("", ""),
+    population_state: GAPopulationState | None = None,
+    population_size: int | None = None,
+    mutation_rate: float | None = None,
+    crossover_rate: float | None = None,
+    feedback_round: int = 1,
+    excluded_idt_sha256: set[str] | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Optimize one exact primary or reusable secondary purchase sequence."""
@@ -783,53 +931,82 @@ def _rdl_fragment_attempt(
     else:
         raise ValueError(f"Unknown RDL fragment kind: {fragment_kind}")
 
+    active_population = int(population_size or request.population_size)
+    active_mutation = float(request.mutation_rate if mutation_rate is None else mutation_rate)
+    active_crossover = float(request.crossover_rate if crossover_rate is None else crossover_rate)
     refined, metrics = genetic_refine_dna(
         dna,
         locked_positions=locked_positions,
         selected_site_limits=site_limits,
         recognition_sites=recognition_sites,
         codon_weights=codon_weights,
-        seed=request.seed + (1 if fragment_kind == "primary" else 2) * 1_000_000 + copies * 1000 + generations,
-        population_size=request.population_size,
+        seed=request.seed + (1 if fragment_kind == "primary" else 2) * 1_000_000 + copies * 1000 + feedback_round,
+        population_size=active_population,
         generations=int(generations),
         score_profile=score_profile,
-        mutation_rate=request.mutation_rate,
-        crossover_rate=request.crossover_rate,
+        mutation_rate=active_mutation,
+        crossover_rate=active_crossover,
         elite_fraction=request.elite_fraction,
+        population_state=population_state,
+        elite_seed_count=request.elite_seed_count,
+        capture_population_state=True,
         progress_callback=progress_callback,
-        progress_context={"fragment_kind": fragment_kind, "copies": int(copies)},
+        progress_context={
+            "fragment_kind": fragment_kind,
+            "copies": int(copies),
+            "feedback_round": int(feedback_round),
+            "max_feedback_rounds": int(request.max_idt_feedback_rounds),
+            "population_size": active_population,
+            "mutation_rate": active_mutation,
+            "crossover_rate": active_crossover,
+        },
     )
     if translate_dna(refined) != protein:
         raise AssertionError("RDL fragment GA changed the exact target protein")
 
-    if fragment_kind == "primary":
-        fragments = _actual_fragments(
-            f"{request.query.sequence_id}_primary_{copies}copies",
-            refined,
+    next_population_state = metrics.pop("ga_population_state")
+    elite_candidates = list(metrics.pop("ga_elite_candidates", []))
+    excluded = excluded_idt_sha256 or set()
+    selected_row: dict[str, Any] | None = None
+    fragments: list[dict[str, Any]] = []
+    single_purchase = False
+    for elite in elite_candidates:
+        elite_dna = str(elite["dna_sequence"])
+        candidate_fragments, candidate_single = _rdl_purchase_fragments(
+            request,
             route,
-            max_purchase_bp=request.max_purchase_bp,
+            fragment_kind=fragment_kind,
+            copies=copies,
+            dna_sequence=elite_dna,
+            secondary_adapters=secondary_adapters,
         )
-        single_purchase = len(fragments) == 1
-    else:
-        left_adapter, right_adapter = secondary_adapters
-        purchase = left_adapter + refined + right_adapter
-        length = len(purchase)
-        fragments = [{
-            "fragment_id": f"{request.query.sequence_id}_secondary_{copies}copies",
-            "fragment_index": 1,
-            "purchase_sequence": purchase,
-            "purchase_length_bp": length,
-            "purchase_sha256": hashlib.sha256(purchase.encode()).hexdigest(),
-            "product_type": "gBlock" if 125 <= length <= 3000 else "duplexed_ultramer" if 20 <= length < 125 else "unsupported",
-            "product_length_valid": 20 <= length <= request.max_purchase_bp,
-            "left_adapter": left_adapter,
-            "right_adapter": right_adapter,
-            "adapter_bases_removed_after_digest": True,
-        }]
-        single_purchase = True
+        locally_valid = (
+            bool(elite.get("ga_local_constraints_passed"))
+            and candidate_single
+            and all(bool(row["product_length_valid"]) for row in candidate_fragments)
+        )
+        already_scored = any(
+            str(row.get("purchase_sha256") or "") in excluded
+            for row in candidate_fragments
+        )
+        if locally_valid and not (request.validation_mode == "api" and already_scored):
+            selected_row = elite
+            refined = elite_dna
+            fragments = candidate_fragments
+            single_purchase = candidate_single
+            break
+    if not fragments:
+        fragments, single_purchase = _rdl_purchase_fragments(
+            request,
+            route,
+            fragment_kind=fragment_kind,
+            copies=copies,
+            dna_sequence=refined,
+            secondary_adapters=secondary_adapters,
+        )
 
     local_pass = (
-        bool(metrics["ga_local_constraints_passed"])
+        bool(selected_row and selected_row["ga_local_constraints_passed"])
         and single_purchase
         and all(bool(row["product_length_valid"]) for row in fragments)
     )
@@ -846,6 +1023,11 @@ def _rdl_fragment_attempt(
             fragment_kind=fragment_kind,
             copies=int(copies),
             generations=int(generations),
+            feedback_round=int(feedback_round),
+            max_feedback_rounds=int(request.max_idt_feedback_rounds),
+            population_size=active_population,
+            mutation_rate=active_mutation,
+            crossover_rate=active_crossover,
             elapsed_seconds=time.monotonic() - started,
         )
         idt_pass, scored_fragments, audits = _score_fragments(fragments, idt_scorer)
@@ -854,8 +1036,18 @@ def _rdl_fragment_attempt(
                 "fragment_kind": fragment_kind,
                 "repeat_copies": int(copies),
                 "ga_generations": int(generations),
+                "feedback_round": int(feedback_round),
             })
         aggregate_audit.extend(audits)
+        _strict_idt_audit(audits)
+        positive_rules: list[str] = []
+        for row in audits:
+            try:
+                names = json.loads(str(row.get("idt_positive_score_names_json") or "[]"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                names = []
+            if isinstance(names, list):
+                positive_rules.extend(str(value) for value in names)
         emit_progress(
             progress_callback,
             stage="idt",
@@ -863,17 +1055,22 @@ def _rdl_fragment_attempt(
             fragment_kind=fragment_kind,
             copies=int(copies),
             generations=int(generations),
+            feedback_round=int(feedback_round),
+            max_feedback_rounds=int(request.max_idt_feedback_rounds),
+            population_size=active_population,
+            mutation_rate=active_mutation,
+            crossover_rate=active_crossover,
+            idt_score=max(
+                (float(row["idt_complexity_score"]) for row in audits),
+                default=None,
+            ),
+            idt_positive_rules=tuple(sorted(set(positive_rules))),
             elapsed_seconds=time.monotonic() - started,
             details={
                 "passed": bool(idt_pass),
                 "scores": [row.get("idt_complexity_score") for row in scored_fragments],
             },
         )
-        if not idt_pass and request.auto_adjust_weights_from_idt:
-            for row in audits:
-                updated, _changes = adjust_ga_score_profile_from_idt(score_profile, row)
-                score_profile.clear()
-                score_profile.update(updated)
     elif local_pass and request.validation_mode == "batch":
         idt_pass = False
 
@@ -890,10 +1087,18 @@ def _rdl_fragment_attempt(
         "dna_sequence": refined,
         "protein_sequence": protein,
         "fragments": scored_fragments,
-        "ga_score": metrics["ga_score"],
+        "ga_score": float(selected_row["ga_score"] if selected_row else metrics["ga_score"]),
         "ga_local_constraints_passed": bool(local_pass),
-        "selected_pair_re_site_excess": metrics["selected_pair_re_site_excess"],
-        "repeated_re_site_excess": metrics["repeated_re_site_excess"],
+        "selected_pair_re_site_excess": int(selected_row["selected_pair_re_site_excess"] if selected_row else metrics["selected_pair_re_site_excess"]),
+        "repeated_re_site_excess": int(selected_row["repeated_re_site_excess"] if selected_row else metrics["repeated_re_site_excess"]),
+        "feedback_round": int(feedback_round),
+        "ga_total_generations": int(next_population_state.total_generations),
+        "ga_population_size": active_population,
+        "ga_mutation_rate": active_mutation,
+        "ga_crossover_rate": active_crossover,
+        "population_state": next_population_state,
+        "elite_candidates": elite_candidates,
+        "novel_candidate_available": bool(selected_row),
         "idt_request_attempted": bool(audits),
         "idt_status": "passed" if idt_pass else "batch_not_called" if request.validation_mode == "batch" else "rejected" if audits else "not_scored_local_failure",
         "idt_explicit_pass": idt_pass if request.validation_mode == "api" else None,
@@ -918,30 +1123,133 @@ def _run_fragment_schedule(
     score_profile: dict[str, float],
     idt_scorer: ComplexityScorer | None,
     aggregate_audit: list[dict[str, Any]],
+    parameter_history: list[dict[str, Any]],
+    feedback_history: list[dict[str, Any]],
     secondary_adapters: tuple[str, str],
     progress_callback: ProgressCallback | None,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     attempts: list[dict[str, Any]] = []
-    schedule = tuple(sorted({10, *request.generation_schedule, 100}))
-    for generations in schedule:
+    population_state: GAPopulationState | None = None
+    population_size = int(request.population_size)
+    mutation_rate = float(request.mutation_rate)
+    crossover_rate = float(request.crossover_rate)
+    scored_hashes: set[str] = set()
+    rounds = 1 if request.validation_mode == "batch" else int(request.max_idt_feedback_rounds)
+    base_profile = {
+        **GA_SCORE_PROFILE,
+        **{str(key): float(value) for key, value in request.score_weights.items()},
+    }
+    for feedback_round in range(1, rounds + 1):
         result = _rdl_fragment_attempt(
             request,
             candidate,
             route,
             fragment_kind=fragment_kind,
             copies=copies,
-            generations=generations,
+            generations=int(request.generations_per_feedback_round),
             codon_weights=codon_weights,
             recognition_sites=recognition_sites,
             score_profile=score_profile,
             idt_scorer=idt_scorer,
             aggregate_audit=aggregate_audit,
             secondary_adapters=secondary_adapters,
+            population_state=population_state,
+            population_size=population_size,
+            mutation_rate=mutation_rate,
+            crossover_rate=crossover_rate,
+            feedback_round=feedback_round,
+            excluded_idt_sha256=scored_hashes,
             progress_callback=progress_callback,
         )
-        attempts.append({key: value for key, value in result.items() if key not in {"dna_sequence", "protein_sequence", "fragments"}})
+        population_state = result["population_state"]
+        compact = {
+            key: value
+            for key, value in result.items()
+            if key not in {
+                "dna_sequence", "protein_sequence", "fragments",
+                "population_state", "elite_candidates",
+            }
+        }
+        attempts.append(compact)
+        compact["elite_candidates"] = [
+            {key: value for key, value in elite.items() if key != "dna_sequence"}
+            for elite in result["elite_candidates"]
+        ]
+        for fragment in result.get("fragments", []):
+            if result.get("idt_request_attempted"):
+                scored_hashes.add(str(fragment.get("purchase_sha256") or ""))
+        feedback_row = {
+            "fragment_kind": fragment_kind,
+            "repeat_copies": int(copies),
+            "feedback_round": int(feedback_round),
+            "max_feedback_rounds": int(request.max_idt_feedback_rounds),
+            "total_generations": int(result["ga_total_generations"]),
+            "novel_candidate_available": bool(result["novel_candidate_available"]),
+            "idt_status": result["idt_status"],
+            "idt_complexity_score": result["idt_complexity_score"],
+            "candidate_sha256": hashlib.sha256(str(result["dna_sequence"]).encode()).hexdigest(),
+        }
+        feedback_history.append(feedback_row)
         if result.get("passed"):
             return result, attempts
+        old_parameters = {
+            "population_size": population_size,
+            "mutation_rate": mutation_rate,
+            "crossover_rate": crossover_rate,
+        }
+        adjustments: list[dict[str, Any]] = []
+        score = result.get("idt_complexity_score")
+        if request.validation_mode == "api" and isinstance(score, (int, float)):
+            if request.auto_adjust_weights_from_idt:
+                for row in aggregate_audit[-len(result.get("fragments", [])) :]:
+                    updated, changes = adjust_ga_score_profile_from_idt(score_profile, row)
+                    for key, value in updated.items():
+                        ceiling = float(base_profile.get(key, value)) * float(request.max_weight_multiplier)
+                        updated[key] = min(float(value), ceiling)
+                    score_profile.clear()
+                    score_profile.update(updated)
+                    adjustments.extend(changes)
+            if request.auto_adjust_ga_parameters_from_idt:
+                population_size, mutation_rate, crossover_rate, tier = _adapt_ga_parameters_from_idt(
+                    request,
+                    float(score),
+                    population_size=population_size,
+                    mutation_rate=mutation_rate,
+                    crossover_rate=crossover_rate,
+                )
+            else:
+                tier = {"tier": "disabled"}
+        else:
+            tier = {"tier": "no_numeric_idt_rejection"}
+        parameter_row = {
+            **feedback_row,
+            **{f"old_{key}": value for key, value in old_parameters.items()},
+            "new_population_size": population_size,
+            "new_mutation_rate": mutation_rate,
+            "new_crossover_rate": crossover_rate,
+            "parameter_tier": tier["tier"],
+            "parameter_policy_json": json.dumps(tier, sort_keys=True),
+            "weight_adjustments_json": json.dumps(adjustments, sort_keys=True),
+            "score_weights_json": json.dumps(score_profile, sort_keys=True),
+        }
+        parameter_history.append(parameter_row)
+        emit_progress(
+            progress_callback,
+            stage="feedback",
+            status="parameters_adjusted" if score is not None else "no_novel_candidate",
+            fragment_kind=fragment_kind,
+            copies=int(copies),
+            feedback_round=int(feedback_round),
+            max_feedback_rounds=int(request.max_idt_feedback_rounds),
+            generations=int(request.generations_per_feedback_round),
+            generation=int(request.generations_per_feedback_round),
+            ga_score=float(result["ga_score"]),
+            population_size=population_size,
+            mutation_rate=mutation_rate,
+            crossover_rate=crossover_rate,
+            idt_score=float(score) if isinstance(score, (int, float)) else None,
+            details={"parameter_tier": tier["tier"]},
+        )
     return None, attempts
 
 
@@ -1052,6 +1360,8 @@ def _design_exact_reused_secondary_rdl(
             score_profile=profile,
             idt_scorer=idt_scorer,
             aggregate_audit=result.idt_audit,
+            parameter_history=result.ga_parameter_history,
+            feedback_history=result.idt_feedback_history,
             secondary_adapters=("", ""),
             progress_callback=progress_callback,
         )
@@ -1062,6 +1372,14 @@ def _design_exact_reused_secondary_rdl(
             result.final_protein_sequence = str(direct["protein_sequence"])
             result.final_dna_sequence = str(direct["dna_sequence"])
             result.primary_fragments = list(direct["fragments"])
+            result.ga_elite_candidates = [
+                {
+                    **elite,
+                    "fragment_kind": "primary",
+                    "repeat_copies": target_copies,
+                }
+                for elite in direct["elite_candidates"]
+            ]
             result.rdl_plan = {
                 "strategy": "exact_reused_secondary_rdl",
                 "target_repeat_copies": target_copies,
@@ -1072,6 +1390,8 @@ def _design_exact_reused_secondary_rdl(
                 "initial_vector_insertions": 1,
                 "rdl_rounds": 0,
                 "final_copy_count_exact": True,
+                "minimum_secondary_copies": int(request.minimum_secondary_copies),
+                "minimum_secondary_bypassed_by_single_purchase": True,
             }
             result.status = "idt_accepted" if request.validation_mode == "api" else "optimized_unvalidated_batch"
             result.termination_reason = "whole_exact_target_single_purchase"
@@ -1101,60 +1421,137 @@ def _design_exact_reused_secondary_rdl(
 
     left_adapter, right_adapter, adapter_evidence = _secondary_adapters(route, project_root=root)
     capacity = (request.max_purchase_bp - len(left_adapter) - len(right_adapter)) // module_bp
-    if capacity < 1:
+    minimum_secondary = int(request.minimum_secondary_copies)
+    if capacity < minimum_secondary:
         result.status = "optimization_failed"
-        result.message = "Site-III adapters leave no capacity for one complete repeat module."
-        result.termination_reason = "secondary_adapter_capacity_below_one_module"
+        result.message = (
+            f"Site-III adapters permit at most {capacity} complete modules, below the "
+            f"required minimum secondary size N={minimum_secondary}."
+        )
+        result.termination_reason = "minimum_secondary_exceeds_capacity"
+        result.maximum_secondary_evidence = {
+            "mathematical_capacity_copies": int(capacity),
+            "required_minimum_copies": minimum_secondary,
+            "maximum_verified_copies": 0,
+            "proof": "minimum_secondary_exceeds_capacity",
+            "adapter_evidence": adapter_evidence,
+        }
         return result
 
     secondary_cache: dict[int, dict[str, Any]] = {}
+    evaluated_secondary: dict[int, dict[str, Any] | None] = {}
+    exact_route_capacity = min(int(capacity), target_copies - minimum_primary)
+    if exact_route_capacity < minimum_secondary:
+        result.status = "optimization_failed"
+        result.message = (
+            f"The exact {target_copies}-copy target and selected primary geometry leave room for "
+            f"at most {exact_route_capacity} modules in a reusable secondary, below N={minimum_secondary}."
+        )
+        result.termination_reason = "minimum_secondary_exceeds_exact_target_route"
+        result.maximum_secondary_evidence = {
+            "mathematical_capacity_copies": int(capacity),
+            "exact_route_capacity_copies": int(exact_route_capacity),
+            "required_minimum_copies": minimum_secondary,
+            "maximum_verified_copies": 0,
+            "proof": "minimum_secondary_exceeds_exact_target_route",
+            "adapter_evidence": adapter_evidence,
+        }
+        return result
 
-    def evaluate_secondary(copies: int, generations: int) -> dict[str, Any]:
-        attempted = _rdl_fragment_attempt(
+    def evaluate_secondary(copies: int) -> dict[str, Any] | None:
+        copies = int(copies)
+        if copies in evaluated_secondary:
+            return evaluated_secondary[copies]
+        accepted, attempts = _run_fragment_schedule(
             request,
             candidate,
             route,
             fragment_kind="secondary",
             copies=copies,
-            generations=generations,
             codon_weights=codon_weights,
             recognition_sites=recognition_sites,
             score_profile=profile,
             idt_scorer=idt_scorer,
             aggregate_audit=result.idt_audit,
+            parameter_history=result.ga_parameter_history,
+            feedback_history=result.idt_feedback_history,
             secondary_adapters=(left_adapter, right_adapter),
             progress_callback=progress_callback,
         )
-        if attempted.get("passed"):
-            secondary_cache[int(copies)] = attempted
-        return attempted
+        result.optimization_attempts.extend(
+            [
+                {**row, "component": "maximum_secondary_search"}
+                for row in attempts
+            ]
+        )
+        evaluated_secondary[copies] = accepted
+        if accepted is not None:
+            secondary_cache[copies] = accepted
+        return accepted
 
-    maximum_secondary, best_secondary, search_trace, search_reason = adaptive_copy_search(
-        1,
-        int(capacity),
-        short_generations=10,
-        generation_schedule=request.generation_schedule,
-        evaluate=evaluate_secondary,
-        progress_callback=progress_callback,
-        progress_context={"fragment_kind": "secondary"},
-    )
-    result.optimization_attempts.extend(
-        [{**row, "component": "maximum_secondary_search"} for row in search_trace]
-    )
+    # The user-specified floor is a hard gate.  Only after N itself passes do
+    # we use a binary probe followed by exact one-copy boundary advancement.
+    minimum_result = evaluate_secondary(minimum_secondary)
+    if minimum_result is None:
+        result.status = "no_accepted_repeat_construct"
+        result.message = (
+            f"The required {minimum_secondary}-module secondary did not pass "
+            f"within {request.max_idt_feedback_rounds} GA/IDT feedback rounds."
+            if request.validation_mode == "api"
+            else f"The required {minimum_secondary}-module secondary did not pass local Batch-mode constraints."
+        )
+        result.termination_reason = "minimum_secondary_not_idt_accepted"
+        result.maximum_secondary_evidence = {
+            "mathematical_capacity_copies": int(capacity),
+            "exact_route_capacity_copies": int(exact_route_capacity),
+            "required_minimum_copies": minimum_secondary,
+            "maximum_verified_copies": 0,
+            "proof": result.termination_reason,
+            "feedback_round_limit": int(request.max_idt_feedback_rounds),
+            "adapter_evidence": adapter_evidence,
+        }
+        return result
+
+    low = minimum_secondary
+    high = exact_route_capacity
+    while low < high:
+        midpoint = (low + high + 1) // 2
+        if evaluate_secondary(midpoint) is not None:
+            low = midpoint
+        else:
+            high = midpoint - 1
+    maximum_secondary = low
+    best_secondary = secondary_cache[maximum_secondary]
+    while maximum_secondary < exact_route_capacity:
+        next_copy = maximum_secondary + 1
+        next_result = evaluate_secondary(next_copy)
+        if next_result is None:
+            break
+        maximum_secondary = next_copy
+        best_secondary = next_result
+    if maximum_secondary == exact_route_capacity:
+        search_reason = "exact_route_capacity_reached"
+    else:
+        suffix = (
+            f"failed_after_{request.max_idt_feedback_rounds}_feedback_rounds"
+            if request.validation_mode == "api"
+            else "failed_local_batch_validation"
+        )
+        search_reason = f"copy_{maximum_secondary + 1}_{suffix}"
     result.maximum_secondary_evidence = {
         "mathematical_capacity_copies": int(capacity),
+        "exact_route_capacity_copies": int(exact_route_capacity),
+        "required_minimum_copies": minimum_secondary,
         "maximum_verified_copies": int(maximum_secondary),
         "validation_mode": request.validation_mode,
         "proof": search_reason,
-        "next_copy_failed_at_100": search_reason == f"copy_{maximum_secondary + 1}_failed_at_100",
+        "next_copy_failed_after_max_feedback_rounds": search_reason
+        == f"copy_{maximum_secondary + 1}_failed_after_{request.max_idt_feedback_rounds}_feedback_rounds",
+        "feedback_round_limit_per_copy": int(request.max_idt_feedback_rounds),
+        "generations_per_feedback_round": int(request.generations_per_feedback_round),
         "adapter_evidence": adapter_evidence,
         "idt_verified": request.validation_mode == "api" and maximum_secondary > 0,
     }
-    if maximum_secondary < 1 or best_secondary is None:
-        result.status = "no_accepted_repeat_construct"
-        result.message = "No reusable secondary containing one complete module passed through 100 generations."
-        result.termination_reason = search_reason
-        return result
     secondary_cache[int(maximum_secondary)] = best_secondary
 
     largest_route_secondary = min(int(maximum_secondary), target_copies - minimum_primary)
@@ -1172,7 +1569,7 @@ def _design_exact_reused_secondary_rdl(
     # primary is rejected.
     equations: list[tuple[int, int, int]] = []
     for rounds in range(1, target_copies - minimum_primary + 1):
-        for secondary_copies in range(largest_route_secondary, 0, -1):
+        for secondary_copies in range(largest_route_secondary, minimum_secondary - 1, -1):
             primary_copies = target_copies - rounds * secondary_copies
             if primary_copies < minimum_primary:
                 continue
@@ -1193,26 +1590,7 @@ def _design_exact_reused_secondary_rdl(
         }
         secondary = secondary_cache.get(secondary_copies)
         if secondary is None:
-            secondary, attempts = _run_fragment_schedule(
-                request,
-                candidate,
-                route,
-                fragment_kind="secondary",
-                copies=secondary_copies,
-                codon_weights=codon_weights,
-                recognition_sites=recognition_sites,
-                score_profile=profile,
-                idt_scorer=idt_scorer,
-                aggregate_audit=result.idt_audit,
-                secondary_adapters=(left_adapter, right_adapter),
-                progress_callback=progress_callback,
-            )
-            result.optimization_attempts.extend(
-                [
-                    {**row, "component": "rdl_secondary_candidate", **equation_context}
-                    for row in attempts
-                ]
-            )
+            secondary = evaluate_secondary(secondary_copies)
             if secondary is None:
                 continue
             secondary_cache[secondary_copies] = secondary
@@ -1228,6 +1606,8 @@ def _design_exact_reused_secondary_rdl(
             score_profile=profile,
             idt_scorer=idt_scorer,
             aggregate_audit=result.idt_audit,
+            parameter_history=result.ga_parameter_history,
+            feedback_history=result.idt_feedback_history,
             secondary_adapters=(left_adapter, right_adapter),
             progress_callback=progress_callback,
         )
@@ -1271,9 +1651,30 @@ def _design_exact_reused_secondary_rdl(
             }
             for row in secondary["fragments"]
         ]
+        result.ga_elite_candidates = [
+            *[
+                {
+                    **elite,
+                    "fragment_kind": "primary",
+                    "repeat_copies": int(primary_copies),
+                }
+                for elite in primary["elite_candidates"]
+            ],
+            *[
+                {
+                    **elite,
+                    "fragment_kind": "secondary",
+                    "repeat_copies": int(secondary_copies),
+                }
+                for elite in secondary["elite_candidates"]
+            ],
+        ]
         result.rdl_plan = {
             "strategy": "exact_reused_secondary_rdl",
             "target_repeat_copies": target_copies,
+            "minimum_secondary_copies": minimum_secondary,
+            "minimum_secondary_satisfied": int(secondary_copies) >= minimum_secondary,
+            "minimum_secondary_bypassed_by_single_purchase": False,
             "minimum_primary_copies_for_selected_geometry": minimum_primary,
             "primary_repeat_copies": int(primary_copies),
             "secondary_repeat_copies": int(secondary_copies),
@@ -1372,14 +1773,44 @@ def design_construct_v2(
         result.message = "The route is selected, but no codon optimization was requested; no purchase DNA was emitted."
         return result
     if request.query.input_mode == "split" and request.assembly_strategy == "exact_reused_secondary_rdl":
-        return _design_exact_reused_secondary_rdl(
-            request,
-            result,
-            route,
-            candidate,
-            idt_scorer=idt_scorer,
-            progress_callback=progress_callback,
-        )
+        try:
+            return _design_exact_reused_secondary_rdl(
+                request,
+                result,
+                route,
+                candidate,
+                idt_scorer=idt_scorer,
+                progress_callback=progress_callback,
+            )
+        except IDTScoringError as exc:
+            result.status = exc.code
+            result.message = str(exc)
+            result.termination_reason = exc.code
+            result.final_dna_sequence = ""
+            result.final_protein_sequence = ""
+            result.primary_fragments = []
+            result.secondary_fragments = []
+            result.idt_feedback_history.append(
+                {
+                    "status": exc.code,
+                    "message": str(exc),
+                    "response_sha256": exc.response_sha256,
+                    "invalid_score_names": list(exc.invalid_rules),
+                }
+            )
+            emit_progress(
+                progress_callback,
+                stage="idt",
+                status="failed",
+                message=str(exc),
+                elapsed_seconds=time.monotonic() - started,
+                details={
+                    "error_code": exc.code,
+                    "response_sha256": exc.response_sha256,
+                    "invalid_score_names": list(exc.invalid_rules),
+                },
+            )
+            return result
     root = ProjectPaths.discover().root
     weights = load_codon_weights(root / "data" / "reference_output" / "codon_usage.csv")
     recognition_sites = load_restriction_sites(root / "data" / "reference_output" / "restriction_enzyme.csv")
@@ -1563,6 +1994,9 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         ("stop_rescue_records.csv", result.stop_rescue_records),
         ("cloning_steps.csv", result.cloning_steps),
         ("ga_audit.csv", result.optimization_attempts),
+        ("ga_elite_candidates.csv", result.ga_elite_candidates),
+        ("ga_parameter_history.csv", result.ga_parameter_history),
+        ("idt_feedback_history.csv", result.idt_feedback_history),
         ("rdl_intermediate_validations.csv", result.intermediate_validations),
     ):
         path = destination / name
@@ -1582,6 +2016,22 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
             f">{result.request['query']['sequence_id']}_translated\n{result.final_protein_sequence}\n"
         )
         paths["optimized_construct_protein_fasta"] = str(protein_fasta)
+    if result.ga_elite_candidates:
+        elite_fasta = destination / "ga_elite_candidates.fasta"
+        seen_elites: set[str] = set()
+        records: list[str] = []
+        for row in result.ga_elite_candidates:
+            sequence = str(row.get("dna_sequence") or "")
+            sequence_sha = str(row.get("dna_sha256") or hashlib.sha256(sequence.encode()).hexdigest())
+            if not sequence or sequence_sha in seen_elites:
+                continue
+            seen_elites.add(sequence_sha)
+            records.append(
+                f">{row.get('fragment_kind', 'fragment')}_copies{row.get('repeat_copies', 'na')}_"
+                f"rank{row.get('rank', 'na')}_{sequence_sha[:12]}\n{sequence}\n"
+            )
+        elite_fasta.write_text("".join(records))
+        paths["ga_elite_candidates_fasta"] = str(elite_fasta)
     if result.rdl_plan:
         rdl_json = destination / "rdl_plan.json"
         write_json_atomic(result.rdl_plan, rdl_json)

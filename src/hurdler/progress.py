@@ -20,6 +20,13 @@ class DesignProgressEvent:
     generation: int | None = None
     ga_score: float | None = None
     selected_pair_re_site_excess: int | None = None
+    feedback_round: int | None = None
+    max_feedback_rounds: int | None = None
+    population_size: int | None = None
+    mutation_rate: float | None = None
+    crossover_rate: float | None = None
+    idt_score: float | None = None
+    idt_positive_rules: tuple[str, ...] = ()
     elapsed_seconds: float | None = None
     details: Mapping[str, Any] = field(default_factory=dict)
 

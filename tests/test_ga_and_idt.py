@@ -3,6 +3,7 @@ import pytest
 
 import hurdler.ga_optimization as ga_optimization
 from hurdler.ga_optimization import (
+    GAPopulationState,
     GA_SCORE_PROFILE,
     GA_RE_SITE_POLICY,
     adaptive_copy_search,
@@ -46,6 +47,44 @@ def test_ga_refinement_preserves_translation_and_selected_site_limits():
     assert metrics["selected_re_site_excess"] == 0
     assert "ga_initial_repeated_re_site_excess" in metrics
     assert metrics["ga_repeated_re_site_excess_removed"] >= 0
+
+
+def test_warm_start_ga_retains_ranked_elites_and_continues_generation_count():
+    original = "GCA" * 12
+    weights = {"GCG": 1.0, "GCC": 1.0, "GCA": 1.0, "GCT": 1.0}
+    first, first_metrics = genetic_refine_dna(
+        original,
+        locked_positions=set(),
+        selected_site_limits={},
+        recognition_sites=(),
+        codon_weights=weights,
+        seed=7,
+        population_size=8,
+        generations=2,
+        elite_seed_count=4,
+        capture_population_state=True,
+    )
+    first_state = first_metrics["ga_population_state"]
+    assert isinstance(first_state, GAPopulationState)
+    assert first_state.total_generations == 2
+    assert len(first_state.elite_sequences) == 4
+    second, second_metrics = genetic_refine_dna(
+        original,
+        locked_positions=set(),
+        selected_site_limits={},
+        recognition_sites=(),
+        codon_weights=weights,
+        seed=999,
+        population_size=8,
+        generations=3,
+        elite_seed_count=4,
+        capture_population_state=True,
+        population_state=first_state,
+    )
+    second_state = second_metrics["ga_population_state"]
+    assert second_state.total_generations == 5
+    assert set(first_state.elite_sequences) & set(second_state.elite_sequences)
+    assert translate_dna(first) == translate_dna(second) == "A" * 12
 
 
 def test_local_gate_is_selected_pair_only_and_gc_is_left_to_idt():
