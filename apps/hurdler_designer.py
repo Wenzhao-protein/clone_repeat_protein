@@ -282,6 +282,7 @@ def _(
         query=current_query,
         selection=DesignSelection(route["candidate_id"], route["profile_id"], route["scheme_id"], route["site_iii_options"][0]),
         validation_mode=validation.value,
+        assembly_strategy="legacy_adaptive_max" if current_query.input_mode == "split" else "single_exact",
         max_repeat_copies=int(max_copies.value) if current_query.input_mode == "split" else None,
         population_size=int(population.value),
         mutation_rate=float(mutation.value),

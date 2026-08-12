@@ -15,6 +15,7 @@ from .vector_design import (
 )
 from .matching import match_module, query_all_plasmids
 from .rules import LEGACY_OPTIMIZED_V1, RuleProfile
+from .progress import DesignProgressEvent
 
 __all__ = [
     "LEGACY_OPTIMIZED_V1",
@@ -30,6 +31,7 @@ __all__ = [
     "DesignSelection",
     "DesignRequestV2",
     "DesignResultV2",
+    "DesignProgressEvent",
     "RuleProfile",
     "match_module",
     "query_all_plasmids",

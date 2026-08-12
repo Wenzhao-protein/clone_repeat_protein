@@ -8,12 +8,11 @@
 
 - **Colab:** use the badge above to open the review branch immediately. The
   notebook clones that exact branch, installs the locked project extras, and
-  exposes the full vector-aware workflow as native Colab Forms. Protein,
-  boundary, plasmid/RE, GA, IDT, and output fields are visible immediately;
-  no setup cell needs to be opened. Fill in the forms and choose
-  **Runtime → Run all** to install and query. Review the resulting route table,
-  explicitly select and confirm one RE-pair/vector route, then press the visible
-  **Optimize / export** button. Full-protein inputs without confirmed boundaries
+  exposes the protein defaults as native Colab Forms. Choose **Runtime → Run
+  all** once to install the package and reveal separate individual-enzyme,
+  plasmid, RE-solution, and cut-scheme selectors. Review the route table and
+  explicitly select Site I, Site II, Site III, plasmid, and cut scheme. GA/IDT
+  controls appear only after that route is confirmed. Full-protein inputs without confirmed boundaries
   intentionally stop after proposing boundary candidates. Code remains hidden
   unless **Show code** is selected.
   After this branch is merged, the
@@ -26,9 +25,12 @@ Both interfaces use the same `hurdler.vector_design` implementation.
 Credentials and IDT scoring stay inside the active Colab or local process; the
 software produces design files only and never submits an order.
 
-For live IDT scoring in Colab, add either `IDT_ACCESS_TOKEN`, or all of
-`IDT_CLIENT_ID`, `IDT_CLIENT_SECRET`, `IDT_USERNAME`, and `IDT_PASSWORD`, in the
-left-side **Secrets** panel. Do not paste credentials into a notebook form.
+Live IDT scoring is the Colab default. A local runtime automatically tries
+`~/.config/hurdler/idt.env`; hosted Colab instead displays a temporary env-file
+upload. The file contains either `IDT_ACCESS_TOKEN`, or all of
+`IDT_CLIENT_ID`, `IDT_CLIENT_SECRET`, `IDT_USERNAME`, and `IDT_PASSWORD`.
+Store it outside the repository with mode 600. Colab Secrets and an invisible
+runtime prompt remain alternatives; credentials are never notebook form parameters.
 
 ## Local web designer
 
@@ -59,10 +61,14 @@ backbone of seven annotated physical vectors (eight selectable profiles) under
 four MCS cut schemes. This avoids the old whole-plasmid prefilter. Default input
 is `N-cap + module × n + C-cap`; complete-protein mode preserves every repeat
 variant. Each route records restoration segments and the strict annotation-
-aware cutter-silencing decision. Optional GA optimization either scores every
-actual purchase fragment through the IDT complexity API or emits unvalidated
-IDT Bulk Input CSV/TSV/FASTA. It never uses IDT codon optimization and never
-submits an order. Run the local page with `hurdler web`.
+aware cutter-silencing decision. For split inputs, the Colab workflow treats
+the requested copy count as exact. It independently optimizes a cap-containing
+primary and one reusable secondary, then proves
+`primary + rounds × secondary = target` at every RDL intermediate. Live
+progress reports fragment, copy count, generation, GA score, IDT result, and
+elapsed time. Every successful bundle also contains IDT Bulk Input
+CSV/TSV/FASTA. It never uses IDT codon optimization and never submits an order.
+Run the local page with `hurdler web`.
 
 This repository implements and validates the HURDLER three-site cloning
 strategy for repeat proteins. The maintained path is an installable Python

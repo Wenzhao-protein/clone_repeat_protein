@@ -11,11 +11,13 @@ from hurdler.plasmid_reference import (
     validate_plasmid_reference,
 )
 from hurdler.protein_index import ProteinPatternIndex
+from hurdler.progress import DesignProgressEvent
 from hurdler.vector_design import (
     DESIGN_SCHEMA_VERSION_V2,
     CompatibilityQuery,
     DesignRequestV2,
     DesignSelection,
+    _exact_split_boundary,
     design_construct_v2,
     design_query,
 )
@@ -188,6 +190,7 @@ def test_split_adaptive_search_reaches_hard_upper_bound_with_machine_readable_pr
             route["candidate_id"], route["profile_id"], route["scheme_id"], route["site_iii_options"][0]
         ),
         validation_mode="batch",
+        assembly_strategy="legacy_adaptive_max",
         max_repeat_copies=3,
         population_size=4,
         generation_schedule=(10, 100),
@@ -198,6 +201,88 @@ def test_split_adaptive_search_reaches_hard_upper_bound_with_machine_readable_pr
     assert result.termination_reason == "reached_local_upper_bound"
     assert "binary_short" in {row["phase"] for row in result.optimization_attempts}
     assert any(row["copies"] == 3 and row["passed"] for row in result.optimization_attempts)
+
+
+def test_exact_target_rdl_reuses_one_secondary_and_emits_progress():
+    n_cap = "MGSHHHHHHSSGIEGRSSGYKLILNGKTLKGETTTEAVDAATAEKVFKQYANDNGVDGEWTYDDATKTFTVTEGGGGSGGGGSLEVLFQGPDLPKLVKLLKSSNEEILLKALRALAEIASGG"
+    module = "NEQIQAVIDAGALPALVQLLSSPNEQILQEALWALSNIASGG"
+    c_cap = "NEQIQAVIDAGALPALVQLLSSPNEQILQEALWALSNIASGGNEQKQAVKEAGALEKLEQLQSHENEKIQKEAQEALEKLQSHGGGLEVLFQGPSSGEFGGGGSMVSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFMYGSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYKGGGSSGHHHHHH"
+    query = CompatibilityQuery(
+        schema_version=DESIGN_SCHEMA_VERSION_V2,
+        input_mode="split",
+        sequence_id="exact_25_rdl",
+        n_cap=n_cap,
+        repeat_module=module,
+        repeat_copies=25,
+        c_cap=c_cap,
+    )
+    queried = design_query(query)
+    route = queried.vector_routes[0]
+
+    class PassingScorer:
+        def score(self, name: str, sequence: str):
+            digest = hashlib.sha256(sequence.encode()).hexdigest()
+            return {
+                "idt_status": "passed",
+                "idt_explicit_pass": True,
+                "idt_complexity_score": 0.0,
+                "idt_score_complete": True,
+                "idt_rule_details_json": "[]",
+                "idt_positive_score_names_json": "[]",
+                "idt_violation_names_json": "[]",
+                "idt_scored_sequence_sha256": digest,
+                "idt_response_sha256": hashlib.sha256(("response:" + digest).encode()).hexdigest(),
+            }
+
+    events: list[DesignProgressEvent] = []
+    result = design_construct_v2(
+        DesignRequestV2(
+            schema_version=DESIGN_SCHEMA_VERSION_V2,
+            query=query,
+            selection=DesignSelection(
+                route["candidate_id"], route["profile_id"], route["scheme_id"],
+                route["site_iii_options"][0],
+            ),
+            validation_mode="api",
+            population_size=4,
+            generation_schedule=(10, 100),
+        ),
+        idt_scorer=PassingScorer(),
+        progress_callback=events.append,
+    )
+    assert result.status == "idt_accepted"
+    plan = result.rdl_plan
+    assert plan["primary_repeat_copies"] + plan["secondary_reuse_count"] * plan["secondary_repeat_copies"] == 25
+    assert plan["primary_repeat_copies"] >= 1
+    assert plan["secondary_reuse_count"] == 1
+    assert plan["secondary_repeat_copies"] == result.maximum_secondary_evidence["maximum_verified_copies"]
+    assert plan["same_secondary_reused_every_round"] is True
+    assert result.final_protein_sequence == n_cap + module * 25 + c_cap
+    assert len(result.final_protein_sequence) == 1_524
+    assert len(result.final_dna_sequence) == 4_572
+    assert translate_dna(result.final_dna_sequence) == result.final_protein_sequence
+    assert all(row["purchase_length_bp"] <= 3000 for row in [*result.primary_fragments, *result.secondary_fragments])
+    assert all(row["passed"] for row in result.intermediate_validations)
+    assert events and events[0].stage == "design"
+    assert any(event.stage == "ga" and event.status == "running" for event in events)
+    assert events[-1].stage == "rdl_plan" and events[-1].status == "completed"
+
+
+def test_exact_rdl_internal_primary_boundary_supports_one_physical_copy():
+    query = CompatibilityQuery(
+        schema_version=DESIGN_SCHEMA_VERSION_V2,
+        input_mode="split",
+        sequence_id="one_copy_primary",
+        n_cap="M",
+        repeat_module="ACDEFG",
+        repeat_copies=25,
+        c_cap="G",
+    )
+    boundary = _exact_split_boundary(query, 1)
+    assert boundary.repeat_count == 1
+    assert boundary.unit_sequences == ("ACDEFG",)
+    assert boundary.n_terminal_flank == "M"
+    assert boundary.c_terminal_flank == "G"
 
 
 def test_full_sequence_mode_preserves_every_variant_residue():

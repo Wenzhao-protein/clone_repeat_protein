@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
+import time
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
@@ -26,8 +28,15 @@ from .ga_optimization import (
     genetic_refine_dna,
     load_restriction_sites,
 )
+from .dna_assembly import _type_iis_flank, load_enzyme_catalog
 from .io import sha256_file, utc_now, write_json_atomic
-from .optimization import diversify_codons, load_codon_weights, reverse_complement, translate_dna
+from .optimization import (
+    diversify_codons,
+    load_codon_weights,
+    recognition_site_count,
+    reverse_complement,
+    translate_dna,
+)
 from .paths import ProjectPaths
 from .plasmid_reference import (
     PLASMID_REFERENCE_VERSION,
@@ -43,11 +52,17 @@ from .protein_index import (
     ProteinPatternIndex,
     enumerate_protein_solutions,
 )
+from .progress import ProgressCallback, emit_progress
 
 
 DESIGN_SCHEMA_VERSION_V2 = "vector-aware-hurdler-designer-v2"
 INPUT_MODES = ("split", "full")
 VALIDATION_MODES = ("none", "api", "batch")
+ASSEMBLY_STRATEGIES = (
+    "exact_reused_secondary_rdl",
+    "legacy_adaptive_max",
+    "single_exact",
+)
 
 
 class ComplexityScorer(Protocol):
@@ -124,6 +139,7 @@ class DesignRequestV2:
     query: CompatibilityQuery
     selection: DesignSelection
     validation_mode: str = "none"
+    assembly_strategy: str = "exact_reused_secondary_rdl"
     max_repeat_copies: int | None = None
     population_size: int = 16
     mutation_rate: float = 0.08
@@ -140,6 +156,13 @@ class DesignRequestV2:
             raise ValueError(f"schema_version must be {DESIGN_SCHEMA_VERSION_V2!r}")
         if self.validation_mode not in VALIDATION_MODES:
             raise ValueError(f"validation_mode must be one of {VALIDATION_MODES}")
+        if self.assembly_strategy not in ASSEMBLY_STRATEGIES:
+            raise ValueError(f"assembly_strategy must be one of {ASSEMBLY_STRATEGIES}")
+        if self.max_repeat_copies is not None and self.assembly_strategy != "legacy_adaptive_max":
+            raise ValueError(
+                "max_repeat_copies is only valid with assembly_strategy='legacy_adaptive_max'; "
+                "exact RDL uses query.repeat_copies as the immutable final target"
+            )
         if int(self.population_size) < 2:
             raise ValueError("population_size must be at least two")
         schedule = tuple(sorted({int(value) for value in self.generation_schedule}))
@@ -178,6 +201,9 @@ class DesignResultV2:
     stop_rescue_records: list[dict[str, Any]] = field(default_factory=list)
     cloning_steps: list[dict[str, Any]] = field(default_factory=list)
     optimization_attempts: list[dict[str, Any]] = field(default_factory=list)
+    maximum_secondary_evidence: dict[str, Any] = field(default_factory=dict)
+    rdl_plan: dict[str, Any] = field(default_factory=dict)
+    intermediate_validations: list[dict[str, Any]] = field(default_factory=list)
     idt_audit: list[dict[str, Any]] = field(default_factory=list)
     final_plasmid: dict[str, Any] | None = None
     final_protein_sequence: str = ""
@@ -534,6 +560,7 @@ def _evaluate_split_copy_count(
     score_profile: dict[str, float],
     idt_scorer: ComplexityScorer | None,
     aggregate_audit: list[dict[str, Any]],
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     query = replace(request.query, repeat_copies=int(copy_count))
     _analysis, boundary, _units = _query_boundary(query)
@@ -564,6 +591,8 @@ def _evaluate_split_copy_count(
         mutation_rate=request.mutation_rate,
         crossover_rate=request.crossover_rate,
         elite_fraction=request.elite_fraction,
+        progress_callback=progress_callback,
+        progress_context={"fragment_kind": "legacy_whole_construct", "copies": copy_count},
     )
     if translate_dna(refined) != protein:
         raise AssertionError("Adaptive GA changed the exact target protein")
@@ -617,13 +646,716 @@ def _evaluate_split_copy_count(
     }
 
 
+def _minimum_locked_copy_count(candidate: Mapping[str, Any], module_length: int) -> int:
+    """Return the smallest repeat count containing both selected 3-AA windows."""
+    farthest = max(int(candidate["site_i_position"]), int(candidate["site_ii_position"])) + 3
+    return max(1, math.ceil(farthest / int(module_length)))
+
+
+def _secondary_adapters(
+    route: Mapping[str, Any],
+    *,
+    project_root: Path,
+) -> tuple[str, str, dict[str, Any]]:
+    """Create disposable Site-III adapters for the selected Site-I/II ends."""
+    geometries, _plasmids = load_enzyme_catalog(
+        project_root / "data" / "reference_output",
+        artifact_dir=project_root / "output",
+    )
+    names = (
+        str(route["site_i_enzyme"]),
+        str(route["site_ii_enzyme"]),
+        str(route["site_iii_enzyme"]),
+    )
+    missing = [name for name in names if name not in geometries]
+    if missing:
+        raise ValueError("Missing restriction-enzyme cut geometry: " + ", ".join(missing))
+    site_i, site_ii, site_iii = (geometries[name] for name in names)
+    left = _type_iis_flank(
+        site_iii,
+        left=True,
+        overhang_sequence=site_i.ovhgseq,
+    )
+    right = _type_iis_flank(
+        site_iii,
+        left=False,
+        overhang_sequence=site_ii.ovhgseq,
+    )
+    return left, right, {
+        "site_iii_enzyme": site_iii.enzyme,
+        "left_adapter_sequence": left,
+        "right_adapter_sequence": right,
+        "left_exposed_overhang": site_i.ovhgseq,
+        "right_exposed_overhang": site_ii.ovhgseq,
+        "adapters_removed_after_digest": True,
+    }
+
+
+def _exact_split_boundary(query: CompatibilityQuery, copies: int) -> ConfirmedBoundary:
+    """Describe an exact split-input repeat block, including a one-copy primary.
+
+    ``CompatibilityQuery`` deliberately requires at least two target repeats so
+    HURDLER can scan the doubled module.  The exact RDL construction search has
+    a different lower bound: its primary seed may contain one physical copy
+    after the protein-level route has already been selected.  Building this
+    boundary directly prevents that construction detail from weakening the
+    public query validation rule.
+    """
+    copies = int(copies)
+    if copies < 1:
+        raise ValueError("An exact split boundary requires at least one repeat")
+    module = query.repeat_module
+    period = len(module)
+    start = len(query.n_cap) + 1
+    end = len(query.n_cap) + period * copies
+    middle_index = (copies - 1) // 2
+    middle_start = start + middle_index * period
+    protein = query.n_cap + module * copies + query.c_cap
+    return ConfirmedBoundary(
+        repeat_region_start=start,
+        repeat_region_end=end,
+        period=period,
+        repeat_count=copies,
+        unit_sequences=tuple(module for _ in range(copies)),
+        middle_unit_index=middle_index + 1,
+        middle_unit_start=middle_start,
+        middle_unit_end=middle_start + period - 1,
+        middle_module=module,
+        consensus_module=module,
+        position_conservation=tuple(1.0 for _ in module),
+        fixed_positions_1based=tuple(range(1, period + 1)),
+        variable_ranges_1based=(),
+        n_terminal_flank=query.n_cap,
+        c_terminal_flank=query.c_cap,
+        confirmation_token=hashlib.sha256(
+            f"{protein}|{start}|{end}|{period}".encode()
+        ).hexdigest(),
+    )
+
+
+def _rdl_fragment_attempt(
+    request: DesignRequestV2,
+    candidate: Mapping[str, Any],
+    route: Mapping[str, Any],
+    *,
+    fragment_kind: str,
+    copies: int,
+    generations: int,
+    codon_weights: dict[str, float],
+    recognition_sites: tuple[str, ...],
+    score_profile: dict[str, float],
+    idt_scorer: ComplexityScorer | None,
+    aggregate_audit: list[dict[str, Any]],
+    secondary_adapters: tuple[str, str] = ("", ""),
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    """Optimize one exact primary or reusable secondary purchase sequence."""
+    started = time.monotonic()
+    module = request.query.repeat_module
+    if fragment_kind == "primary":
+        boundary = _exact_split_boundary(request.query, copies)
+        protein = request.query.n_cap + module * int(copies) + request.query.c_cap
+        try:
+            dna, locked_positions, site_limits, _absolute = _locked_construct(
+                protein, boundary, candidate, codon_weights
+            )
+        except Exception as exc:
+            return {
+                "passed": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "fragment_kind": fragment_kind,
+                "copies": copies,
+                "generations": generations,
+            }
+    elif fragment_kind == "secondary":
+        protein = module * int(copies)
+        site_limits = {
+            str(candidate.get("site_i_recognition_site") or ""): 0,
+            str(candidate.get("site_ii_recognition_site") or ""): 0,
+        }
+        site_limits = {site: limit for site, limit in site_limits.items() if site}
+        dna = diversify_codons(
+            protein,
+            codon_weights=codon_weights,
+            site_limits=site_limits,
+        )
+        locked_positions = set()
+    else:
+        raise ValueError(f"Unknown RDL fragment kind: {fragment_kind}")
+
+    refined, metrics = genetic_refine_dna(
+        dna,
+        locked_positions=locked_positions,
+        selected_site_limits=site_limits,
+        recognition_sites=recognition_sites,
+        codon_weights=codon_weights,
+        seed=request.seed + (1 if fragment_kind == "primary" else 2) * 1_000_000 + copies * 1000 + generations,
+        population_size=request.population_size,
+        generations=int(generations),
+        score_profile=score_profile,
+        mutation_rate=request.mutation_rate,
+        crossover_rate=request.crossover_rate,
+        elite_fraction=request.elite_fraction,
+        progress_callback=progress_callback,
+        progress_context={"fragment_kind": fragment_kind, "copies": int(copies)},
+    )
+    if translate_dna(refined) != protein:
+        raise AssertionError("RDL fragment GA changed the exact target protein")
+
+    if fragment_kind == "primary":
+        fragments = _actual_fragments(
+            f"{request.query.sequence_id}_primary_{copies}copies",
+            refined,
+            route,
+            max_purchase_bp=request.max_purchase_bp,
+        )
+        single_purchase = len(fragments) == 1
+    else:
+        left_adapter, right_adapter = secondary_adapters
+        purchase = left_adapter + refined + right_adapter
+        length = len(purchase)
+        fragments = [{
+            "fragment_id": f"{request.query.sequence_id}_secondary_{copies}copies",
+            "fragment_index": 1,
+            "purchase_sequence": purchase,
+            "purchase_length_bp": length,
+            "purchase_sha256": hashlib.sha256(purchase.encode()).hexdigest(),
+            "product_type": "gBlock" if 125 <= length <= 3000 else "duplexed_ultramer" if 20 <= length < 125 else "unsupported",
+            "product_length_valid": 20 <= length <= request.max_purchase_bp,
+            "left_adapter": left_adapter,
+            "right_adapter": right_adapter,
+            "adapter_bases_removed_after_digest": True,
+        }]
+        single_purchase = True
+
+    local_pass = (
+        bool(metrics["ga_local_constraints_passed"])
+        and single_purchase
+        and all(bool(row["product_length_valid"]) for row in fragments)
+    )
+    idt_pass = False
+    audits: list[dict[str, Any]] = []
+    scored_fragments = fragments
+    if local_pass and request.validation_mode == "api":
+        if idt_scorer is None:
+            raise RuntimeError("API validation mode requires a configured IDT scorer")
+        emit_progress(
+            progress_callback,
+            stage="idt",
+            status="request_started",
+            fragment_kind=fragment_kind,
+            copies=int(copies),
+            generations=int(generations),
+            elapsed_seconds=time.monotonic() - started,
+        )
+        idt_pass, scored_fragments, audits = _score_fragments(fragments, idt_scorer)
+        for row in audits:
+            row.update({
+                "fragment_kind": fragment_kind,
+                "repeat_copies": int(copies),
+                "ga_generations": int(generations),
+            })
+        aggregate_audit.extend(audits)
+        emit_progress(
+            progress_callback,
+            stage="idt",
+            status="request_completed",
+            fragment_kind=fragment_kind,
+            copies=int(copies),
+            generations=int(generations),
+            elapsed_seconds=time.monotonic() - started,
+            details={
+                "passed": bool(idt_pass),
+                "scores": [row.get("idt_complexity_score") for row in scored_fragments],
+            },
+        )
+        if not idt_pass and request.auto_adjust_weights_from_idt:
+            for row in audits:
+                updated, _changes = adjust_ga_score_profile_from_idt(score_profile, row)
+                score_profile.clear()
+                score_profile.update(updated)
+    elif local_pass and request.validation_mode == "batch":
+        idt_pass = False
+
+    passed = local_pass and (
+        request.validation_mode == "batch"
+        or (request.validation_mode == "api" and idt_pass)
+    )
+    scores = [row.get("idt_complexity_score") for row in scored_fragments]
+    return {
+        "passed": bool(passed),
+        "fragment_kind": fragment_kind,
+        "copies": int(copies),
+        "generations": int(generations),
+        "dna_sequence": refined,
+        "protein_sequence": protein,
+        "fragments": scored_fragments,
+        "ga_score": metrics["ga_score"],
+        "ga_local_constraints_passed": bool(local_pass),
+        "selected_pair_re_site_excess": metrics["selected_pair_re_site_excess"],
+        "repeated_re_site_excess": metrics["repeated_re_site_excess"],
+        "idt_request_attempted": bool(audits),
+        "idt_status": "passed" if idt_pass else "batch_not_called" if request.validation_mode == "batch" else "rejected" if audits else "not_scored_local_failure",
+        "idt_explicit_pass": idt_pass if request.validation_mode == "api" else None,
+        "idt_complexity_score": max(
+            (float(value) for value in scores if isinstance(value, (int, float))),
+            default=None,
+        ),
+        "ga_score_profile_after_idt_json": json.dumps(score_profile, sort_keys=True),
+        "elapsed_seconds": time.monotonic() - started,
+    }
+
+
+def _run_fragment_schedule(
+    request: DesignRequestV2,
+    candidate: Mapping[str, Any],
+    route: Mapping[str, Any],
+    *,
+    fragment_kind: str,
+    copies: int,
+    codon_weights: dict[str, float],
+    recognition_sites: tuple[str, ...],
+    score_profile: dict[str, float],
+    idt_scorer: ComplexityScorer | None,
+    aggregate_audit: list[dict[str, Any]],
+    secondary_adapters: tuple[str, str],
+    progress_callback: ProgressCallback | None,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    attempts: list[dict[str, Any]] = []
+    schedule = tuple(sorted({10, *request.generation_schedule, 100}))
+    for generations in schedule:
+        result = _rdl_fragment_attempt(
+            request,
+            candidate,
+            route,
+            fragment_kind=fragment_kind,
+            copies=copies,
+            generations=generations,
+            codon_weights=codon_weights,
+            recognition_sites=recognition_sites,
+            score_profile=score_profile,
+            idt_scorer=idt_scorer,
+            aggregate_audit=aggregate_audit,
+            secondary_adapters=secondary_adapters,
+            progress_callback=progress_callback,
+        )
+        attempts.append({key: value for key, value in result.items() if key not in {"dna_sequence", "protein_sequence", "fragments"}})
+        if result.get("passed"):
+            return result, attempts
+    return None, attempts
+
+
+def _assemble_reused_secondary(
+    request: DesignRequestV2,
+    candidate: Mapping[str, Any],
+    *,
+    primary_copies: int,
+    secondary_copies: int,
+    rdl_rounds: int,
+    primary_dna: str,
+    secondary_dna: str,
+) -> tuple[str, list[dict[str, Any]]]:
+    module_length_bp = len(request.query.repeat_module) * 3
+    insert_at = (len(request.query.n_cap) + int(primary_copies) * len(request.query.repeat_module)) * 3
+    current = primary_dna
+    validations: list[dict[str, Any]] = []
+    limits = {
+        str(candidate.get("site_i_recognition_site") or ""): 1,
+        str(candidate.get("site_ii_recognition_site") or ""): 0,
+    }
+    limits = {site: limit for site, limit in limits.items() if site}
+    for round_index in range(1, int(rdl_rounds) + 1):
+        current = current[:insert_at] + secondary_dna + current[insert_at:]
+        insert_at += len(secondary_dna)
+        copies = int(primary_copies) + round_index * int(secondary_copies)
+        expected = request.query.n_cap + request.query.repeat_module * copies + request.query.c_cap
+        observed = translate_dna(current)
+        site_counts = {site: recognition_site_count(current, site) for site in limits}
+        passed = observed == expected and all(site_counts[site] <= limits[site] for site in limits)
+        validations.append({
+            "round": round_index,
+            "primary_copies": int(primary_copies),
+            "secondary_copies": int(secondary_copies),
+            "result_copy_count": copies,
+            "expected_length_bp": len(expected) * 3,
+            "observed_length_bp": len(current),
+            "translation_exact": observed == expected,
+            "selected_site_counts": site_counts,
+            "selected_site_limits": limits,
+            "selected_pair_clean": all(site_counts[site] <= limits[site] for site in limits),
+            "same_secondary_sha256": hashlib.sha256(secondary_dna.encode()).hexdigest(),
+            "passed": passed,
+        })
+        if not passed:
+            return current, validations
+    if len(secondary_dna) != int(secondary_copies) * module_length_bp:
+        raise AssertionError("Secondary DNA length does not equal its exact module count")
+    return current, validations
+
+
+def _design_exact_reused_secondary_rdl(
+    request: DesignRequestV2,
+    result: DesignResultV2,
+    route: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    idt_scorer: ComplexityScorer | None,
+    progress_callback: ProgressCallback | None,
+) -> DesignResultV2:
+    """Build an exact target from one primary and one reusable secondary."""
+    started = time.monotonic()
+    root = ProjectPaths.discover().root
+    codon_weights = load_codon_weights(root / "data" / "reference_output" / "codon_usage.csv")
+    recognition_sites = load_restriction_sites(root / "data" / "reference_output" / "restriction_enzyme.csv")
+    target_copies = int(request.query.repeat_copies)
+    module = request.query.repeat_module
+    module_bp = len(module) * 3
+    minimum_primary = _minimum_locked_copy_count(candidate, len(module))
+    if target_copies < minimum_primary:
+        result.status = "optimization_failed"
+        result.message = (
+            f"The selected route needs at least {minimum_primary} primary repeats, "
+            f"but the exact target contains {target_copies}."
+        )
+        result.termination_reason = "target_below_selected_route_geometry_minimum"
+        return result
+
+    profile = {
+        **GA_SCORE_PROFILE,
+        **{str(key): float(value) for key, value in request.score_weights.items()},
+    }
+    emit_progress(
+        progress_callback,
+        stage="rdl_plan",
+        status="started",
+        message=f"Planning an exact {target_copies}-copy construct",
+        copies=target_copies,
+        elapsed_seconds=0.0,
+    )
+
+    prefix_length = len(str(route.get("left_restoration_sequence", ""))) + len(str(route.get("left_cutter_site", "")))
+    suffix_length = len(str(route.get("right_restoration_sequence", ""))) + len(str(route.get("right_cutter_site", "")))
+    full_primary_bp = (
+        len(request.query.n_cap + module * target_copies + request.query.c_cap) * 3
+        + prefix_length
+        + suffix_length
+    )
+    if full_primary_bp <= request.max_purchase_bp:
+        direct, direct_attempts = _run_fragment_schedule(
+            request,
+            candidate,
+            route,
+            fragment_kind="primary",
+            copies=target_copies,
+            codon_weights=codon_weights,
+            recognition_sites=recognition_sites,
+            score_profile=profile,
+            idt_scorer=idt_scorer,
+            aggregate_audit=result.idt_audit,
+            secondary_adapters=("", ""),
+            progress_callback=progress_callback,
+        )
+        result.optimization_attempts.extend(
+            [{**row, "component": "direct_primary"} for row in direct_attempts]
+        )
+        if direct is not None:
+            result.final_protein_sequence = str(direct["protein_sequence"])
+            result.final_dna_sequence = str(direct["dna_sequence"])
+            result.primary_fragments = list(direct["fragments"])
+            result.rdl_plan = {
+                "strategy": "exact_reused_secondary_rdl",
+                "target_repeat_copies": target_copies,
+                "primary_repeat_copies": target_copies,
+                "secondary_repeat_copies": 0,
+                "secondary_reuse_count": 0,
+                "equation": f"{target_copies} + 0 x 0 = {target_copies}",
+                "initial_vector_insertions": 1,
+                "rdl_rounds": 0,
+                "final_copy_count_exact": True,
+            }
+            result.status = "idt_accepted" if request.validation_mode == "api" else "optimized_unvalidated_batch"
+            result.termination_reason = "whole_exact_target_single_purchase"
+            result.message = (
+                f"The exact {target_copies}-copy target fits one accepted primary purchase; no RDL round is required."
+                if request.validation_mode == "api"
+                else f"The exact {target_copies}-copy target fits one locally validated primary purchase; IDT was not called."
+            )
+            result.final_plasmid = _simulate_circular_vector(
+                load_plasmid_reference(), route, result.final_dna_sequence,
+                result.final_protein_sequence, candidate,
+            )
+            result.cloning_steps = [
+                {"step": 1, "stage": "vector_digest", "action": f"Open {route['profile_id']} with {route['left_cutter']}/{route['right_cutter']}."},
+                {"step": 2, "stage": "primary_installation", "action": f"Install the exact {target_copies}-copy primary once."},
+                {"step": 3, "stage": "sequence_qc", "action": "Verify exact translation, selected-pair cleanliness, restoration, and protected annotations."},
+            ]
+            emit_progress(
+                progress_callback,
+                stage="rdl_plan",
+                status="completed",
+                message=result.message,
+                copies=target_copies,
+                elapsed_seconds=time.monotonic() - started,
+            )
+            return result
+
+    left_adapter, right_adapter, adapter_evidence = _secondary_adapters(route, project_root=root)
+    capacity = (request.max_purchase_bp - len(left_adapter) - len(right_adapter)) // module_bp
+    if capacity < 1:
+        result.status = "optimization_failed"
+        result.message = "Site-III adapters leave no capacity for one complete repeat module."
+        result.termination_reason = "secondary_adapter_capacity_below_one_module"
+        return result
+
+    secondary_cache: dict[int, dict[str, Any]] = {}
+
+    def evaluate_secondary(copies: int, generations: int) -> dict[str, Any]:
+        attempted = _rdl_fragment_attempt(
+            request,
+            candidate,
+            route,
+            fragment_kind="secondary",
+            copies=copies,
+            generations=generations,
+            codon_weights=codon_weights,
+            recognition_sites=recognition_sites,
+            score_profile=profile,
+            idt_scorer=idt_scorer,
+            aggregate_audit=result.idt_audit,
+            secondary_adapters=(left_adapter, right_adapter),
+            progress_callback=progress_callback,
+        )
+        if attempted.get("passed"):
+            secondary_cache[int(copies)] = attempted
+        return attempted
+
+    maximum_secondary, best_secondary, search_trace, search_reason = adaptive_copy_search(
+        1,
+        int(capacity),
+        short_generations=10,
+        generation_schedule=request.generation_schedule,
+        evaluate=evaluate_secondary,
+        progress_callback=progress_callback,
+        progress_context={"fragment_kind": "secondary"},
+    )
+    result.optimization_attempts.extend(
+        [{**row, "component": "maximum_secondary_search"} for row in search_trace]
+    )
+    result.maximum_secondary_evidence = {
+        "mathematical_capacity_copies": int(capacity),
+        "maximum_verified_copies": int(maximum_secondary),
+        "validation_mode": request.validation_mode,
+        "proof": search_reason,
+        "next_copy_failed_at_100": search_reason == f"copy_{maximum_secondary + 1}_failed_at_100",
+        "adapter_evidence": adapter_evidence,
+        "idt_verified": request.validation_mode == "api" and maximum_secondary > 0,
+    }
+    if maximum_secondary < 1 or best_secondary is None:
+        result.status = "no_accepted_repeat_construct"
+        result.message = "No reusable secondary containing one complete module passed through 100 generations."
+        result.termination_reason = search_reason
+        return result
+    secondary_cache[int(maximum_secondary)] = best_secondary
+
+    largest_route_secondary = min(int(maximum_secondary), target_copies - minimum_primary)
+    primary_available_bp = request.max_purchase_bp - prefix_length - suffix_length
+    if primary_available_bp <= 0:
+        result.status = "optimization_failed"
+        result.message = "Primary restoration/adaptor sequences leave no purchase capacity."
+        result.termination_reason = "primary_adapter_capacity_below_one_module"
+        return result
+
+    # Search equations in increasing RDL-round order.  Within one round count,
+    # prefer the longest already orderable secondary.  This implements the
+    # promised "maximum secondary, minimum rounds" behavior while retaining a
+    # deterministic fallback when that equation's independently optimized
+    # primary is rejected.
+    equations: list[tuple[int, int, int]] = []
+    for rounds in range(1, target_copies - minimum_primary + 1):
+        for secondary_copies in range(largest_route_secondary, 0, -1):
+            primary_copies = target_copies - rounds * secondary_copies
+            if primary_copies < minimum_primary:
+                continue
+            primary_core_bp = len(
+                request.query.n_cap
+                + module * primary_copies
+                + request.query.c_cap
+            ) * 3
+            if primary_core_bp > primary_available_bp:
+                continue
+            equations.append((rounds, secondary_copies, primary_copies))
+
+    for rounds, secondary_copies, primary_copies in equations:
+        equation_context = {
+            "rdl_candidate_rounds": int(rounds),
+            "rdl_candidate_secondary_copies": int(secondary_copies),
+            "rdl_candidate_primary_copies": int(primary_copies),
+        }
+        secondary = secondary_cache.get(secondary_copies)
+        if secondary is None:
+            secondary, attempts = _run_fragment_schedule(
+                request,
+                candidate,
+                route,
+                fragment_kind="secondary",
+                copies=secondary_copies,
+                codon_weights=codon_weights,
+                recognition_sites=recognition_sites,
+                score_profile=profile,
+                idt_scorer=idt_scorer,
+                aggregate_audit=result.idt_audit,
+                secondary_adapters=(left_adapter, right_adapter),
+                progress_callback=progress_callback,
+            )
+            result.optimization_attempts.extend(
+                [
+                    {**row, "component": "rdl_secondary_candidate", **equation_context}
+                    for row in attempts
+                ]
+            )
+            if secondary is None:
+                continue
+            secondary_cache[secondary_copies] = secondary
+
+        primary, attempts = _run_fragment_schedule(
+            request,
+            candidate,
+            route,
+            fragment_kind="primary",
+            copies=primary_copies,
+            codon_weights=codon_weights,
+            recognition_sites=recognition_sites,
+            score_profile=profile,
+            idt_scorer=idt_scorer,
+            aggregate_audit=result.idt_audit,
+            secondary_adapters=(left_adapter, right_adapter),
+            progress_callback=progress_callback,
+        )
+        result.optimization_attempts.extend(
+            [
+                {**row, "component": "rdl_primary_candidate", **equation_context}
+                for row in attempts
+            ]
+        )
+        if primary is None:
+            continue
+
+        final_dna, validations = _assemble_reused_secondary(
+            request,
+            candidate,
+            primary_copies=primary_copies,
+            secondary_copies=secondary_copies,
+            rdl_rounds=rounds,
+            primary_dna=str(primary["dna_sequence"]),
+            secondary_dna=str(secondary["dna_sequence"]),
+        )
+        result.intermediate_validations.extend(validations)
+        final_protein = request.query.n_cap + module * target_copies + request.query.c_cap
+        if not validations or not all(row["passed"] for row in validations):
+            continue
+        if translate_dna(final_dna) != final_protein:
+            raise AssertionError("The selected RDL route did not produce the exact final protein")
+
+        result.final_protein_sequence = final_protein
+        result.final_dna_sequence = final_dna
+        result.primary_fragments = [
+            {**row, "fragment_role": "primary", "module_copies": int(primary_copies)}
+            for row in primary["fragments"]
+        ]
+        result.secondary_fragments = [
+            {
+                **row,
+                "fragment_role": "reusable_secondary",
+                "module_copies": int(secondary_copies),
+                "reuse_count": int(rounds),
+            }
+            for row in secondary["fragments"]
+        ]
+        result.rdl_plan = {
+            "strategy": "exact_reused_secondary_rdl",
+            "target_repeat_copies": target_copies,
+            "minimum_primary_copies_for_selected_geometry": minimum_primary,
+            "primary_repeat_copies": int(primary_copies),
+            "secondary_repeat_copies": int(secondary_copies),
+            "secondary_reuse_count": int(rounds),
+            "equation": f"{primary_copies} + {rounds} x {secondary_copies} = {target_copies}",
+            "initial_vector_insertions": 1,
+            "rdl_rounds": int(rounds),
+            "final_copy_count_exact": True,
+            "secondary_purchase_sha256": result.secondary_fragments[0]["purchase_sha256"],
+            "same_secondary_reused_every_round": True,
+            "selected_pair_fixed_every_round": True,
+        }
+        result.status = "idt_accepted" if request.validation_mode == "api" else "optimized_unvalidated_batch"
+        result.termination_reason = "exact_target_rdl_route_verified"
+        result.message = (
+            f"Exact {target_copies}-copy route verified: {primary_copies} primary + "
+            f"{rounds} x {secondary_copies}-copy reusable secondary."
+        )
+        result.final_plasmid = _simulate_circular_vector(
+            load_plasmid_reference(), route, final_dna, final_protein, candidate
+        )
+        result.cloning_steps = [
+            {"step": 1, "stage": "vector_digest", "action": f"Open {route['profile_id']} with {route['left_cutter']}/{route['right_cutter']}; retain the annotated long backbone."},
+            {"step": 2, "stage": "primary_installation", "action": f"Install the independently optimized {primary_copies}-copy primary containing both caps."},
+            *[
+                {
+                    "step": 2 + round_index,
+                    "stage": "rdl_secondary_round",
+                    "action": (
+                        f"RDL round {round_index}: reuse the same {secondary_copies}-copy secondary "
+                        f"with {route['site_i_enzyme']}/{route['site_ii_enzyme']}/{route['site_iii_enzyme']} "
+                        f"to reach {primary_copies + round_index * secondary_copies} copies."
+                    ),
+                }
+                for round_index in range(1, rounds + 1)
+            ],
+            {"step": 3 + rounds, "stage": "sequence_qc", "action": "Verify exact 25-copy translation, selected-pair cleanliness, restoration, and protected annotations."},
+        ]
+        emit_progress(
+            progress_callback,
+            stage="rdl_plan",
+            status="completed",
+            message=result.message,
+            copies=target_copies,
+            elapsed_seconds=time.monotonic() - started,
+            details=result.rdl_plan,
+        )
+        return result
+
+    result.status = "no_accepted_repeat_construct"
+    result.message = (
+        f"No primary + reusable-secondary equation produced the exact {target_copies}-copy target "
+        "after the required 100-generation attempts."
+    )
+    result.termination_reason = "all_exact_rdl_equations_exhausted"
+    emit_progress(
+        progress_callback,
+        stage="rdl_plan",
+        status="failed",
+        message=result.message,
+        copies=target_copies,
+        elapsed_seconds=time.monotonic() - started,
+    )
+    return result
+
+
 def design_construct_v2(
     request: DesignRequestV2,
     *,
     protein_index_dir: str | Path | None = None,
     plasmid_reference_path: str | Path | None = None,
     idt_scorer: ComplexityScorer | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> DesignResultV2:
+    started = time.monotonic()
+    emit_progress(
+        progress_callback,
+        stage="design",
+        status="started",
+        message="Validating the confirmed HURDLER route",
+        elapsed_seconds=0.0,
+    )
     result = design_query(request.query, protein_index_dir=protein_index_dir, plasmid_reference_path=plasmid_reference_path)
     result.request = asdict(request)
     if result.status != "compatible_unoptimized":
@@ -639,10 +1371,19 @@ def design_construct_v2(
         result.status = "compatible_unoptimized"
         result.message = "The route is selected, but no codon optimization was requested; no purchase DNA was emitted."
         return result
+    if request.query.input_mode == "split" and request.assembly_strategy == "exact_reused_secondary_rdl":
+        return _design_exact_reused_secondary_rdl(
+            request,
+            result,
+            route,
+            candidate,
+            idt_scorer=idt_scorer,
+            progress_callback=progress_callback,
+        )
     root = ProjectPaths.discover().root
     weights = load_codon_weights(root / "data" / "reference_output" / "codon_usage.csv")
     recognition_sites = load_restriction_sites(root / "data" / "reference_output" / "restriction_enzyme.csv")
-    if request.query.input_mode == "split" and request.max_repeat_copies is not None:
+    if request.query.input_mode == "split" and request.assembly_strategy == "legacy_adaptive_max":
         upper = int(request.max_repeat_copies)
         if upper < 2:
             raise ValueError("max_repeat_copies must be at least two")
@@ -666,7 +1407,10 @@ def design_construct_v2(
                 score_profile=adaptive_profile,
                 idt_scorer=idt_scorer,
                 aggregate_audit=result.idt_audit,
+                progress_callback=progress_callback,
             ),
+            progress_callback=progress_callback,
+            progress_context={"fragment_kind": "legacy_whole_construct"},
         )
         result.optimization_attempts = trace
         result.termination_reason = reason
@@ -819,6 +1563,7 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         ("stop_rescue_records.csv", result.stop_rescue_records),
         ("cloning_steps.csv", result.cloning_steps),
         ("ga_audit.csv", result.optimization_attempts),
+        ("rdl_intermediate_validations.csv", result.intermediate_validations),
     ):
         path = destination / name
         columns = sorted({key for row in rows for key in row})
@@ -832,6 +1577,24 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         fasta = destination / "optimized_construct.fasta"
         fasta.write_text(f">{result.request['query']['sequence_id']}\n{result.final_dna_sequence}\n")
         paths["optimized_construct_fasta"] = str(fasta)
+        protein_fasta = destination / "optimized_construct_protein.fasta"
+        protein_fasta.write_text(
+            f">{result.request['query']['sequence_id']}_translated\n{result.final_protein_sequence}\n"
+        )
+        paths["optimized_construct_protein_fasta"] = str(protein_fasta)
+    if result.rdl_plan:
+        rdl_json = destination / "rdl_plan.json"
+        write_json_atomic(result.rdl_plan, rdl_json)
+        paths["rdl_plan_json"] = str(rdl_json)
+        rdl_csv = destination / "rdl_plan.csv"
+        with rdl_csv.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=sorted(result.rdl_plan))
+            writer.writeheader()
+            writer.writerow({
+                key: json.dumps(value, sort_keys=True) if isinstance(value, (dict, list, tuple)) else value
+                for key, value in result.rdl_plan.items()
+            })
+        paths["rdl_plan_csv"] = str(rdl_csv)
     if result.final_plasmid:
         from Bio.Seq import Seq
         from Bio.SeqFeature import FeatureLocation, SeqFeature
@@ -869,7 +1632,7 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         SeqIO.write(record, plasmid_genbank, "genbank")
         paths["final_plasmid_genbank"] = str(plasmid_genbank)
     all_fragments = [*result.primary_fragments, *result.secondary_fragments]
-    if result.status == "optimized_unvalidated_batch":
+    if all_fragments and result.status in {"optimized_unvalidated_batch", "idt_accepted"}:
         paths.update({f"idt_bulk_{key}": value for key, value in _batch_fragments(destination, all_fragments).items()})
     audit = destination / "idt_audit.jsonl"
     audit.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in result.idt_audit))

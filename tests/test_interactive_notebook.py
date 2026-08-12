@@ -37,8 +37,7 @@ def colab_runtime_namespace():
     namespace: dict[str, object] = {}
     for cell_id in (
         "hurdler-protein-form",
-        "hurdler-re-vector-form",
-        "hurdler-optimization-form",
+        "hurdler-selector-policy-form",
         "hurdler-test-defaults",
         "hurdler-imports",
     ):
@@ -47,8 +46,8 @@ def colab_runtime_namespace():
     namespace["clear_output"] = lambda *_args, **_kwargs: None
     exec(
         compile(
-            _colab_cell_source("hurdler-query-and-design-controls"),
-            "hurdler-query-and-design-controls",
+            _colab_cell_source("hurdler-controller-v2"),
+            "hurdler-controller-v2",
             "exec",
         ),
         namespace,
@@ -69,7 +68,7 @@ def test_notebook_source_is_output_free_and_has_no_widget_state():
     text = NOTEBOOK.read_text()
     assert "IDT_CLIENT_SECRET=" not in text
     assert "IDT_PASSWORD=" not in text
-    assert ".config/hurdler/idt.env" not in text
+    assert "/home/wendai/.config/hurdler/idt.env" not in text
 
 
 def test_colab_cells_are_named_hidden_forms():
@@ -94,8 +93,7 @@ def test_colab_user_inputs_are_native_params_visible_before_execution():
     payload = _colab_payload()
     form_ids = {
         "hurdler-protein-form",
-        "hurdler-re-vector-form",
-        "hurdler-optimization-form",
+        "hurdler-selector-policy-form",
     }
     sources = {
         cell["metadata"]["id"]: "".join(cell["source"])
@@ -107,20 +105,7 @@ def test_colab_user_inputs_are_native_params_visible_before_execution():
         "input_mode", "sequence_id", "n_cap_aa", "repeat_module_aa",
         "initial_repeat_copies", "c_cap_aa", "full_protein_or_fasta",
         "repeat_region_start_1based", "repeat_region_end_1based", "repeat_period_aa",
-        "site_i_allowlist", "site_ii_allowlist", "site_iii_allowlist",
-        "use_pGEX_4T_1", "use_pMAL_c5X", "use_pET_21a", "use_pET_28a",
-        "use_pET_28a_start_codon", "use_pCold_I", "use_pUC18", "use_pQE_3",
         "allow_left_cutter_in_hurdler_pair", "allow_right_cutter_in_hurdler_pair",
-        "validation_mode", "idt_credential_source", "idt_prompt_auth_method",
-        "output_directory", "enable_zip_download", "maximum_repeat_copies",
-        "population_size", "mutation_rate", "crossover_rate", "elite_fraction",
-        "random_seed", "generation_schedule", "auto_adjust_weights_from_idt",
-        "weight_selected_re_site_excess", "weight_gc_window_violation",
-        "weight_repeated_re_site_excess", "weight_repeated_14mer",
-        "weight_repeated_13mer", "weight_repeated_8mer",
-        "weight_hairpin_10mer_proxy", "weight_homopolymer_excess",
-        "weight_terminal_repeat_proxy", "weight_gc_window_soft_violation",
-        "weight_negative_log_cai",
     }
     observed = set()
     for source in sources.values():
@@ -140,6 +125,28 @@ def test_colab_user_inputs_are_native_params_visible_before_execution():
         assert not re.search(rf"^{secret}\s*=.*#@param", COLAB_NOTEBOOK.read_text(), re.MULTILINE)
 
 
+def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
+    sources = {
+        cell["metadata"]["id"]: "".join(cell["source"])
+        for cell in _colab_payload()["cells"]
+    }
+    assert "Select all RE" in sources["hurdler-controller-v2"]
+    assert "Select no RE" in sources["hurdler-controller-v2"]
+    assert "Select all plasmids" in sources["hurdler-controller-v2"]
+    assert "Select no plasmids" in sources["hurdler-controller-v2"]
+    assert "hurdler-enzyme-selector" in sources
+    assert "hurdler-plasmid-selector" in sources
+    assert "hurdler-re-route-panel" in sources
+    assert "hurdler-vector-route-panel" in sources
+    assert "hurdler-ga-panel" in sources
+    controller = sources["hurdler-controller-v2"]
+    assert 'value="api"' in controller
+    assert 'assembly_strategy="exact_reused_secondary_rdl"' in controller
+    assert "widgets.BoundedIntText" in controller
+    assert "widgets.BoundedFloatText" in controller
+    assert 'ga_panel.layout.display = "none"' in controller
+
+
 def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
     source = _colab_cell_source("hurdler-initialize")
     assert "COLAB_RELEASE_TAG" not in source
@@ -152,11 +159,14 @@ def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
 
 
 def test_colab_run_all_queries_but_never_auto_confirms_rank_one(colab_runtime_namespace):
+    colab_runtime_namespace["_run_query"]()
     state = colab_runtime_namespace["state"]
     assert state["query_result"].status == "compatible_unoptimized"
-    assert state["query_result"].vector_routes
+    assert len(state["query_result"].protein_candidates) == 770
+    assert len(state["query_result"].vector_routes) == 3072
     assert state["confirmed_route"] is None
-    assert colab_runtime_namespace["route_choice"].value is None
+    assert colab_runtime_namespace["pair_choice"].value is None
+    assert colab_runtime_namespace["site_iii_choice"].value is None
     assert colab_runtime_namespace["design_button"].disabled is True
 
 
@@ -180,10 +190,10 @@ def test_colab_complete_fasta_preserves_header_and_requires_boundary_confirmatio
 
 def test_colab_form_edit_invalidates_confirmed_route(colab_runtime_namespace):
     namespace = colab_runtime_namespace
-    namespace["route_choice"].value = 0
-    namespace["_confirm_route"]()
+    _confirm_first_colab_route(namespace)
     assert namespace["state"]["confirmed_route"] is not None
     assert namespace["design_button"].disabled is False
+    assert namespace["ga_panel"].layout.display == ""
     namespace["n_cap_aa"] = "MM"
     namespace["_confirm_route"]()
     assert namespace["state"]["confirmed_route"] is None
@@ -206,6 +216,22 @@ def test_colab_secrets_prefers_access_token_and_clears_environment(colab_runtime
     assert "IDT_ACCESS_TOKEN" not in os.environ
 
 
+def test_colab_shared_enzyme_and_plasmid_select_all_none_controls(colab_runtime_namespace):
+    namespace = colab_runtime_namespace
+    assert len(namespace["all_enzyme_options"]) == 47
+    namespace["_set_no_enzymes"]()
+    assert namespace["enzyme_selector"].value == ()
+    with pytest.raises(ValueError, match="Site I"):
+        namespace["_current_query"]()
+    namespace["_set_all_enzymes"]()
+    assert len(namespace["enzyme_selector"].value) == 47
+    namespace["_set_no_plasmids"]()
+    with pytest.raises(ValueError, match="plasmid"):
+        namespace["_current_query"]()
+    namespace["_set_all_plasmids"]()
+    assert namespace["plasmid_selector"].value == namespace["PLASMID_OPTIONS"]
+
+
 @pytest.mark.parametrize(
     ("module", "expected_status"),
     [("WWWWWW", "no_hurdler_pair_match"), ("YSPTSPS", "no_vector_route")],
@@ -223,7 +249,11 @@ def test_colab_incompatible_queries_never_enable_optimization(
 
 
 def _confirm_first_colab_route(namespace):
-    namespace["route_choice"].value = 0
+    namespace["_run_query"]()
+    namespace["pair_choice"].value = namespace["pair_choice"].options[1][1]
+    namespace["site_iii_choice"].value = namespace["site_iii_choice"].options[1][1]
+    namespace["profile_choice"].value = namespace["profile_choice"].options[1][1]
+    namespace["scheme_choice"].value = namespace["scheme_choice"].options[1][1]
     namespace["_confirm_route"]()
     assert namespace["state"]["confirmed_route"] is not None
 
@@ -233,11 +263,11 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
 ):
     namespace = colab_runtime_namespace
     _confirm_first_colab_route(namespace)
-    namespace["validation_mode"] = "IDT Bulk Input files"
-    namespace["maximum_repeat_copies"] = 3
-    namespace["population_size"] = 4
-    namespace["generation_schedule"] = "10,100"
-    namespace["output_directory"] = str(tmp_path / "batch")
+    namespace["validation_mode_widget"].value = "batch"
+    namespace["population_number"].value = 4
+    namespace["generation_schedule_widget"].value = "10,100"
+    namespace["output_directory_widget"].value = str(tmp_path / "batch")
+    namespace["auto_download_widget"].value = False
 
     class MustNotBeConstructed:
         def __init__(self, *_args, **_kwargs):
@@ -248,6 +278,11 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
     summary = json.loads((tmp_path / "batch" / "design_summary.json").read_text())
     assert summary["status"] == "optimized_unvalidated_batch"
     assert summary["idt_audit"] == []
+    assert (tmp_path / "batch" / "rdl_plan.json").is_file()
+    assert (tmp_path / "batch" / "secondary_fragments.csv").is_file()
+    assert (tmp_path / "batch" / "idt_bulk_input.csv").is_file()
+    assert (tmp_path / "batch" / "idt_bulk_input.tsv").is_file()
+    assert (tmp_path / "batch" / "idt_bulk_input.fasta").is_file()
     assert Path(namespace["state"]["archive"]).is_file()
 
 
@@ -256,11 +291,11 @@ def test_colab_mock_secrets_api_flow_clears_credentials(
 ):
     namespace = colab_runtime_namespace
     _confirm_first_colab_route(namespace)
-    namespace["validation_mode"] = "Live IDT API"
-    namespace["maximum_repeat_copies"] = 3
-    namespace["population_size"] = 4
-    namespace["generation_schedule"] = "10,100"
-    namespace["output_directory"] = str(tmp_path / "api")
+    namespace["validation_mode_widget"].value = "api"
+    namespace["population_number"].value = 4
+    namespace["generation_schedule_widget"].value = "10,100"
+    namespace["output_directory_widget"].value = str(tmp_path / "api")
+    namespace["auto_download_widget"].value = False
 
     class PassingScorer:
         def score(self, name: str, sequence: str):
@@ -289,6 +324,11 @@ def test_colab_mock_secrets_api_flow_clears_credentials(
     summary = json.loads((tmp_path / "api" / "design_summary.json").read_text())
     assert summary["status"] == "idt_accepted"
     assert summary["idt_audit"]
+    assert summary["rdl_plan"]["final_copy_count_exact"] is True
+    assert (tmp_path / "api" / "rdl_plan.json").is_file()
+    assert (tmp_path / "api" / "idt_bulk_input.csv").is_file()
+    assert (tmp_path / "api" / "idt_bulk_input.tsv").is_file()
+    assert (tmp_path / "api" / "idt_bulk_input.fasta").is_file()
     assert "IDT_ACCESS_TOKEN" not in os.environ
 
 

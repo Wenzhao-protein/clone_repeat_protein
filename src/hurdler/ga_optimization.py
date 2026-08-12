@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,6 +32,7 @@ from .optimization import (
     reverse_complement,
     translate_dna,
 )
+from .progress import ProgressCallback, emit_progress
 
 
 GA_SCORE_PROFILE = {
@@ -242,6 +244,8 @@ def genetic_refine_dna(
     crossover_rate: float = 1.0,
     elite_fraction: float = 0.125,
     score_profile: dict[str, float] | None = None,
+    progress_callback: ProgressCallback | None = None,
+    progress_context: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Refine synonymous codons with the RE-repeat term in every fitness call."""
     if translate_dna(dna) == "":
@@ -258,6 +262,17 @@ def genetic_refine_dna(
     rng = np.random.default_rng(seed)
     cache: dict[str, dict[str, Any]] = {}
     profile = dict(GA_SCORE_PROFILE if score_profile is None else score_profile)
+    context = dict(progress_context or {})
+    started = time.monotonic()
+    emit_progress(
+        progress_callback,
+        stage="ga",
+        status="started",
+        generations=int(generations),
+        generation=0,
+        elapsed_seconds=0.0,
+        **context,
+    )
 
     def metrics(sequence: str) -> dict[str, Any]:
         if sequence not in cache:
@@ -310,6 +325,20 @@ def genetic_refine_dna(
                 child = str(first)
             next_population.append(mutate(child, mutation_rate))
         population = next_population
+        current = metrics(best)
+        emit_progress(
+            progress_callback,
+            stage="ga",
+            status="running",
+            generations=int(generations),
+            generation=int(_generation + 1),
+            ga_score=float(current["ga_score"]),
+            selected_pair_re_site_excess=int(
+                current.get("selected_pair_re_site_excess", current["selected_re_site_excess"])
+            ),
+            elapsed_seconds=time.monotonic() - started,
+            **context,
+        )
     best = min(
         [best, *population],
         key=lambda sequence: (metrics(sequence)["ga_score"], sequence),
@@ -344,6 +373,17 @@ def genetic_refine_dna(
             "ga_score_profile_json": json.dumps(profile, sort_keys=True),
         }
     )
+    emit_progress(
+        progress_callback,
+        stage="ga",
+        status="completed",
+        generations=int(generations),
+        generation=int(generations),
+        ga_score=float(final_metrics["ga_score"]),
+        selected_pair_re_site_excess=int(final_metrics["selected_pair_re_site_excess"]),
+        elapsed_seconds=time.monotonic() - started,
+        **context,
+    )
     return best, final_metrics
 
 
@@ -354,6 +394,8 @@ def adaptive_copy_search(
     short_generations: int,
     generation_schedule: tuple[int, ...],
     evaluate: Callable[[int, int], dict[str, Any]],
+    progress_callback: ProgressCallback | None = None,
+    progress_context: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, Any] | None, list[dict[str, Any]], str]:
     """Find the longest passing repeat count using the requested two-stage route.
 
@@ -374,10 +416,24 @@ def adaptive_copy_search(
 
     cache: dict[tuple[int, int], dict[str, Any]] = {}
     trace: list[dict[str, Any]] = []
+    context = dict(progress_context or {})
+    started = time.monotonic()
 
     def run(copies: int, generations: int, phase: str) -> dict[str, Any]:
         key = (copies, generations)
         cached = key in cache
+        emit_progress(
+            progress_callback,
+            stage="copy_search",
+            status="attempt_started",
+            copies=int(copies),
+            phase=phase,
+            generations=int(generations),
+            generation=0,
+            elapsed_seconds=time.monotonic() - started,
+            details={"cached": cached},
+            **context,
+        )
         if not cached:
             cache[key] = evaluate(copies, generations)
         result = cache[key]
@@ -445,6 +501,30 @@ def adaptive_copy_search(
                 "error": result.get("error", ""),
                 "idt_error": result.get("idt_error", ""),
             }
+        )
+        emit_progress(
+            progress_callback,
+            stage="copy_search",
+            status="attempt_completed",
+            copies=int(copies),
+            phase=phase,
+            generations=int(generations),
+            generation=int(generations),
+            ga_score=(
+                float(result["ga_score"])
+                if isinstance(result.get("ga_score"), (int, float))
+                else None
+            ),
+            selected_pair_re_site_excess=result.get(
+                "selected_pair_re_site_excess", result.get("selected_re_site_excess")
+            ),
+            elapsed_seconds=time.monotonic() - started,
+            details={
+                "passed": bool(result.get("passed", False)),
+                "idt_status": result.get("idt_status", ""),
+                "cached": cached,
+            },
+            **context,
         )
         return result
 

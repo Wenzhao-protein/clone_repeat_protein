@@ -27,6 +27,7 @@
     "advanced_pair_per_round": false
   },
   "validation_mode": "batch",
+  "assembly_strategy": "legacy_adaptive_max",
   "max_repeat_copies": 3,
   "population_size": 4,
   "mutation_rate": 0.08,
