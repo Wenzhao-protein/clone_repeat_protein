@@ -187,7 +187,8 @@ def repeat_aware_synonymous_refine(
     seed: int,
     steps: int = 40_000,
     k: int = 8,
-    long_repeat_weights: tuple[float, float] = (24.0, 36.0),
+    long_repeat_weights: tuple[float, float, float] = (12.0, 24.0, 36.0),
+    repeat_windows: Sequence[dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Reduce repeated-k-mer base coverage with synonymous local moves.
 
@@ -208,7 +209,7 @@ def repeat_aware_synonymous_refine(
     rng = np.random.default_rng(int(seed))
     bases = list(sequence)
     codons = [sequence[index : index + 3] for index in range(0, len(sequence), 3)]
-    tracked_k = (k, 13, 14)
+    tracked_k = (k, 12, 13, 14)
     positions: dict[int, dict[str, set[int]]] = {length: {} for length in tracked_k}
     for length in tracked_k:
         for start in range(max(0, len(bases) - length + 1)):
@@ -218,7 +219,7 @@ def repeat_aware_synonymous_refine(
     covered_bases = 0
     repeat_excess = {
         length: sum(max(0, len(starts) - 1) for starts in positions[length].values())
-        for length in (13, 14)
+        for length in (12, 13, 14)
     }
 
     def add_motif_contribution(motif: str, delta: int) -> None:
@@ -239,10 +240,21 @@ def repeat_aware_synonymous_refine(
         add_motif_contribution(motif, 1)
 
     def objective() -> float:
+        window_excess = 0.0
+        for raw_window in repeat_windows or ():
+            start = max(0, int(raw_window.get("start", 0)))
+            end = min(len(bases), int(raw_window.get("end", start)))
+            if end <= start:
+                continue
+            threshold = float(raw_window.get("threshold", 100.0))
+            covered = sum(value > 0 for value in coverage_counts[start:end])
+            window_excess += max(0.0, covered - threshold * (end - start) / 100.0)
         return (
             float(covered_bases)
-            + float(long_repeat_weights[0]) * repeat_excess[13]
-            + float(long_repeat_weights[1]) * repeat_excess[14]
+            + float(long_repeat_weights[0]) * repeat_excess[12]
+            + float(long_repeat_weights[1]) * repeat_excess[13]
+            + float(long_repeat_weights[2]) * repeat_excess[14]
+            + 20.0 * window_excess
         )
 
     def apply_codon(codon_position: int, new_codon: str) -> str:
@@ -361,6 +373,8 @@ def repeat_aware_synonymous_refine(
         "repeat_aware_final_repeated_13mer": int(best_repeat_excess[13]),
         "repeat_aware_initial_repeated_14mer": int(initial_repeat_excess[14]),
         "repeat_aware_final_repeated_14mer": int(best_repeat_excess[14]),
+        "repeat_aware_initial_repeated_12mer": int(initial_repeat_excess[12]),
+        "repeat_aware_final_repeated_12mer": int(best_repeat_excess[12]),
         "repeat_aware_objective": float(best_objective),
     }
 
@@ -506,9 +520,14 @@ def ga_sequence_metrics(
         for value in guidance.get("avoid_segments", [])
         if str(value) and set(str(value).upper()) <= set("ACGT")
     )
-    segment_occurrences = sum(
+    segment_counts = [
         _overlapping_pattern_count(dna, segment) for segment in reported_segments
-    )
+    ]
+    segment_occurrences = sum(segment_counts)
+    # IDT reports the segment because it occurs more than once. Keeping one
+    # copy is harmless and often unavoidable for a protein-coding motif; the
+    # actionable quantity is only the repeated excess.
+    segment_repeat_excess = sum(max(0, count - 1) for count in segment_counts)
     terminal_gc_excess = 0.0
     terminal_gc_metrics: list[dict[str, Any]] = []
     for raw_window in guidance.get("terminal_gc_windows", []):
@@ -542,7 +561,7 @@ def ga_sequence_metrics(
         - profile["negative_log_cai"] * math.log(max(cai, 1e-12))
         + profile["idt_repeat_coverage_excess"] * repeat_coverage_excess
         + profile["idt_window_repeat_coverage_excess"] * window_excess
-        + profile["idt_reported_segment_occurrences"] * segment_occurrences
+        + profile["idt_reported_segment_occurrences"] * segment_repeat_excess
         + profile["idt_terminal_gc_excess"] * terminal_gc_excess
     )
     return {
@@ -566,6 +585,7 @@ def ga_sequence_metrics(
         "idt_window_repeat_coverage_excess_proxy": float(window_excess),
         "idt_window_repeat_coverage_json": json.dumps(window_coverages, sort_keys=True),
         "idt_reported_segment_occurrences": int(segment_occurrences),
+        "idt_reported_segment_repeat_excess": int(segment_repeat_excess),
         "idt_terminal_gc_excess_proxy": float(terminal_gc_excess),
         "idt_terminal_gc_json": json.dumps(terminal_gc_metrics, sort_keys=True),
         # Live IDT, not a duplicated local GC cutoff, is the orderability
@@ -694,6 +714,7 @@ def genetic_refine_dna(
             seed=seed + 7919,
             steps=repeat_aware_steps,
             k=8,
+            repeat_windows=guidance.get("repeat_windows", []),
         )
         repeat_aware_seed = _repair_site_limits(
             repeat_aware_seed,

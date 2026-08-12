@@ -995,6 +995,46 @@ def _idt_feedback_guidance(
     }
 
 
+def _merge_idt_feedback_guidance(
+    previous: Mapping[str, Any],
+    current: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Retain recently discovered hotspots while adding the newest rules.
+
+    IDT reports one worst repeat window or repeated segment at a time.  If the
+    next round targets only that newest item, an older repaired hotspot may
+    reappear.  Keep a bounded, de-duplicated working set across feedback
+    rounds so the search makes cumulative progress.
+    """
+    def unique_rows(key: str, limit: int) -> list[Any]:
+        rows = [*previous.get(key, []), *current.get(key, [])]
+        deduplicated: dict[str, Any] = {}
+        for row in rows:
+            deduplicated[json.dumps(row, sort_keys=True)] = row
+        return list(deduplicated.values())[-limit:]
+
+    previous_threshold = _finite_number(previous.get("repeat_coverage_threshold"))
+    current_threshold = _finite_number(current.get("repeat_coverage_threshold"))
+    thresholds = [value for value in (previous_threshold, current_threshold) if value is not None]
+    return {
+        "schema_version": "idt-structured-ga-feedback-v1",
+        "repeat_coverage_threshold": min(thresholds) if thresholds else 100.0,
+        "repeat_windows": unique_rows("repeat_windows", 16),
+        "terminal_gc_windows": unique_rows("terminal_gc_windows", 8),
+        "avoid_segments": unique_rows("avoid_segments", 32),
+        "target_ranges": unique_rows("target_ranges", 64),
+        "hotspot_mutation_rate": max(
+            float(previous.get("hotspot_mutation_rate", 0.0)),
+            float(current.get("hotspot_mutation_rate", 0.0)),
+        ),
+        "repeat_aware_steps": max(
+            int(previous.get("repeat_aware_steps", 0)),
+            int(current.get("repeat_aware_steps", 0)),
+        ),
+        "rule_targets": unique_rows("rule_targets", 64),
+    }
+
+
 def _rdl_purchase_fragments(
     request: DesignRequestV2,
     route: Mapping[str, Any],
@@ -1368,6 +1408,7 @@ def _run_fragment_schedule(
                 round_audits,
                 result.get("fragments", []),
             )
+            next_guidance = _merge_idt_feedback_guidance(guidance, next_guidance)
             if request.auto_adjust_weights_from_idt:
                 for row in round_audits:
                     updated, changes = adjust_ga_score_profile_from_idt(score_profile, row)

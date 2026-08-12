@@ -22,6 +22,7 @@ from hurdler.vector_design import (
     _exact_split_boundary,
     _adapt_ga_parameters_from_idt,
     _idt_feedback_guidance,
+    _merge_idt_feedback_guidance,
     design_construct_v2,
     design_query,
 )
@@ -48,6 +49,29 @@ def test_idt_feedback_coordinates_are_clipped_to_mutable_coding_core():
     assert [0, 4] in guidance["target_ranges"]
     assert [6, 10] in guidance["target_ranges"]
     assert guidance["repeat_aware_steps"] == 40_000
+
+
+def test_idt_feedback_accumulates_distinct_worst_windows_across_rounds():
+    first = {
+        "repeat_coverage_threshold": 40.0,
+        "repeat_windows": [{"start": 10, "end": 100, "threshold": 88.0}],
+        "target_ranges": [[10, 100]],
+        "avoid_segments": ["AACCGGTTAACC"],
+        "repeat_aware_steps": 40_000,
+        "hotspot_mutation_rate": 0.65,
+    }
+    second = {
+        "repeat_coverage_threshold": 40.0,
+        "repeat_windows": [{"start": 300, "end": 390, "threshold": 88.0}],
+        "target_ranges": [[300, 390]],
+        "avoid_segments": ["TTGGCCAATTGG"],
+        "repeat_aware_steps": 40_000,
+        "hotspot_mutation_rate": 0.65,
+    }
+    merged = _merge_idt_feedback_guidance(first, second)
+    assert len(merged["repeat_windows"]) == 2
+    assert merged["target_ranges"] == [[10, 100], [300, 390]]
+    assert merged["avoid_segments"] == ["AACCGGTTAACC", "TTGGCCAATTGG"]
 
 
 def test_bundled_plasmid_database_has_seven_references_eight_profiles_and_four_schemes():

@@ -107,6 +107,9 @@ def test_repeat_aware_seed_reduces_coverage_and_long_repeats_without_changing_pr
     assert metrics["repeat_aware_final_repeated_13mer"] <= metrics[
         "repeat_aware_initial_repeated_13mer"
     ]
+    assert metrics["repeat_aware_final_repeated_12mer"] <= metrics[
+        "repeat_aware_initial_repeated_12mer"
+    ]
     assert metrics["repeat_aware_final_repeated_14mer"] <= metrics[
         "repeat_aware_initial_repeated_14mer"
     ]
@@ -121,6 +124,28 @@ def test_local_gate_is_selected_pair_only_and_gc_is_left_to_idt():
     )
     assert metrics["ga_gc_bounds_passed"] is False
     assert metrics["ga_local_constraints_passed"] is True
+
+
+def test_idt_reported_segment_penalizes_only_copies_beyond_the_first():
+    guidance = {"avoid_segments": ["AAACCC"]}
+    single = ga_sequence_metrics(
+        "AAACCCTTTGGG",
+        {"AAA": 1.0, "CCC": 1.0, "TTT": 1.0, "GGG": 1.0},
+        recognition_sites=(),
+        selected_site_limits={},
+        idt_feedback_guidance=guidance,
+    )
+    repeated = ga_sequence_metrics(
+        "AAACCCAAACCC",
+        {"AAA": 1.0, "CCC": 1.0},
+        recognition_sites=(),
+        selected_site_limits={},
+        idt_feedback_guidance=guidance,
+    )
+    assert single["idt_reported_segment_occurrences"] == 1
+    assert single["idt_reported_segment_repeat_excess"] == 0
+    assert repeated["idt_reported_segment_occurrences"] == 2
+    assert repeated["idt_reported_segment_repeat_excess"] == 1
 
 
 def test_restriction_site_catalog_canonicalizes_reverse_complements(tmp_path):
