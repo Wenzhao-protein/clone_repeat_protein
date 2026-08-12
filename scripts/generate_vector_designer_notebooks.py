@@ -1298,6 +1298,23 @@ def _uploaded_payload():
     return bytes(item["content"] if isinstance(item, dict) else item.content)
 
 
+def _clear_credential_upload():
+    """Drop uploaded bytes without assigning Colab's read-only value trait."""
+    global credential_upload
+    previous = credential_upload
+    credential_upload = widgets.FileUpload(
+        accept=".env,text/plain", multiple=False,
+        description="Upload temporary idt.env",
+    )
+    credential_upload_row.children = (credential_path, credential_upload)
+    try:
+        previous.close()
+    except Exception:
+        # Replacement already removed the only live UI reference.  Some
+        # hosted widget backends do not implement close() completely.
+        pass
+
+
 def _configure_api_credentials():
     if credential_source.value == "secrets":
         return _configure_colab_secrets()
@@ -1316,7 +1333,7 @@ def _configure_api_credentials():
         return configure_idt_credentials_from_bytes(payload)
     finally:
         payload = b""
-        credential_upload.value = ()
+        _clear_credential_upload()
 
 
 def _download_design(_button=None):
@@ -1416,11 +1433,12 @@ def _run_design(_button=None):
 design_button.on_click(_run_design)
 download_button.on_click(_download_design)
 
+credential_upload_row = widgets.HBox([credential_path, credential_upload])
 basic_panel = widgets.VBox([
     settings_mode,
     widgets.HBox([validation_mode_widget, auto_download_widget]),
     credential_source,
-    widgets.HBox([credential_path, credential_upload]),
+    credential_upload_row,
     credential_help,
     output_directory_widget,
 ])

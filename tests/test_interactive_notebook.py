@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import nbformat
@@ -145,6 +146,8 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert "widgets.BoundedIntText" in controller
     assert "widgets.BoundedFloatText" in controller
     assert 'ga_panel.layout.display = "none"' in controller
+    assert "credential_upload.value = ()" not in controller
+    assert "_clear_credential_upload()" in controller
 
 
 def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
@@ -214,6 +217,36 @@ def test_colab_secrets_prefers_access_token_and_clears_environment(colab_runtime
     assert os.environ["IDT_ACCESS_TOKEN"] == "temporary-token"
     clear_idt_secret_environment()
     assert "IDT_ACCESS_TOKEN" not in os.environ
+
+
+def test_colab_uploaded_env_clears_read_only_value_by_replacing_widget(
+    tmp_path, colab_runtime_namespace
+):
+    namespace = colab_runtime_namespace
+    upload = namespace["credential_upload"]
+    payload = b"IDT_ACCESS_TOKEN=temporary-upload-token\n"
+    upload.value = ({
+        "name": "idt.env",
+        "type": "text/plain",
+        "size": len(payload),
+        "content": memoryview(payload),
+        "last_modified": datetime.now(timezone.utc),
+    },)
+    value_trait = upload.traits()["value"]
+    original_read_only = value_trait.read_only
+    value_trait.read_only = True
+    namespace["credential_source"].value = "auto"
+    namespace["credential_path"].value = str(tmp_path / "not-present.env")
+    try:
+        status = namespace["_configure_api_credentials"]()
+    finally:
+        value_trait.read_only = original_read_only
+    assert status["credential_mode"] == "upload"
+    assert status["upload_retained"] is False
+    assert namespace["credential_upload"] is not upload
+    assert namespace["credential_upload"].value == ()
+    assert namespace["credential_upload_row"].children[1] is namespace["credential_upload"]
+    clear_idt_secret_environment()
 
 
 def test_colab_shared_enzyme_and_plasmid_select_all_none_controls(colab_runtime_namespace):
