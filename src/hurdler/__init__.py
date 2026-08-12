@@ -1,13 +1,41 @@
-"""HURDLER cloning toolkit.
+"""HURDLER repeat-protein cloning toolkit."""
 
-Modules for designing and analysing the HURDLER three-site restriction-enzyme
-cloning strategy for repeat proteins.
+from .constants import PLASMIDS
+from .design import DesignRequest, DesignResult, design_construct
+from .index import PatternIndex
+from .plasmid_reference import PlasmidProfile, PlasmidReference, VectorCutScheme
+from .protein_index import ProteinPatternIndex
+from .vector_design import (
+    CompatibilityQuery,
+    DesignRequestV2,
+    DesignResultV2,
+    DesignSelection,
+    design_construct_v2,
+    design_query,
+)
+from .matching import match_module, query_all_plasmids
+from .rules import LEGACY_OPTIMIZED_V1, RuleProfile
 
-Submodules
-----------
-- :mod:`hurdler.utils` — shared helpers for enzyme/plasmid compatibility.
-- :mod:`hurdler.pipeline` — full data-generation pipeline (df1, df2, lookup).
-- :mod:`hurdler.query` — CLI/library to query valid three-site combinations.
-- :mod:`hurdler.validate` — data-quality validation and statistics reporting.
-- :mod:`hurdler.success_rate` — success-rate analysis over random sequences.
-"""
+__all__ = [
+    "LEGACY_OPTIMIZED_V1",
+    "PLASMIDS",
+    "DesignRequest",
+    "DesignResult",
+    "PatternIndex",
+    "ProteinPatternIndex",
+    "PlasmidReference",
+    "PlasmidProfile",
+    "VectorCutScheme",
+    "CompatibilityQuery",
+    "DesignSelection",
+    "DesignRequestV2",
+    "DesignResultV2",
+    "RuleProfile",
+    "match_module",
+    "query_all_plasmids",
+    "design_construct",
+    "design_query",
+    "design_construct_v2",
+]
+
+__version__ = "0.6.0"

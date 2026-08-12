@@ -1,0 +1,52 @@
+schema_version: 2
+id: hurdler_validation
+title: HURDLER validation and repeat-module benchmark
+type: independent_study
+status: active
+owner_repository: /home/wendai/projects/hurdler/clone_repeat_protein
+local_root: /home/wendai/projects/hurdler/clone_repeat_protein/studies/hurdler_validation
+scratch_root: /net/scratch/wendai/projects/hurdler/clone_repeat_protein/studies/hurdler_validation
+objective: >-
+  Rebuild and validate the frozen legacy HURDLER method, enumerate all 1--5AA
+  motifs, measure 1--60AA success, and benchmark natural and designed repeat
+  modules with HURDLER-aware DNA optimization, a repeated-RE-site GA score,
+  and score-only IDT gBlocks complexity QC.
+rule_profile: legacy-optimized-v1
+module_corpus_version: expanded-middle-repeatsdb-foldseek-v1
+idt_policy: idt-rule-score-sum-lt10-v1
+dna_assembly_version: arbitrary-dna-active-latent-v1
+random_seed: 42
+plasmids:
+  - pGEX-4T-1
+  - pMAL-c5X
+  - pET-21a(+)
+  - pET-28a(+)
+  - pET-28a(+)_start_codon
+  - pCold_I
+  - pUC18
+  - pQE-3
+fragment_limits_bp: [1800, 3000]
+long_task_threshold: "02:00:00"
+accepted_blockers:
+  - historical agarose .scn files absent from the repository
+steps:
+  - {name: step01_reference_lookup, depends_on: []}
+  - {name: step02_success_landscape, depends_on: [step01_reference_lookup]}
+  - {name: step03_module_corpus, depends_on: [step01_reference_lookup]}
+  - {name: step04_module_optimization, depends_on: [step01_reference_lookup, step03_module_corpus]}
+  - {name: step05_reproducibility, depends_on: [step02_success_landscape, step04_module_optimization]}
+  - {name: step06_repetitive_dna_assembly, depends_on: [step01_reference_lookup]}
+success_criteria:
+  - pytest discovers and passes maintained tests
+  - sparse lookup validates against legacy-optimized-v1
+  - short motif counts equal 20^k for k=1..5
+  - every retrievable RepeatsDB PDB and AlphaFoldDB annotation has an inclusion or exclusion record
+  - natural modules use unchanged RepeatsDB coordinates and one longest region per biological protein
+  - designed modules require concordant Biotite eight-state DSSP and Foldseek structural evidence
+  - no natural/design corpus row cap is applied
+  - every runnable source notebook has an executed notebook and HTML report
+  - every accepted Stage-2 DNA has live-IDT score sum below 10 and a matching response hash
+  - every maximum reaches mathematical capacity or has a next-copy 100-generation failure proof
+  - IDT never replaces the locally optimized DNA and missing credentials or API failures remain explicit
+  - arbitrary-DNA routes preserve the exact input SHA256 and contain at least one donor-derived latent RE transition
+  - production DNA fragments at least 90 bp have live-IDT score sum below 10; shorter fragments are unscored complementary sticky-end primer pairs

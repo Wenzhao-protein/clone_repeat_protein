@@ -1,22 +1,51 @@
-# src/hurdler
+# `hurdler` package
 
-Maintained Python package for the HURDLER cloning strategy.
+All maintained scientific logic is import-safe and exposed through `hurdler`:
 
-| Module | Purpose | Run as |
-|--------|---------|--------|
-| `pipeline.py` | Full data-generation pipeline (`df1` → `df2` → lookup → success-rate). | `python -m hurdler.pipeline` |
-| `query.py` | CLI to look up valid three-site combinations for a given 3-mer AA pair + plasmid. | `python -m hurdler.query --site-i-aa … --site-ii-aa … --plasmid …` |
-| `validate.py` | Sanity-checks the generated data and prints a statistics report. | `python -m hurdler.validate` |
-| `success_rate.py` | Success-rate analysis for random sequences of varying lengths. | `python -m hurdler.success_rate` |
-| `utils.py` | Shared helpers: NEB-quality, pair compatibility, plasmid loading, heatmaps. | (library only) |
+- `reference`: provenance and reference manifests;
+- `rules`/`constants`: `legacy-optimized-v1` conventions;
+- `index`: sparse pattern index and normalized solution catalog;
+- `matching`: unified module queries and candidate materialization;
+- `short_screen`/`rate`: exhaustive 1--5AA and sampled 6--60AA analysis;
+- `periodicity`: Fourier/self-similarity inference of primitive units and
+  complete repeat-region boundaries from full protein sequences;
+- `secondary_structure`: DSSP/author residue annotations, H/E/C transition
+  periodicity, sequence-to-structure chain validation, and joint boundary
+  selection;
+- `modules`: RepeatsDB/designed curation, exact RCSB author-to-label chain
+  mapping, auditable source-versus-primitive boundaries, and fixed/variable
+  residue ranges;
+- `repeatsdb`: direct parsing of both official RepeatsDB annotation schemas,
+  one longest region per biological protein, exact annotated earlier-middle
+  unit selection, and source-map-preserving sequence deduplication;
+- `structural_repeats`: strict designed-only boundary evidence from Biotite
+  eight-state DSSP, Foldseek 3Di lag agreement, fragment TM/LDDT validation,
+  and MAFFT fixed/variable residue calls;
+- `module_experiments`: all-plasmid Stage-1 compatibility, Stage-2 selected-pair
+  input freezing, complete adaptive trace validation, final tables/FASTA, and
+  the requested compatibility and maximum-copy figures;
+- `optimization`: HURDLER-aware synonymous construct optimization;
+- `design`: strict interactive `DesignRequest`/`DesignResult`, sequence-only
+  boundary confirmation, frozen-index route enumeration, fragment planning,
+  and final-plasmid simulation;
+- `notebook_ui`: credential-clearing widgets and explicit mock headless smoke;
+- `ga_optimization`/`idt`: genetic refinement with an explicit repeated-RE-site
+  score, mathematical-bound binary-to-linear maximum-copy search, and
+  credential-safe live IDT SciTools score-sum-below-10 gating with
+  positive-score rule feedback into the corresponding GA weights;
+- `dna_assembly`: immutable-DNA active/one-base-latent RE scanning on both
+  strands, explicit cut/overhang geometry, exact linear route simulation,
+  IDT-feedback breakpoint retries, purchase-fragment deduplication, and final
+  target SHA256 validation;
+- `complete_route`: purchasable-seed copy-number state graphs, fixed-plasmid
+  full-route validation, exact whole-unit gains, candidate-only live IDT
+  scoring, five-target element matrices, and strict production finalization;
+- `dna_assembly_visualization`: production-first public-element, scalability,
+  failure/rescue, route-complexity and fixed RF00050 figures;
+- `schemas`/`io`/`paths`: versioned contracts and run metadata;
+- `cli`: public command-line interface.
 
-## Environment variables
+`pipeline.py`, `query.py`, `success_rate.py`, and `validate.py` are compatibility
+wrappers. New code should call the library API or the `hurdler` executable.
 
-- `HURDLER_INPUT_DIR` — overrides the default `./data/hurdler_analysis_input`.
-- `HURDLER_OUTPUT_DIR` — overrides the default `./output`.
-
-## Documentation
-
-- Workflow guide: [`../../docs/workflows/hurdler_site_combinations.md`](../../docs/workflows/hurdler_site_combinations.md)
-- Success-rate workflow: [`../../docs/workflows/hurdler_success_rate.md`](../../docs/workflows/hurdler_success_rate.md)
-- Glossary: [`../../docs/glossary.md`](../../docs/glossary.md)
+The package has no import-time computation or filesystem mutation.

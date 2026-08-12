@@ -1,210 +1,290 @@
-# clone_repeat_protein
+# HURDLER repeat-protein cloning
 
-Tools and analyses for cloning **repeat proteins** using the **HURDLER**
-three-restriction-site strategy, plus several adjacent experimental
-workflows used in the same project (codon optimisation, agarose-gel
-quantification, size-exclusion chromatography, plasmid sequencing).
+**[Repeat-protein results CSV](data/results/natural_designed_repeat_protein_hurdler_idt.csv) · [Notebooks](notebooks/README.md) · [Open the current preview in Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) · [Open the web designer in Codespaces](https://codespaces.new/Wenzhao-protein/clone_repeat_protein?quickstart=1&ref=agent%2Fvector-aware-designer-v2) · [Command-line workflows](#install-and-test)**
 
-The repository is organised so that:
+[![Open current preview in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb)
+[![Open web designer in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Wenzhao-protein/clone_repeat_protein?quickstart=1&ref=agent%2Fvector-aware-designer-v2)
 
-- a **new contributor** can understand the project from this README,
-- a **maintainer** can locate canonical code, notebooks, and docs without
-  guessing, and
-- **experimental history** is preserved but clearly separated from the
-  maintained path under [`archive/`](archive/).
+## Test in a browser
 
----
+- **Colab:** use the badge above to open the review branch immediately. The
+  notebook clones that exact branch, installs the locked project extras, and
+  exposes the full vector-aware workflow. After this branch is merged, the
+  permanent [main-branch Colab link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb)
+  provides the same entry point.
+- **Web page:** use the Codespaces badge. The checked-in dev-container installs
+  HURDLER and starts the Marimo designer on forwarded port 2718 automatically.
+  If the preview does not open, run
+  `hurdler web --host 0.0.0.0 --port 2718 --no-browser` in the browser terminal,
+  then open port **2718** from the **Ports** panel.
+- **Local browser:** clone the repository, run
+  `pip install -e ".[notebooks,optimization]"`, then run `hurdler web`.
 
-## What lives where
+All three interfaces use the same `hurdler.vector_design` implementation.
+Credentials and IDT scoring stay inside the active Colab, Codespaces, or local
+process; the software produces design files only and never submits an order.
 
+The public [Natural/Designed repeat-protein result catalog](data/results/README.md)
+contains one manually searchable row for every active middle module. It includes
+source and boundary evidence, Stage-1 HURDLER compatibility, the selected
+plasmid/enzyme route, and the independently validated 1,800-bp and 3,000-bp
+maximum constructs. An `*_idt_accepted_dna` cell is populated only when the
+exact DNA translated correctly, had no selected-pair excess sites, carried a
+maximum-copy proof, and received a live IDT rule-score sum strictly below 10.
+
+The v2 interactive designer is the fastest user entry point. It first queries
+all 776 protein-level Site-I/Site-II pairs, then evaluates the retained long
+backbone of seven annotated physical vectors (eight selectable profiles) under
+four MCS cut schemes. This avoids the old whole-plasmid prefilter. Default input
+is `N-cap + module × n + C-cap`; complete-protein mode preserves every repeat
+variant. Each route records restoration segments and the strict annotation-
+aware cutter-silencing decision. Optional GA optimization either scores every
+actual purchase fragment through the IDT complexity API or emits unvalidated
+IDT Bulk Input CSV/TSV/FASTA. It never uses IDT codon optimization and never
+submits an order. Run the local page with `hurdler web`.
+
+This repository implements and validates the HURDLER three-site cloning
+strategy for repeat proteins. The maintained path is an installable Python
+package, thin parameterized notebooks, and recoverable Digs task manifests.
+Historical notebooks and adjacent experimental workflows remain available for
+traceability but do not define the current scientific result.
+
+## Frozen result contract
+
+The primary rule profile is `legacy-optimized-v1`:
+
+- Site-I/Site-II orthogonality threshold: 1; missing fidelity is compatible.
+- Site-II/Site-III use the same signed overhang.
+- Plasmid compatibility requires both Site I and Site II.
+- The active success landscape scans `module + module + module` with
+  `5 <= distance < module_length`; the historical two-copy scan is retained as
+  an immutable comparison baseline.
+- 7--60AA Monte Carlo results preserve seed 42 and the historical loop order.
+- 1--5AA results exhaust all `20**k` motifs without equivalence reduction.
+
+The active module corpus is
+`expanded-middle-repeatsdb-foldseek-v1`. Natural and designed boundaries have
+different evidence contracts. Natural units are sliced directly from official
+RepeatsDB PDB or AlphaFoldDB annotation coordinates: one longest annotated
+region is selected per biological protein and unit index `(count - 1) // 2`
+provides the earlier middle unit. DSSP/Foldseek are natural-QC fields only and
+can never change those coordinates. Designed units have no annotation
+fallback: eight-state Biotite/mkdssp periodicity and Foldseek 3Di plus
+fragment-level TM/LDDT validation must independently support the same period
+and repeat block. MAFFT then defines the fixed and variable positions, and the
+earlier middle copy is passed to HURDLER.
+
+The exact short-motif counts are 20, 400, 8,000, 160,000, and 3,200,000
+(3,368,420 total). Each motif is repeated to the shortest module of at least
+6AA before matching.
+
+The maintained success-landscape entrypoints are
+`scripts/run_success_landscape_single_files.py` and
+`scripts/run_success_landscape_16core.sh`. The Digs wrapper requests 16 cores,
+benchmarks serial and multiprocessing results for exact equality, and writes
+the raw observations to exactly two files: `short_motifs_1_5.parquet`
+(3,368,420 rows) and `random_modules_6_60.parquet` (440,000 rows). The 6AA
+block uses seed 420006; 7--60AA preserve seed 42 and the historical
+length→plasmid→test order. Notebook `02_success_rate_1_60.ipynb` derives the
+eight-plasmid three-copy curve directly from those two files and compares it
+row-for-row with the historical two-copy result. The pattern population,
+distance rule and first-match behavior are unchanged. The third copy only
+completes cyclic 3-mer windows that cannot be represented at the right edge of
+the doubled string. The figure follows the original continuous-line settings
+on a near-square 6 × 5 inch canvas, displays 1–50AA, uses the exact title
+`3-mer Probability vs Sequence Length`, and contains no confidence band,
+vertical method divider, or extra method annotation. After the replacement
+files passed independent validation, the
+superseded 404-file motif and hit shard directories were removed; the legacy
+combined Parquet and two-copy single-file run remain available for regression
+audit.
+
+## Maintained layout
+
+```text
+src/hurdler/                 importable algorithms and unified schemas
+notebooks/reference/         reference manifests and sparse-index QC
+notebooks/tasks/             HURDLER queries and scientific reports
+notebooks/workflows/         interactive end-user construct design
+data/artifacts/              committed complete legacy-optimized-v1 lookup
+data/reference_{input,output}/ versioned small reference data
+envs/hurdler.yml             portable historical-style conda specification
+envs/hurdler-linux-64.lock   explicit environment lock
+studies/hurdler_validation/  Digs manifests, summaries, HTML, figures, status
+tests/                       unit, property-style, and golden regressions
+archive/                     read-only historical implementations
 ```
-clone_repeat_protein/
-├── README.md                    ← you are here
-├── LICENSE
-├── envs/                        Conda environment files                  → envs/README.md
-│   ├── codon_opt.yml
-│   └── visualization.yml
-│
-├── src/                         Maintained Python source                 → src/README.md
-│   └── hurdler/                 HURDLER cloning toolkit                  → src/hurdler/README.md
-│       ├── pipeline.py          Full df1 → df2 → lookup pipeline
-│       ├── query.py             Lookup CLI / library
-│       ├── validate.py          Data validation + statistics
-│       ├── success_rate.py      Random-sequence success-rate analysis
-│       └── utils.py             Shared enzyme / plasmid helpers
-│
-├── notebooks/                   Topic-grouped Jupyter notebooks          → notebooks/README.md
-│   ├── hurdler/                 HURDLER three-site + success-rate        → notebooks/hurdler/README.md
-│   ├── enzyme_selection/        Site I/II/III curation                   → notebooks/enzyme_selection/README.md
-│   ├── codon_optimization/      Codon-optimisation experiments           → notebooks/codon_optimization/README.md
-│   ├── agarose_gel/             Agarose-gel analysis notebooks           → notebooks/agarose_gel/README.md
-│   ├── sec/                     Size-exclusion chromatography            → notebooks/sec/README.md
-│   └── utils/                   Reference-data curation notebooks        → notebooks/utils/README.md
-│
-├── tests/                       Maintained smoke / regression tests      → tests/README.md
-├── scripts/                     CLI helpers                              → scripts/README.md
-│
-├── docs/                        All maintained documentation             → docs/README.md
-│   ├── architecture.md          High-level architecture + data flow
-│   ├── glossary.md              Domain terminology
-│   ├── contributing.md          File-placement and naming rules
-│   ├── workflows/               Per-workflow guides                      → docs/workflows/README.md
-│   │   ├── hurdler_site_combinations.md
-│   │   ├── hurdler_success_rate.md
-│   │   └── enzyme_selection.md
-│   └── reports/                 Historical writeups (read-only)          → docs/reports/README.md
-│
-├── data/                        Small, committed reference data          → data/README.md
-│   ├── reference_input/         Source databases (REBASE, NEB, FASTA, …) → data/reference_input/README.md
-│   ├── reference_output/        Curated CSVs derived from above          → data/reference_output/README.md
-│   ├── hurdler_analysis_input/  Inputs consumed by pipeline.py           → data/hurdler_analysis_input/README.md
-│   └── example_batch_query.csv  Example input for `hurdler.query --batch`
-│
-├── output/                      Generated artifacts (GIT-IGNORED)        → output/README.md
-│
-├── codon_opt_benchmark_extended/   Subproject: GA codon optimisation     → codon_opt_benchmark_extended/README.md
-│   ├── src/                                                              → .../src/README.md
-│   ├── tasks/                                                            → .../tasks/README.md
-│   └── results/                                                          → .../results/README.md
-│
-├── agarose_gel_analysis/        Subproject: agarose-gel quantification   → agarose_gel_analysis/README.md
-│   ├── src/                     GUIs + .scn readers                      → .../src/README.md
-│   ├── data/                    Gel images / .scn files                  → .../data/README.md
-│   └── output/                  Band / lane statistics                   → .../output/README.md
-│
-├── SEC/                         Subproject: size-exclusion chromatography → SEC/README.md
-│   ├── src/                     sec_utils.py                             → SEC/src/README.md
-│   ├── input/                   Raw .mat exports (gitignored)            → SEC/input/README.md
-│   └── output/                  Per-figure PDFs                          → SEC/output/README.md
-│
-├── plasmid_sequencing_result/   Sequenced-construct reference data       → plasmid_sequencing_result/README.md
-│
-└── archive/                     Read-only historical / duplicate files   → archive/README.md
-    ├── scripts/                 Legacy generation / debug scripts        → archive/scripts/README.md
-    ├── tests/                   Ad-hoc / one-off test scripts            → archive/tests/README.md
-    ├── notebooks/               Backup / executed notebook variants      → archive/notebooks/README.md
-    ├── artifacts/               Large / one-off binary outputs           → archive/artifacts/README.md
-    ├── docs/                    Retired documentation                    → archive/docs/README.md
-    ├── agarose_gel_analysis/    Earlier GUI / test variants              → archive/agarose_gel_analysis/README.md
-    ├── get_re_dict/             First-iteration enzyme-reference work    → archive/get_re_dict/README.md
-    └── sec_temp_plots/          Scratch SEC plots                        → archive/sec_temp_plots/README.md
-```
 
-Every folder above has its own short `README.md` that explains its
-contents in more detail. Click any entry in the tree.
+Large indexes, exhaustive Parquet tables, and downloads use the exact
+`/net/scratch/wendai/projects/hurdler/clone_repeat_protein/...` mirror.
+Reviewable code, task files, summary tables, and reports remain under `/home`.
+Module HURDLER and adaptive-copy shards use the shared `/net/scratch` mirror;
+only compact finalized tables, figures, notebooks, manifests, and reports are
+promoted back to `/home`.
 
-For a deeper view see [`docs/architecture.md`](docs/architecture.md).
-For terminology see [`docs/glossary.md`](docs/glossary.md).
-
----
-
-## Subprojects
-
-| Subproject | Status | Where to start |
-|------------|--------|----------------|
-| **HURDLER three-site combinations** | Stable | [`docs/workflows/hurdler_site_combinations.md`](docs/workflows/hurdler_site_combinations.md) → [`notebooks/hurdler/hurdler_site_combination_analysis.ipynb`](notebooks/hurdler/hurdler_site_combination_analysis.ipynb) |
-| **HURDLER success-rate analysis** | Stable | [`docs/workflows/hurdler_success_rate.md`](docs/workflows/hurdler_success_rate.md) → [`notebooks/hurdler/hurdler_success_rate_analysis.ipynb`](notebooks/hurdler/hurdler_success_rate_analysis.ipynb) |
-| **Restriction-enzyme selection** | Stable | [`docs/workflows/enzyme_selection.md`](docs/workflows/enzyme_selection.md) → [`notebooks/enzyme_selection/`](notebooks/enzyme_selection/) |
-| **Reference-data curation** | Stable | [`notebooks/utils/`](notebooks/utils/) (writes into `data/reference_output/`) |
-| **Codon-optimisation benchmark** | Exploratory | [`codon_opt_benchmark_extended/README.md`](codon_opt_benchmark_extended/README.md), [`notebooks/codon_optimization/`](notebooks/codon_optimization/) |
-| **Agarose-gel analysis** | Exploratory | [`agarose_gel_analysis/`](agarose_gel_analysis/), [`notebooks/agarose_gel/`](notebooks/agarose_gel/) |
-| **SEC analysis** | Exploratory | [`SEC/`](SEC/), [`notebooks/sec/`](notebooks/sec/) |
-| **Plasmid sequencing results** | Reference data | [`plasmid_sequencing_result/`](plasmid_sequencing_result/) |
-
----
-
-## Quick start
-
-### 1. Create an environment
+## Install and test
 
 ```bash
-conda env create -f envs/codon_opt.yml          # core analysis + biopython
-conda activate codon_opt
-# Optional, for some visualisation notebooks:
-conda env create -f envs/visualization.yml
+/net/software/conda/bin/conda env create \
+  --prefix /home/wendai/.conda/envs/hurdler \
+  --file envs/hurdler.yml
+/home/wendai/.conda/envs/hurdler/bin/pip install -e .
+/home/wendai/.conda/envs/hurdler/bin/python -m pytest -q
 ```
 
-Required Python packages (already declared in the env files):
-`pandas`, `numpy`, `biopython`, `matplotlib`, `seaborn`, `tqdm`,
-`scipy`.
-
-### 2. Inspect curated reference data
-
-Reference enzyme/plasmid CSVs derived from REBASE and NEB live in
-[`data/reference_output/`](data/reference_output/). They back every
-HURDLER workflow and are committed to the repository.
-
-### 3. Run the HURDLER pipeline (generates `output/`)
+The executable exposes one artifact contract across all operations:
 
 ```bash
-# Full pipeline (df1, df2, lookup, success-rate plots)
-python -m hurdler.pipeline                # from repo root, with src/ on PYTHONPATH
-# or
-PYTHONPATH=src python src/hurdler/pipeline.py
+hurdler reference build --help
+hurdler lookup build --rules legacy-optimized-v1 --help
+hurdler lookup protein-build --help
+hurdler plasmid-reference build --help
+hurdler plasmid-reference validate --help
+hurdler query --module VLA --help
+hurdler screen-short --help
+hurdler success-rate --help
+hurdler curate-modules --help
+hurdler infer-boundaries --help
+hurdler designed-inventory --help
+hurdler infer-designed-boundaries --help
+hurdler module-compatibility --help
+hurdler adaptive-copy-search --help
+hurdler optimize-modules --help
+hurdler refine-ga --help
+hurdler design-construct --request request.json --output-dir output/my_design --help
+hurdler design-query --request examples/vector_aware_query.json --help
+hurdler web --help
+hurdler dna-assembly build-corpus --help
+hurdler dna-assembly plan --help
+hurdler dna-assembly finalize --help
+hurdler validate-run --help
 ```
 
-This populates `output/` with the generated CSVs, pickles, and plots
-described in [`docs/workflows/hurdler_site_combinations.md`](docs/workflows/hurdler_site_combinations.md).
+The exact-DNA assembly workflow treats a functional donor shorter than 90 bp
+as an annealed oligo product: it emits two complementary 5′→3′ primer
+sequences with the required sticky ends exposed and does not call the IDT
+gBlocks complexity endpoint for that fragment. Donors of 90 bp or longer
+remain synthesis fragments and retain live IDT scoring.
 
-### 4. Query valid three-site combinations
+A full-protein compatibility example is ready at
+[`data/example_design_request.json`](data/example_design_request.json). Set
+`optimize` to `true` only after confirming the coordinates and configuring the
+live IDT scorer. It uses the 26-heptad *S. cerevisiae* Rpb1 CTD plus its
+C-terminal tip. The confirmed 1--182 repeat region selects the earlier middle
+heptad `YSPTSPS`; the frozen index reports that heptad incompatible across all
+eight maintained plasmids, so no orderable DNA is produced. This negative
+golden result is intentional rather than silently switching to a different
+module or DNA-derived site.
 
-```bash
-PYTHONPATH=src python -m hurdler.query \
-  --site-i-aa  "NEQ" \
-  --site-ii-aa "IQA" \
-  --plasmid    "pET-28a(+)"
-```
+`hurdler design-construct` and the interactive notebook share the strict
+`DesignRequest`/`DesignResult` interface. A request without confirmed 1-based
+inclusive repeat coordinates stops at `needs_boundary_confirmation`. A
+confirmed request with optimization disabled produces only a topology draft
+marked `not_orderable_not_for_purchase`; it never writes orderable DNA.
 
-Batch queries:
+`hurdler refine-ga` includes repeated restriction-site occurrences directly in
+the genetic fitness score. Reverse-complement aliases are canonicalized so one
+physical site is not double-penalized. Translation and locked HURDLER codons are
+invariant; selected-enzyme site counts are the local hard check. GC remains a
+high-weight GA objective and a live-IDT rule rather than a second local veto.
+Non-selected repeated RE sites are a soft optimization objective and never
+prevent an otherwise locally valid candidate from being scored by IDT. This
+contract is versioned as
+`nonselected-re-sites-soft-score-selected-sites-hard-v2`. With
+`--use-idt`, every locally acceptable candidate DNA is submitted to IDT's
+gBlocks complexity screener before a copy-count decision is made. No
+IDT-generated replacement sequence is requested or adopted. A position-matched
+empty rule list has score zero. Otherwise every finite numeric rule `Score` is
+summed and the exact GA DNA passes only when the total is strictly below 10
+(`idt-rule-score-sum-lt10-v1`). `IsViolated` is diagnostic and never gates the
+sequence by itself. Positive-score rule names, actual values and thresholds are
+retained and mapped back to GA weights for GC, hairpins/palindromes,
+homopolymers, terminal repeats, restriction sites, and 8/13/14-mer repeats.
+Missing or non-numeric scores are unclassified and cannot pass. Credentials are
+loaded only from a user-selected, repo-external mode-600 env file; values and
+the resolved private path are never copied to code,
+notebooks, manifests, logs, or Git.
 
-```bash
-PYTHONPATH=src python -m hurdler.query \
-  --batch  data/example_batch_query.csv \
-  --output output/my_results.csv
-```
+Interactive purchase fragments enforce IDT's current
+[125--3,000 bp gBlocks range](https://www.idtdna.com/pages/products/genes-and-gene-fragments/double-stranded-dna-fragments/gblocks-gene-fragments).
+Shorter 20--124 bp fragments are labeled as duplexed Ultramer candidates rather
+than gBlocks; unsupported lengths cannot pass the purchase design.
 
-### 5. Validate generated data
+For maximum-repeat searches, `hurdler refine-ga --adaptive-copy-search` uses
+the fragment-length mathematical maximum as its upper bound. It first performs
+a 10-generation binary search, then starts one copy above the short-search
+maximum and increases the construct by exactly one module. Each new count is
+attempted at 10, 20, 40, 60, 80, and 100 generations. A locally acceptable but
+IDT-rejected candidate stays at the same copy count; its rejection reasons
+raise the corresponding score weights before the next generation budget. Only
+an explicit score-sum-below-10 IDT result permits the next module. The first count
+that is still not orderable at 100 stops the search; the preceding orderable
+count and its exact DNA are written to the versioned maximum-copy tables and
+FASTA. The same route is applied to
+every HURDLER-compatible natural and designed module.
 
-```bash
-PYTHONPATH=src python -m hurdler.validate
-```
+The merge rejects any HURDLER-compatible row without an explicit boundary
+proof: either the orderable count equals the mathematical fragment cap, or the
+next count has a recorded failed local+IDT evaluation at exactly 100 generations. A
+10/20/40/60/80-generation failure can never define the reported maximum.
 
----
+The historical 249-row `periodic_v4` run and its parallel benchmark remain an
+immutable baseline. New production shard counts are derived from the exhaustive
+RepeatsDB and strict-dual-evidence designed inventories; no 100/149/249 row cap
+is carried into the active corpus.
 
-## Recommended paths
+For Digs, copy `config/idt.env.example` to a repo-external private location,
+fill it, and set mode `600`. Runtime taskfiles may receive that path through an
+environment-specific launch configuration; the wrapper refuses group/world-readable
+credential files and never prints their contents. The interactive designer
+also accepts hidden manual OAuth fields, a hidden prompt for any repo-external
+mode-600 env file, or a temporary in-memory env upload. Controls are cleared
+immediately; credential values, upload contents, and the actual path are not
+written to notebook state, design outputs, manifests, logs, or Git.
 
-### New users
+## Canonical reports
 
-1. Read this README.
-2. Skim [`docs/architecture.md`](docs/architecture.md) and
-   [`docs/glossary.md`](docs/glossary.md).
-3. Open the canonical HURDLER notebook
-   [`notebooks/hurdler/hurdler_site_combination_analysis.ipynb`](notebooks/hurdler/hurdler_site_combination_analysis.ipynb)
-   and run it top to bottom.
+The completed historical handoff is
+[`studies/hurdler_validation/FINAL_REPORT_PERIODIC_V4_MIDDLE.md`](studies/hurdler_validation/FINAL_REPORT_PERIODIC_V4_MIDDLE.md).
+It records the authoritative artifacts, middle-module audit, HURDLER and IDT
+outcomes, maximum-copy constructs, Digs job lineage, and the exact remaining
+blocked/deferred workflows. The per-module machine-readable deliverable is
+`step04_module_optimization/tables/periodic_v4/module_final_summary.parquet`;
+it contains all 249 legacy tested AA sequences. It is retained for audit and is
+not input to `expanded-middle-repeatsdb-foldseek-v1`.
 
-### Maintainers
+- `notebooks/reference/01_reference_manifest.ipynb`
+- `notebooks/reference/02_lookup_qc.ipynb`
+- `notebooks/tasks/01_hurdler_query.ipynb`
+- `notebooks/tasks/02_success_rate_1_60.ipynb`
+- `notebooks/tasks/03_repeat_module_benchmark.ipynb`
+- `notebooks/tasks/04_reproducibility_status.ipynb`
+- `notebooks/tasks/05_module_boundary_inference.ipynb`
+- `notebooks/reference/03_expanded_middle_module_acquisition.ipynb`
+- `notebooks/tasks/06_module_compatibility_by_length.ipynb`
+- `notebooks/tasks/07_adaptive_selected_pair_capacity.ipynb`
+- `notebooks/tasks/08_long_repetitive_dna_assembly.ipynb`
+- `notebooks/workflows/01_interactive_hurdler_designer.ipynb`
 
-1. Read [`docs/contributing.md`](docs/contributing.md) for file-placement
-   and naming rules.
-2. Make changes to logic under [`src/hurdler/`](src/hurdler/); update the
-   corresponding notebook only after the module change is stable.
-3. Keep generated artifacts in `output/` (gitignored) and reference data
-   in `data/`.
-4. Anything you retire should move into [`archive/`](archive/) — never
-   delete history.
+Notebook 08 uses `arbitrary-dna-complete-route-v2`: each public regulatory
+element retains independent 2/4/8/16/32-copy outcomes, and a pass requires a
+verified path from a purchasable exact seed. The earlier 53.67% one-step
+baseline remains immutable QC and is excluded from reviewer conclusions.
 
----
+Papermill-executed notebooks and HTML live under
+`studies/hurdler_validation/step05_reproducibility/`. The complete run status,
+including missing historical `.scn` inputs and deferred long workflows, is in
+`step05_reproducibility/tables/execution_status.csv`.
 
-## Status
+The active method/corpus version is
+`expanded-middle-repeatsdb-foldseek-v1`. `periodic_v4_middle_unit`,
+`periodic_v3`, first-unit, and pre-run48 files are immutable legacy artifacts
+and must not be combined with the new tables.
 
-- The maintained code path is **`src/hurdler/`** plus the notebooks under
-  **`notebooks/`** that load reference data from **`data/`**.
-- Documentation in **`docs/workflows/`** is the source of truth.
-  Older summaries under **`docs/reports/`** are preserved for context
-  only.
-- Everything under **`archive/`** is read-only history. See
-  [`archive/README.md`](archive/README.md) for what was moved and why.
+Adjacent SEC, agarose-gel, codon-optimization, and plasmid-sequencing projects
+retain their existing top-level directories. See `docs/architecture.md` and
+`studies/hurdler_validation/README.md` for data flow and run details.
 
 ## License
 
-See [`LICENSE`](LICENSE).
+See [LICENSE](LICENSE).

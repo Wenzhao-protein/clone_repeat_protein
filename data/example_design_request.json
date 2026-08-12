@@ -1,0 +1,13 @@
+{
+  "sequence_id": "S_cerevisiae_Rpb1_CTD_26_repeats_plus_C_terminal_tip",
+  "full_protein_sequence": "FSPTSPTYSPTSPAYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPAYSPTSPSYSPTSPSYSPTSPSYSPTSPSYSPTSPNYSPTSPSYSPTSPGYSPGSPAYSPKQDEQKHNENENSR",
+  "target_repeat_copies": 26,
+  "plasmid": "pGEX-4T-1",
+  "confirmed_repeat_start": 1,
+  "confirmed_repeat_end": 182,
+  "confirmed_period": 7,
+  "site_i_allowlist": [],
+  "site_ii_allowlist": [],
+  "site_iii_allowlist": [],
+  "optimize": false
+}

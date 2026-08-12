@@ -18,6 +18,9 @@ reconstruction.
 
 Generated outputs (large CSVs, pickles, plots, executed notebooks) belong
 in `output/` and **must not** be committed. See [`../.gitignore`](../.gitignore).
+The sole maintained exception is the public, projected
+`data/results/natural_designed_repeat_protein_hurdler_idt.csv`; its exporter
+enforces the GitHub blob limit and excludes raw traces and private paths.
 
 ## Naming conventions
 

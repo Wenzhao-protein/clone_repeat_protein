@@ -1,12 +1,12 @@
  
-REBASE version 505                                              withref.505
+REBASE version 608                                              withref.608
  
     =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     REBASE, The Restriction Enzyme Database   http://rebase.neb.com
     Copyright (c)  Dr. Richard J. Roberts, 2024.   All rights reserved.
     =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
  
-Rich Roberts                                                    Apr 29 2025
+Rich Roberts                                                    Jul 31 2026
  
 
 <ENZYME NAME>   Enzyme name.
@@ -87,7 +87,6 @@ Rich Roberts                                                    Apr 29 2025
 REBASE codes for commercial sources of enzymes
 
                 B        Thermo Fisher Scientific (5/23)
-                C        Minotech Biotechnology (1/22)
                 E        Agilent Technologies (8/20)
                 I        SibEnzyme Ltd. (12/21)
                 J        Nippon Gene Co., Ltd. (10/22)
@@ -277,7 +276,7 @@ Sugisaki, H., Maekawa, Y., Kanazawa, S., Takanami, M., (1982) Nucleic Acids Res.
 <4>IFO 3281
 <5>GACGT^C
 <6>2(6)
-<7>BINV
+<7>BINRV
 <8>Clark, T.A., Murray, I.A., Morgan, R.D., Kislyuk, A.O., Spittle, K.E., Boitano, M., Fomenkov, A., Roberts, R.J., Korlach, J., (2012) Nucleic Acids Res., vol. 40.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -331,7 +330,7 @@ Hua, X.T., Unpublished observations.
 <8>Perez-Oseguera, A., Castro-Jaimes, S., Salgado-Camargo, A.D., Silva-Sanchez, J., Garza-Gonzalez, E., Castillo-Ramirez, S., Cevallos, M.A., (2017) Genome Announcements, vol. 5.
 
 <1>Aba12156II
-<2>AbaCIII
+<2>M.AbaCIII
 <3>Acinetobacter baumannii NCTC12156
 <4>S. Doyle
 <5>CTATCAV
@@ -347,6 +346,15 @@ Hua, X.T., Unpublished observations.
 <6>5(6)
 <7>
 <8>Informatics, P., Unpublished observations.
+
+<1>Aba19606II
+<2>
+<3>Acinetobacter baumannii ATCC 19606B
+<4>ATCC 19606
+<5>CTATCA
+<6>6(6)
+<7>
+<8>Blokesch, M., Unpublished observations.
 
 <1>AbaAI
 <2>PvuRts1I
@@ -390,19 +398,6 @@ Takemoto, N., Kamoshida, G., Unpublished observations.
 Tillman, L.N., Kenyon, J., To, J., Hamidian, M., Unpublished observations.
 Tsubouchi, T., Suzuki, M., Niki, M., Oinuma, K., Niki, M., Shibayama, K., Kakeya, H., Kaneko, Y., Unpublished observations.
 Ward, D. et al., Unpublished observations.
-Zhu, Y., Unpublished observations.
-
-<1>AbaCIII
-<2>
-<3>Acinetobacter baumannii ATCC 19606
-<4>ATCC 19606
-<5>CTATCAV
-<6>6(6)
-<7>
-<8>Anton, B.P., Fomenkov, A., Morgan, R.D., Murray, I.A., Roberts, R.J., Unpublished observations.
-Fomenkov, A., Unpublished observations.
-Takemoto, N., Kamoshida, G., Unpublished observations.
-Tillman, L.N., Kenyon, J., To, J., Hamidian, M., Unpublished observations.
 Zhu, Y., Unpublished observations.
 
 <1>AbaDI
@@ -607,7 +602,7 @@ Zhan, Y., Yan, Y., Zhang, W., Yu, H., Chen, M., Lu, W., Ping, S., Peng, Z., Yuan
 <4>ATCC 49823
 <5>GT^MKAC
 <6>5(6)
-<7>JNQVX
+<7>JNQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Fomenkov, A., Anton, B., Roberts, R.J., Unpublished observations.
@@ -635,7 +630,7 @@ Zabeau, M., Roberts, R.J., Unpublished observations.
 <4>ATCC 49823
 <5>T^CCGGA
 <6>6(6)
-<7>J
+<7>JR
 <8>Fomenkov, A., Unpublished observations.
 Fomenkov, A., Anton, B., Roberts, R.J., Unpublished observations.
 Kita, K., Hiraoka, N., Oshima, A., Kadonishi, S., Obayashi, A., (1985) Nucleic Acids Res., vol. 13, pp. 8685-8694.
@@ -706,7 +701,7 @@ Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A.,
 <4>S.K. Degtyarev
 <5>G^GTACC
 <6>4(6)
-<7>BINV
+<7>BINRV
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Fomenkov, A., Vincze, T., Degtyarev, S.K., Roberts, R.J., (2017) Genome Announcements, vol. 5.
@@ -758,7 +753,7 @@ Fomenkov, A., Vincze, T., Degtyarev, S.K., Roberts, R.J., (2017) Genome Announce
 <4>S.K. Degtyarev
 <5>CCANNNN^NTGG
 <6>
-<7>IV
+<7>IRV
 <8>Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
 Dedkov, V.S., Repin, V.E., Rechkunova, N.I., Degtyarev, S.K., Verhosina, V.A., Vinogradova, T.P., (1990) Izv. Sib. Otd. Akad. Nauk SSSR, vol. 1, pp. 35-37.
 
@@ -816,15 +811,6 @@ Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A.,
 <6>?(5)
 <7>
 <8>Liu, T.-T., Liu, J.-F., Wang, W.-X., Wang, H., Wang, Z.-L., Zeng, Z.-J., Yan, W.-Y., (2012) Acta Entomologica Sinica, vol. 55, pp. 284-290.
-
-<1>AchA6III
-<2>
-<3>Arthrobacter chlorophenolicus A6
-<4>ATCC 700700D-5
-<5>AGCCAG
-<6>5(6)
-<7>
-<8>Blow, M.J. et al., (2016) PLoS Genet., vol. 12.
 
 <1>I-AchMI
 <2>
@@ -1201,7 +1187,7 @@ Wu, V., Unpublished observations.
 <4>CCAP 1403/13f
 <5>A^CRYGT
 <6>2(4)
-<7>NS
+<7>N
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Lunnen, K.D., Moran, L., Slatko, B.E., Wilson, G.G., Unpublished observations.
@@ -1252,7 +1238,7 @@ Wu, V., Unpublished observations.
 <4>IAM 12617
 <5>A^CCGGT
 <6>3(5)
-<7>JNRV
+<7>JNRSV
 <8>Anton, B.P., Fomenkov, A., Wu, V., Roberts, R.J., (2021) PLoS ONE, vol. 16.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -1617,7 +1603,7 @@ Wilson, G.G., Lunnen, K.D., Unpublished observations.
 <4>A. Janulaitis
 <5>(10/12)GCANNNNNNTGC(12/10)
 <6>
-<7>
+<7>B
 <8>Maneliene, Z., Zakareviciene, L., Unpublished observations.
 Vitkute, J., Giedriene, J., Timinskas, A., Capskaja, L., Kiuduliene, L., Markauskas, A., Butkus, V., Janulaitis, A., Unpublished observations.
 
@@ -1682,7 +1668,7 @@ Savelskiene, A., Petrusyte, M., Padegimiene, E., Vonseviciene, E., Kiuduliene, E
 <4>ATCC 21606
 <5>AG^CT
 <6>3(5)
-<7>BCIJNOQSVX
+<7>BIJNQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Fomenkov, A., Anton, B.P., Vincze, T., Roberts, R.J., Unpublished observations.
@@ -1744,7 +1730,7 @@ Gilvonauskaite, R., Bitinaite, J., Petrusyte, M., Butkus, V., Maneliene, Z., Jan
 <4>A. Janulaitis
 <5>G^TGCAC
 <6>
-<7>BJV
+<7>BJRV
 <8>Jagelavicius, M., Bitinaite, J., Maneliene, Z., Butkus, V., Janulaitis, A., Unpublished observations.
 
 <1>AlwFI
@@ -1966,7 +1952,7 @@ Waring, R.B., Davies, R.W., Scazzocchio, C., Brown, T.A., (1982) Proc. Natl. Aca
 <4>S.K. Degtyarev
 <5>^GGCC
 <6>
-<7>
+<7>I
 <8>Chernukhin, V.A., Belichenko, O.A., Tarasova, G.V., Gonchar, D.A., Akishev, A.G., Dedkov, V.S., Mikhnenkova, N.A., Degtyarev, S.K., Russian Patent Office, 2010.
 
 <1>ApaI
@@ -1975,7 +1961,7 @@ Waring, R.B., Davies, R.W., Scazzocchio, C., Brown, T.A., (1982) Proc. Natl. Aca
 <4>NCIB 7215
 <5>GGGCC^C
 <6>4(5)
-<7>BIJNQVX
+<7>BIJNQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Gunthert, U., Trautner, T.A., (1984) Curr. Top. Microbiol. Immunol., vol. 108, pp. 11-22.
 Kong, H., Unpublished observations.
@@ -2018,7 +2004,7 @@ Yamada, Y., Murakami, M., (1985) Agric. Biol. Chem., vol. 49, pp. 3627-3629.
 <4>IFO 13753
 <5>G^TGCAC
 <6>4(5)
-<7>CNV
+<7>NSV
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Murakami, M., Yamada, Y., (1990) Agric. Biol. Chem., vol. 54, pp. 1791-1796.
@@ -2282,7 +2268,7 @@ Li, T., Zhao, J., Zhao, C., Liu, Z., Zhao, F., Marquardt, J., Nomura, C.T., Pers
 <4>NEB 688
 <5>GG^CGCGCC
 <6>?(5)
-<7>N
+<7>NS
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Lunnen, K.D., Wilson, G.G., Unpublished observations.
 Lunnen, K.D., Wilson, G.G., Unpublished observations.
@@ -2675,7 +2661,7 @@ Pedler, B., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Mark
 <4>DSM 2969
 <5>G^GTACC
 <6>
-<7>S
+<7>
 <8>Bolton, B.J., Nesch, G., Comer, M.J., Wolf, W., Kessler, C., (1985) FEBS Lett., vol. 182, pp. 130-134.
 
 <1>Asp742I
@@ -3247,7 +3233,7 @@ Hughes, S.G., Bruce, T., Murray, K., (1980) Biochem. J., vol. 185, pp. 59-63.
 <4>CCAP 1403/4b
 <5>TT^CGAA
 <6>
-<7>CV
+<7>V
 <8>de Waard, A., Duyvesteyn, M., (1980) Arch. Microbiol., vol. 128, pp. 242-247.
 
 <1>AsuIII
@@ -3544,7 +3530,7 @@ Wood, D.W. et al., (2001) Science, vol. 294, pp. 2317-2323.
 <4>ATCC 27893
 <5>C^YCGRG
 <6>1(4)
-<7>JNQVX
+<7>JNQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Hughes, S.G., Murray, K., (1980) Biochem. J., vol. 185, pp. 65-75.
 Kaneko, T. et al., (2001) DNA Res., vol. 8, pp. 205-213.
@@ -3568,7 +3554,7 @@ Xu, S.-Y., Unpublished observations.
 <4>ATCC 27893
 <5>G^GWCC
 <6>4(5)
-<7>JNVX
+<7>JNRVX
 <8>Anton, B., Unpublished observations.
 Anton, B.P., Fomenkov, A., Wu, V., Roberts, R.J., (2021) PLoS ONE, vol. 16.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -3670,7 +3656,7 @@ Shimatake, H., Rosenberg, M., Unpublished observations.
 <4>E.C. Rosenvold
 <5>C^CTAGG
 <6>
-<7>NVX
+<7>NSVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Lunnen, K.D., Moran, L.S., Slatko, B.E., Wilson, G.G., Unpublished observations.
@@ -3859,7 +3845,7 @@ Eichorst, S.A., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., 
 <4>ATCC 15831
 <5>TGG^CCA
 <6>?(4)
-<7>JQVX
+<7>JQRVX
 <8>Forrow, S., Lee, M., Souhami, R.L., Hartley, J.A., (1994) ACS Abstracts, vol. 208, pp. 97.
 Gelinas, R.E., Myers, P.A., Weiss, G.H., Roberts, R.J., Murray, K., (1977) J. Mol. Biol., vol. 114, pp. 433-440.
 Trautner, T.A., Unpublished observations.
@@ -3917,7 +3903,7 @@ Shibata, T., Ikawa, S., Kim, C., Ando, T., (1976) J. Bacteriol., vol. 128, pp. 4
 <4>ATCC 49763
 <5>G^GATCC
 <6>5(4)
-<7>BCIJNOQRSVX
+<7>BIJNQRSVX
 <8>Brooks, J.E., Nathan, P.D., Landry, D., Sznyter, L.A., Waite-Rees, P., Ives, C.L., Moran, L.S., Slatko, B.E., Benner, J.S., (1991) Nucleic Acids Res., vol. 19, pp. 841-850.
 Endo, M., Majima, T., Japanese Patent Office, 2003.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -3973,7 +3959,7 @@ Shibata, T., Ando, T., (1975) Mol. Gen. Genet., vol. 138, pp. 269-279.
 <4>IAM 1077
 <5>G^GYRCC
 <6>5(5)
-<7>NV
+<7>NRV
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Fomenkov, A., Anton, B.P., Unpublished observations.
@@ -3999,7 +3985,7 @@ Sugisaki, H., Maekawa, Y., Kanazawa, S., Takanami, M., (1982) Nucleic Acids Res.
 <4>IAM 1077
 <5>GRGCY^C
 <6>4(5)
-<7>NVX
+<7>NRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Forrow, S., Lee, M., Souhami, R.L., Hartley, J.A., (1994) ACS Abstracts, vol. 208, pp. 97.
@@ -4529,7 +4515,7 @@ Zhu, Z., Roberts, R.J., Unpublished observations.
 <4>J. Davies
 <5>GCATG^C
 <6>
-<7>
+<7>R
 <8>Aubert, E., Spurgeon, S., Ray, W., Davies, J., (1990) Nucleic Acids Res., vol. 18, pp. 6152.
 
 <1>M.Bbu297I
@@ -4600,7 +4586,7 @@ Matvienko, N.I., Pachkunov, D.M., Kramarov, V.M., (1984) FEBS Lett., vol. 177, p
 <4>S.K. Degtyarev
 <5>GWGCW^C
 <6>
-<7>IV
+<7>I
 <8>Repin, V.E., Rechkunova, N.I., Degtyarev, S.K., Hachaturyan, A.A., Afrikyan, E.K., (1989) Biol. J. Armenia, vol. 42, pp. 969-972.
 
 <1>Bbv16II
@@ -4926,6 +4912,15 @@ Fomenkov, A., Clark, T.A., Korlach, J., Roberts, R.J., Unpublished observations.
 <8>Su, L., Zhou, T., Zhou, L., Fang, X., Li, T., Wang, J., Guo, Y., Chang, D., Wang, Y., Li, D., Liu, C., (2012) J. Bacteriol., vol. 194, pp. 3549.
 Xu, S.-Y., Unpublished observations.
 
+<1>Bce3081ORF966
+<2>
+<3>Bacillus cereus H3081.97
+<4>R.J. Dodson
+<5>?
+<6>?(6)
+<7>
+<8>Dodson, R.J., Durkin, A.S., Rosovitz, M.J., Rasko, D.A., Hoffmaster, A., Ravel, J., Sutton, G., Unpublished observations.
+
 <1>BceRI
 <2>FnuDII
 <3>Bacillus cereus Rf sm st
@@ -5118,7 +5113,7 @@ Wei, H., Unpublished observations.
 <4>A. Atkinson
 <5>T^GATCA
 <6>3(6)
-<7>BCJNORSV
+<7>BJNRSV
 <8>Bingham, A.H.A., Atkinson, T., Sciaky, D., Roberts, R.J., (1978) Nucleic Acids Res., vol. 5, pp. 3457-3467.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -5596,7 +5591,7 @@ Vitkute, J., Capskaja, L., Markauskiene, J., Kiuduliene, L., Butkus, V., Janulai
 <4>U. Mayr
 <5>C^TTAAG
 <6>
-<7>S
+<7>
 <8>Prinz, B., Hardt, A., Schmitz, G., Jarsch, M., Kessler, C., Unpublished observations.
 
 <1>Bfr9343III
@@ -5703,15 +5698,6 @@ Samuelson, J.C., Luo, J., International Patent Office, 2009.
 Zhu, Z., Unpublished observations.
 Zhu, Z., Roberts, R.J., Unpublished observations.
 
-<1>Bga514I
-<2>
-<3>Bifidobacterium gallinarum CACC 514
-<4>M. Jung
-<5>GTRAAG
-<6>5(6)
-<7>
-<8>Jung, M., Unpublished observations.
-
 <1>BgiI
 <2>Tth111I
 <3>Brevibacillus agri
@@ -5727,7 +5713,7 @@ Zhu, Z., Roberts, R.J., Unpublished observations.
 <4>ATCC 49760
 <5>GCCNNNN^NGGC
 <6>2(4)
-<7>BCIJNOQRVX
+<7>BIJNQRX
 <8>Bickle, T.A., Ineichen, K., (1980) Gene, vol. 9, pp. 205-212.
 Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
 Duncan, C.H., Wilson, G.A., Young, F.E., (1978) J. Bacteriol., vol. 134, pp. 338-344.
@@ -5744,7 +5730,7 @@ Van Heuverswyn, H., Fiers, W., (1980) Gene, vol. 9, pp. 195-203.
 <4>ATCC 49760
 <5>A^GATCT
 <6>5(4)
-<7>BCIJNOQSVX
+<7>BIJNQRSX
 <8>Anton, B.P., Brooks, J.E., Unpublished observations.
 Anton, B.P., Heiter, D.F., Benner, J.S., Hess, E.J., Greenough, L., Moran, L.S., Slatko, B.E., Brooks, J.E., (1997) Gene, vol. 187, pp. 19-27.
 Duncan, C.H., Wilson, G.A., Young, F.E., (1978) J. Bacteriol., vol. 134, pp. 338-344.
@@ -6077,7 +6063,7 @@ Thomas, M., Rey, M., International Patent Office, 2008.
 
 <1>BliDI
 <2>
-<3>Bacillus licheniformis DSM 13
+<3>Bacillus licheniformis DSM 13A
 <4>DSM 13
 <5>?
 <6>?(6)
@@ -6087,7 +6073,7 @@ Waschkau, B., Waldeck, J., Wieland, S., Eichstadt, R., Meinhardt, F., (2008) App
 
 <1>BliDII
 <2>
-<3>Bacillus licheniformis DSM 13
+<3>Bacillus licheniformis DSM 13A
 <4>DSM 13
 <5>?
 <6>?(6)
@@ -6119,7 +6105,7 @@ Waschkau, B., Waldeck, J., Wieland, S., Eichstadt, R., Meinhardt, F., (2008) App
 <4>IAM 1902
 <5>C^CTAGG
 <6>
-<7>KS
+<7>
 <8>Yamamoto, K., Sagawa, H., Kotani, H., Hiraoka, N., Nakamura, T., US Patent Office, 1995.
 
 <1>BloI
@@ -6223,7 +6209,7 @@ Polisson, C., Unpublished observations.
 <4>S.K. Degtyarev
 <5>GCN^GC
 <6>
-<7>
+<7>I
 <8>Chernukhin, V.A., Tomilova, J.E., Chmuzh, E.V., Sokolova, O.O., Dedkov, V.S., Degtyarev, S.K., (2007) Ovchinnikov Bull. Biotechnol. Phys. Chem. Biol., vol. 3, pp. 28-33.
 Chernukhin, V.A., Tomilova, J.E., Chmuzh, E.V., Sokolova, O.O., Dedkov, V.S., Degtyarev, S.K., Russian Patent Office, 2008.
 
@@ -7153,7 +7139,7 @@ Zhu, Z., Unpublished observations.
 <4>Z. Chen
 <5>GGTCTC(1/5)
 <6>-4(6)
-<7>NV
+<7>NSV
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Kong, H., Chen, Z., Unpublished observations.
@@ -7290,7 +7276,7 @@ Xu, S.-Y., Unpublished observations.
 <4>Z. Chen
 <5>GAATGC(1/-1)
 <6>
-<7>V
+<7>RV
 <8>Chen, Z., Unpublished observations.
 
 <1>BsaNI
@@ -7808,7 +7794,7 @@ Repin, V.E., Serov, G.D., Puchkova, L.I., Tereshenko, T.A., Lebedev, L.R., Chigi
 <4>S.K. Degtyarev
 <5>CC^TNAGG
 <6>
-<7>IV
+<7>I
 <8>Degtyarev, S.K., Rechkunova, N.I., Repin, V.E., Kolyhalov, A.A., Netesov, S.V., (1990) Izv. Sib. Otd. Akad. Nauk SSSR, vol. 1, pp. 138-139.
 Repin, V.E., Polshina, S.V., Bozhko, N.A., Degtyarev, S.K., (1989) Izv. Sib. Otd. Akad. Nauk SSSR, vol. 15, pp. 108-111.
 
@@ -7903,7 +7889,7 @@ Repin, V.E., Lebedev, L.R., Puchkova, L., Serov, G.D., Tereschenko, T., Chizikov
 <4>V. Bouriotis
 <5>T^CCGGA
 <6>
-<7>C
+<7>
 <8>Thanos, D., Scarpelis, G., Papamatheakis, J., Bouriotis, V., (1989) Nucleic Acids Res., vol. 17, pp. 8881.
 
 <1>BseBI
@@ -7912,7 +7898,7 @@ Repin, V.E., Lebedev, L.R., Puchkova, L., Serov, G.D., Tereschenko, T., Chizikov
 <4>V. Bouriotis
 <5>CC^WGG
 <6>
-<7>CV
+<7>V
 <8>Rina, M., Tsigos, I., Karagouni, A., Pagomenou, M., Bouriotis, V., (1991) Nucleic Acids Res., vol. 19, pp. 4776.
 
 <1>BseB631I
@@ -7939,7 +7925,7 @@ Repin, V.E., Lebedev, L.R., Puchkova, L., Serov, G.D., Tereschenko, T., Chizikov
 <4>V. Bouriotis
 <5>AT^CGAT
 <6>5(6)
-<7>C
+<7>
 <8>Rina, M., Bouriotis, V., (1993) Gene, vol. 133, pp. 91-94.
 Rina, M., Dialektakis, D., Clark, D., Pagomenou, M., Bouriotis, V., (1992) Nucleic Acids Res., vol. 20, pp. 1807.
 
@@ -7959,7 +7945,7 @@ Vilkaitis, G., Janulaitis, A., Unpublished observations.
 <4>S.K. Degtyarev
 <5>GCAATG(2/0)
 <6>
-<7>IV
+<7>I
 <8>Abdurashitov, M.A., Bondar, T.S., Shevchenko, A.V., Dedkov, V.S., Degtyarev, S.K., Unpublished observations.
 
 <1>BseEI
@@ -8185,7 +8171,7 @@ Nkenfou, C., Morgan, R.D., Unpublished observations.
 <4>NEB 581
 <5>GTGCAG(16/14)
 <6>?(6)
-<7>NV
+<7>N
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Higgins, L.S., Kong, H., Unpublished observations.
 Kong, H., Sears, L., Unpublished observations.
@@ -8296,7 +8282,7 @@ Morgan, R.D., Roberts, R.J., International Patent Office, 2007.
 <4>WHO/CCBC 2500
 <5>GG^CC
 <6>
-<7>C
+<7>
 <8>Vlatakis, G., Clark, D., Bouriotis, V., (1989) Nucleic Acids Res., vol. 17, pp. 8882.
 
 <1>BshGI
@@ -8564,7 +8550,7 @@ Zhu, Z., Unpublished observations.
 <4>D. Clark
 <5>C^CGG
 <6>
-<7>C
+<7>
 <8>Rina, M., Bouriotis, V., (1990) Nucleic Acids Res., vol. 18, pp. 1654.
 
 <1>BsiTI
@@ -8663,7 +8649,7 @@ Hsieh, P.-C., Xiao, J.-P., O'Loane, D., Xu, S.-Y., (2000) J. Bacteriol., vol. 18
 <4>N. Welker
 <5>GAATGC(1/-1)
 <6>
-<7>JNSV
+<7>JNV
 <8>Christ, C., Ingalls, D., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Myers, P.A., Roberts, R.J., Unpublished observations.
@@ -8695,7 +8681,7 @@ Zhou, J., Xu, S., Unpublished observations.
 <4>NEB 857
 <5>CGTCTC(1/5)
 <6>4(5),-4(6)
-<7>N
+<7>NS
 <8>Chen, Z., Morgan, R., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -10126,7 +10112,7 @@ Lubiene, J., Lubys, A., Janulaitis, A., Unpublished observations.
 <4>IAM 1286
 <5>GDGCH^C
 <6>4(5)
-<7>JN
+<7>JNR
 <8>Anton, B., Unpublished observations.
 Ettwiller, L., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -10488,6 +10474,15 @@ Yunusova, A.K., Rogulin, E.A., Artyukh, R.I., Zheleznaya, L.A., Matvienko, N.I.,
 <6>
 <7>
 <8>Zheleznaya, L.A., Perevyazova, T.A., Alzhanova, D.V., Matvienko, N.I., (2001) Biokhimiia, vol. 66, pp. 1215-1220.
+
+<1>M.BspDGB1II
+<2>HinfI
+<3>Bartonella species DGB1
+<4>T. Sun
+<5>GANTC
+<6>2(6)
+<7>
+<8>Liu, Q., Sun, T., Wang, P., Wang, L., Frantova, H., Hartmann, D., Perner, J., Sun, W., Pan, B., Unpublished observations.
 
 <1>BspEI
 <2>BspMII
@@ -11306,7 +11301,7 @@ Xu, S.-Y., Xiao, J.-P., US Patent Office, 2000.
 <4>Z. Chen
 <5>T^GTACA
 <6>
-<7>N
+<7>NS
 <8>Chen, Z.F., Pan, X.S., (1994) Chinese Sci. Bull., vol. 39, pp. 526-528.
 Fang, N., Xu, S.-Y., US Patent Office, 2005.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -11364,7 +11359,7 @@ Xu, S.-Y., Fang, N., Unpublished observations.
 <4>Z. Chen
 <5>ACTGG(1/-1)
 <6>
-<7>
+<7>R
 <8>Chen, Z., Unpublished observations.
 
 <1>BsrVI
@@ -11409,7 +11404,7 @@ Xu, S.-Y., Fang, N., Unpublished observations.
 <4>V. Bouriotis
 <5>R^CCGGY
 <6>
-<7>C
+<7>
 <8>Rina, M., Stratidakis, I., Bouriotis, V., (1990) Nucleic Acids Res., vol. 18, pp. 6161.
 
 <1>BssBI
@@ -11487,7 +11482,7 @@ Schumann, J., Willert, J., Wild, C., Waler, J., Trautner, T.A., (1995) Gene, vol
 <4>ATCC 49820
 <5>G^CGCGC
 <6>
-<7>JNQVX
+<7>JNQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Schildkraut, I., Greenough, L., Unpublished observations.
@@ -11777,7 +11772,7 @@ Tomilova, Y.E., Dedkov, V.S., Shinkarenko, N.M., Popichenko, D.V., Degtyarev, S.
 <4>Z. Chen
 <5>C^TTAAG
 <6>
-<7>V
+<7>RV
 <8>Chen, Z., Unpublished observations.
 
 <1>Bst100I
@@ -11953,7 +11948,7 @@ Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A.,
 <4>Z. Chen
 <5>TT^CGAA
 <6>
-<7>N
+<7>NS
 <8>Chen, Z., Kong, H., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -12114,7 +12109,7 @@ Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A.,
 <4>ATCC 49830
 <5>G^GTNACC
 <6>5(6)
-<7>CJNV
+<7>JNRSV
 <8>Chang, Z., Morgan, R., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -12169,7 +12164,7 @@ Myers, P.A., Roberts, R.J., Unpublished observations.
 <4>Z. Chen
 <5>A^AGCTT
 <6>
-<7>
+<7>V
 <8>Fomenkov, A., Unpublished observations.
 Kong, H., Chen, Z., (1987) Nucleic Acids Res., vol. 15, pp. 7205.
 
@@ -12179,7 +12174,7 @@ Kong, H., Chen, Z., (1987) Nucleic Acids Res., vol. 15, pp. 7205.
 <4>S.K. Degtyarev
 <5>GGATG(2/0)
 <6>-2(6)
-<7>IV
+<7>I
 <8>Abdurashitov, M.A., Kileva, E.V., Shinkarenko, N.M., Shevchenko, A.V., Dedkov, V.S., Degtyarev, S.K., (1996) Gene, vol. 172, pp. 49-51.
 Chernukhin, V.A., Golikova, L.N., Gonchar, D.A., Abdurashitov, M.A., Kashirina, Y.G., Netesova, N.A., Degtyarev, S.K., (2003) Biokhimiia, vol. 68, pp. 967-975.
 Degtyarev, S.K., Netesova, N.A., Abdurashitov, M.A., Shevchenko, A.V., (1997) Gene, vol. 187, pp. 217-219.
@@ -12495,7 +12490,7 @@ Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A.,
 <4>Z. Chen
 <5>CC^WGG
 <6>
-<7>
+<7>R
 <8>Chen, Z., Kong, H., Unpublished observations.
 
 <1>BstOZ616I
@@ -12775,7 +12770,7 @@ Sinichkina, S.A., Dedkov, V.S., Degtyarev, S.K., Unpublished observations.
 <4>N. Welker
 <5>CCANNNNN^NTGG
 <6>3(6)
-<7>BIJNQVX
+<7>BIJNQRVX
 <8>Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -12829,7 +12824,7 @@ Xu, S.-Y., Samuelson, J., Pelletier, J., Sibley, M., Wilson, G.G., US Patent Off
 <4>Z. Chen
 <5>C^GGCCG
 <6>
-<7>
+<7>R
 <8>Chen, Z., Kong, H., Unpublished observations.
 King, K., Unpublished observations.
 
@@ -13054,7 +13049,7 @@ Prichodko, G.G., Petrov, N.A., Repin, V.E., Degtyarev, S.K., (1988) Izv. Sib. Ot
 <4>B. Zhou
 <5>CC^TNAGG
 <6>2(4)
-<7>N
+<7>NR
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Heiter, D., Lunnen, K., Wilson, G.G., US Patent Office, 2006.
@@ -13238,6 +13233,7 @@ Shibata, T., Ikawa, S., Kim, C., Ando, T., (1976) J. Bacteriol., vol. 128, pp. 4
 <7>
 <8>Fomenkov, A., Unpublished observations.
 Goldfarb, T., Sberro, H., Weinstock, E., Cohen, O., Doron, S., Charpak-Amikam, Y., Afik, S., Ofir, G., Sorek, R., (2015) EMBO J., vol. 34, pp. 169-183.
+Watanabe, S., Shiwa, Y., Itaya, M., Yoshikawa, H., (2012) J. Bacteriol., vol. 194, pp. 7007.
 
 <1>Bsu8565I
 <2>BamHI
@@ -14072,6 +14068,15 @@ Nicholson, W., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., M
 <8>Blow, M.J. et al., (2016) PLoS Genet., vol. 12.
 Kelly, W., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Markowitz, V., Palaniappan, K., Ivanova, N., Schaumberg, A., Pati, A., Liolios, K., Nordberg, H.P., Cantor, M.N., Hua, S.X., Woyke, T., Unpublished observations.
 
+<1>Cal14237ORF210
+<2>Cal14237I
+<3>Cellulophaga algicola DSM 14237
+<4>DSM 14237
+<5>GGTTAG
+<6>?(6)
+<7>
+<8>Abt, B. et al., (2011) Standards in Genomic Sciences, vol. 4, pp. 72-80.
+
 <1>Cam166II
 <2>SmaUMH5I
 <3>Citrobacter amalonaticus FDAARGOS_166
@@ -14159,17 +14164,6 @@ Molemans, F., van Emmelo, J., Fiers, W., (1982) Gene, vol. 18, pp. 93-96.
 <6>
 <7>
 <8>Bennett, S.P., Halford, S.E., (1987) DNA-ligand interactions: from drugs to proteins., ed. Guschlbauer, W., Saenger, W. (Plenum Press, New York), pp. 239-250.
-
-<1>Cau10061II
-<2>
-<3>Clostridium autoethanogenum
-<4>DSM 10061
-<5>GTTAAT
-<6>5(6)
-<7>
-<8>Anton, B., Unpublished observations.
-Brown, S.D., Nagaraju, S., Utturkar, S.M., De Tissera, S., Mitchell, W., Kopke, M., Unpublished observations.
-Humphreys, C.M. et al., (2015) BMC Genomics, vol. 16, pp. 1085.
 
 <1>CauB3I
 <2>BspMII
@@ -15092,7 +15086,7 @@ Turmel, M., Boulanger, J., Schnare, M.N., Gray, M.W., Lemieux, C., (1991) J. Mol
 <4>ATCC 23439
 <5>GCG^C
 <6>
-<7>S
+<7>R
 <8>Makula, R.A., Unpublished observations.
 
 <1>CfrI
@@ -15770,6 +15764,15 @@ Nicholson, W., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., M
 <6>3(6),-3(6)
 <7>
 <8>Kim, B.C., Seung-Jeon, B., Kim, S., Kim, H., Um, Y., Sang, B.I., (2015) Int. J. Syst. Evol. Microbiol., vol. 65, pp. 4902-4908.
+
+<1>Cginov21II
+<2>BalI
+<3>Cupriavidus gilardii nov-21
+<4>A. Gonzalez-Sanchez
+<5>TGGCCA
+<6>6(6)
+<7>
+<8>Gonzalez-Sanchez, A., Lozano-Aguirre, L., Lopez-Samano, M., Garcia de los Santos, A., Cevallos-Gaos, M.A., Le Borgne, S., Unpublished observations.
 
 <1>CglI
 <2>TauI
@@ -16464,7 +16467,7 @@ Murray, I.A., Clark, T.A., Morgan, R.D., Boitano, M., Anton, B.P., Luong, K., Fo
 <4>ATCC 49862
 <5>AT^CGAT
 <6>5(6)
-<7>NQSVX
+<7>NQRSVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Longo, M.C., Smith, M.D., Chatterjee, D.K., US Patent Office, 1994.
 Mayer, H., Grosschedl, R., Schutte, H., Hobom, G., (1981) Nucleic Acids Res., vol. 9, pp. 4833-4845.
@@ -16924,7 +16927,7 @@ Ma, D.P., King, Y.T., Kim, Y., Luckett, S., (1992) Plant Mol. Biol., vol. 18, pp
 <4>M. Nelson
 <5>CG^GWCCG
 <6>
-<7>
+<7>R
 <8>Nelson, M., McClelland, M., Unpublished observations.
 
 <1>Csp2I
@@ -16979,7 +16982,7 @@ Rimseliene, R., Janulaitis, A., Unpublished observations.
 <4>T. Schoenfeld
 <5>TT^CGAA
 <6>
-<7>
+<7>R
 <8>Schoenfeld, T., Mead, D.A., Fiandt, M., (1989) Nucleic Acids Res., vol. 17, pp. 4417.
 
 <1>Csp231I
@@ -17033,8 +17036,36 @@ Rimseliene, R., Janulaitis, A., Unpublished observations.
 <4>N.N. Sokolov
 <5>A^CCGGT
 <6>
-<7>C
+<7>
 <8>Rina, M., Markaki, M., Sokolov, N., Bouriotis, V., Unpublished observations.
+
+<1>Csp12AI
+<2>FokI
+<3>Clostridium sp. 12(A)
+<4>M.G. Dominguez-Bello
+<5>GGATG
+<6>3(6)
+<7>
+<8>Blow, M.J. et al., (2016) PLoS Genet., vol. 12.
+Dominguez-bello, M.G., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Markowitz, V., Palaniappan, K., Ivanova, N., Schaumberg, A., Pati, A., Liolios, K., Nordberg, H.P., Cantor, M.N., Hua, S.X., Woyke, T., Unpublished observations.
+
+<1>Csp12AIV
+<2>
+<3>Clostridium sp. 12(A)
+<4>M.G. Dominguez-Bello
+<5>?
+<6>
+<7>
+<8>Dominguez-bello, M.G., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Markowitz, V., Palaniappan, K., Ivanova, N., Schaumberg, A., Pati, A., Liolios, K., Nordberg, H.P., Cantor, M.N., Hua, S.X., Woyke, T., Unpublished observations.
+
+<1>Csp12AORFA
+<2>FokI
+<3>Clostridium sp. 12(A)
+<4>M.G. Dominguez-Bello
+<5>GGATG
+<6>
+<7>
+<8>Dominguez-bello, M.G., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Markowitz, V., Palaniappan, K., Ivanova, N., Schaumberg, A., Pati, A., Liolios, K., Nordberg, H.P., Cantor, M.N., Hua, S.X., Woyke, T., Unpublished observations.
 
 <1>CspBI
 <2>NotI
@@ -17076,6 +17107,15 @@ Morgan, R., Wilson, G., Lunnen, K., Heiter, D., Benner, J., Nkenfou, C.N., Picon
 <6>3(6),-2(6)
 <7>
 <8>Swinnen, S., Zurek, C., Kramer, M., Heger, R.M., Domeyer, J.E., Ziegler, J., Svetlitchnyi, V.A., Laufer, A., (2022) PLoS ONE, vol. 17.
+
+<1>CspCB13II
+<2>CcrNAIII
+<3>Caulobacter sp CB13
+<4>B. Ely
+<5>CGACCAG
+<6>6(6)
+<7>
+<8>Fomenkov, A., Unpublished observations.
 
 <1>Csp68KI
 <2>AvaII
@@ -17182,6 +17222,7 @@ Welsh, E.A., Liberton, M., Stockel, J., Sato, H., Loh, T., Wang, C., Wollam, A.,
 <7>
 <8>Morgan, R.D., Bhatia, T., US Patent Office, 2007.
 Morgan, R.D., Bhatia, T., US Patent Office, 2005.
+Tauch, A., Krieft, S., Kalinowski, J., Puhler, A., (2000) Mol. Gen. Genet., vol. 263, pp. 1-11.
 Usuda, Y., Nishio, Y., Matsui, K., Sugimoto, S., Koseki, K., US Patent Office, 2008.
 
 <1>CsuI
@@ -17631,7 +17672,7 @@ Que, Q., Zhang, Y., Nelson, M., Ropp, S., Burbank, D.E., Van Etten, J.L., (1997)
 <4>NCIB 83120
 <5>C^TNAG
 <6>1(5)
-<7>NOQSVX
+<7>NQRVX
 <8>Brooks, J.E., Howard, K.A., US Patent Office, 1994.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Gelinas, R.E., Roberts, R.J., Unpublished observations.
@@ -17852,7 +17893,7 @@ Lacks, S., Greenberg, B., (1977) J. Mol. Biol., vol. 114, pp. 153-168.
 <4>S. Lacks
 <5>^GATC
 <6>2(6)
-<7>N
+<7>NS
 <8>de la Campa, A.G., Kale, P., Springhorn, S.S., Lacks, S.A., (1987) J. Mol. Biol., vol. 196, pp. 457-469.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Lacks, S., Greenberg, B., (1975) J. Biol. Chem., vol. 250, pp. 4060-4066.
@@ -17866,7 +17907,7 @@ Lacks, S.A., Mannarelli, B.M., Springhorn, S.S., Greenberg, B., (1986) Cell, vol
 <4>ATCC 27603
 <5>TTT^AAA
 <6>6(6)
-<7>BIJNQSVX
+<7>BIJNQRSVX
 <8>Benner, J.S., Unpublished observations.
 Kur, J., (1993) Acta Microbiol. Pol., vol. 42, pp. 145-150.
 Morgan, R.D., Unpublished observations.
@@ -18297,7 +18338,7 @@ Currie, C., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Mark
 <4>NEB 368
 <5>C^GGCCG
 <6>4(5)
-<7>NV
+<7>NSV
 <8>Brooks, J.E., Sznyter, L.A., US Patent Office, 1991.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Morgan, R., Camp, R., Soltis, A., Unpublished observations.
@@ -18688,7 +18729,7 @@ Hartmann, H., Goebel, W., (1977) FEBS Lett., vol. 80, pp. 285-287.
 <4>P.C. Shaw
 <5>GACNNN^NNGTC
 <6>
-<7>
+<7>R
 <8>Chan, H.-Y., Chan, Y.-C., Kam, K.-M., Shaw, P.-C., (1994) World J. Microbiol. Biotechnol., vol. 10, pp. 30-32.
 
 <1>EclJI
@@ -18753,7 +18794,7 @@ Conlan, S., Deming, C., Tsai, Y.C., Lau, A.F., Dekker, J.P., Korlach, J., Segre,
 <4>U. Mayr
 <5>C^GGCCG
 <6>
-<7>S
+<7>
 <8>Bolton, B.J., Reischl, U., Holtke, H.-J., Schmitz, G.G., Jarsch, M., Kessler, C., (1990) Nucleic Acids Res., vol. 18, pp. 381.
 
 <1>Ecl18kI
@@ -19001,7 +19042,7 @@ Stankevicius, K., Povilionis, P., Lubys, A., Menkevicius, S., Janulaitis, A., (1
 <4>A. Janulaitis
 <5>AGC^GCT
 <6>
-<7>BS
+<7>BRS
 <8>Janulaitis, A., Petrusyte, M., Butkus, V., (1983) FEBS Lett., vol. 161, pp. 213-216.
 
 <1>Eco48I
@@ -22228,7 +22269,7 @@ Lee, K.-F., Shaw, P.-C., Picone, S.J., Wilson, G.G., Lunnen, K.D., (1998) Biol. 
 <4>ICR 0020
 <5>GAG^CTC
 <6>
-<7>IV
+<7>IRV
 <8>Sugisaki, H., Maekawa, Y., Kanazawa, S., Takanami, M., (1982) Bull. Inst. Chem. Res. Kyoto Univ., vol. 60, pp. 328-335.
 Yankovsky, N.K., Fonstein, M.Y., Lashina, S.Y., Bukanov, N.O., Yakubovich, N.V., Ermakova, L.M., Rebentish, B.A., Janulaitis, A., Debabov, V.G., (1989) Gene, vol. 81, pp. 203-210.
 
@@ -22598,7 +22639,7 @@ Wagenfuhr, K., Pieper, S., Mackeldanz, P., Linscheid, M., Kruger, D.H., Reuter, 
 <4>R.N. Yoshimori
 <5>G^AATTC
 <6>3(6)
-<7>BCIJNOQRSVX
+<7>BIJNQRSVX
 <8>Albertsen, H.M., Le Paslier, D., Abderrahim, H., Dausset, J., Cann, H., Cohen, D., (1989) Nucleic Acids Res., vol. 17, pp. 808.
 Dugaiczyk, A., Hedgpeth, J., Boyer, H.W., Goodman, H.M., (1974) Biochemistry, vol. 13, pp. 503-512.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -22616,7 +22657,7 @@ Winkler, F.K., (1994) J. Mol. Recognit., vol. 6, pp. 9.
 <4>R.N. Yoshimori
 <5>^CCWGG
 <6>2(5)
-<7>BJV
+<7>BJSV
 <8>Bigger, C.H., Murray, K., Murray, N.E., (1973) Nature New Biol., vol. 244, pp. 7-10.
 Boyer, H.W., Chow, L.T., Dugaiczyk, A., Hedgpeth, J., Goodman, H.M., (1973) Nature New Biol., vol. 244, pp. 40-43.
 Buryanov, Y.I., Bogdarina, I.G., Bayev, A.A., (1978) FEBS Lett., vol. 88, pp. 251-254.
@@ -22632,7 +22673,7 @@ Yoshimori, R.N., (1971) Ph.D. Thesis, University of California, San Francisco, U
 <4>L.I. Glatman
 <5>GAT^ATC
 <6>2(6)
-<7>CIJNOQRSVX
+<7>IJNQRSVX
 <8>Baldwin, G.S., Halford, S.E., (1994) Biochem. Soc. Trans., vol. 22, pp. 300S.
 Erskine, S.G., Halford, S.E., (1994) Biochem. Soc. Trans., vol. 22, pp. 299s.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -22689,6 +22730,15 @@ Patel, I.R., Gangiredla, J., Mammel, M.K., Lampel, K.A., Elkins, C.A., Lacher, D
 <3>Escherichia coli ECOR14
 <4>ATCC 35333
 <5>TGANNNNNNNNTGCT
+<6>?(6)
+<7>
+<8>Patel, I.R., Gangiredla, J., Mammel, M.K., Lampel, K.A., Elkins, C.A., Lacher, D.W., (2018) Microbiol. Resour. Announc., vol. 7.
+
+<1>EcoR22I
+<2>
+<3>Escherichia coli MOD1-ECOR22
+<4>I.R. Patel
+<5>GAACC
 <6>?(6)
 <7>
 <8>Patel, I.R., Gangiredla, J., Mammel, M.K., Lampel, K.A., Elkins, C.A., Lacher, D.W., (2018) Microbiol. Resour. Announc., vol. 7.
@@ -23474,7 +23524,7 @@ Venter, J.C. et al., (2004) Science, vol. 304, pp. 66-74.
 <4>A. Janulaitis
 <5>CGTCTC(1/5)
 <6>4(5),-4(6)
-<7>BN
+<7>BNS
 <8>Bitinaite, J., Grigaite, R., Maneliene, Z., Butkus, V., Janulaitis, A., (1991) Nucleic Acids Res., vol. 19, pp. 5076.
 Bitinaite, J., Maneliene, Z., Menkevicius, S., Klimasauskas, S., Butkus, V., Janulaitis, A., (1992) Nucleic Acids Res., vol. 20, pp. 4981-4985.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -24063,24 +24113,6 @@ van den Hondel, C.A.M.J.J., van Leen, R.W., van Arkel, G.A., Duyvesteyn, M., de 
 <7>
 <8>Informatics, P., Unpublished observations.
 
-<1>Fnu031IV
-<2>
-<3>Fusobacterium nucleatum SB031
-<4>S. Bullman
-<5>?
-<6>
-<7>
-<8>Zepeda-Rivera, M.A., Jones, D.S., Baryiames, A., LaCourse, K.D., Johnston, C.D., Bullman, S., Unpublished observations.
-
-<1>Fnu037IV
-<2>
-<3>Fusobacterium nucleatum SB037
-<4>S. Bullman
-<5>?
-<6>
-<7>
-<8>Zepeda-Rivera, M.A., Jones, D.S., Baryiames, A., LaCourse, K.D., Johnston, C.D., Bullman, S., Unpublished observations.
-
 <1>Fnu048III
 <2>Pba2294I
 <3>Fusobacterium nucleatum SB048
@@ -24307,7 +24339,7 @@ Nelson, J.M., Miceli, S.M., Lechevalier, M.P., Roberts, R.J., (1990) Nucleic Aci
 <4>ATCC 29114
 <5>TGC^GCA
 <6>?(5)
-<7>JNV
+<7>JNS
 <8>Christ, C., Ingalls, D., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Morgan, R.D., Roberts, R.J., International Patent Office, 2007.
@@ -24542,6 +24574,16 @@ Johnson, S.L. et al., (2015) Genome Announcements, vol. 3.
 <8>Dwinnel, E., Morgan, R.D., Unpublished observations.
 Oguchi, A. et al., Unpublished observations.
 
+<1>Gba686I
+<2>BamHI
+<3>Gordoniaceae bacterium zg-686
+<4>G. Zhang
+<5>GGATCC
+<6>
+<7>
+<8>Fomenkov, A., Unpublished observations.
+Zhang, G., Unpublished observations.
+
 <1>Gba708II
 <2>
 <3>Gemmatimonadetes bacterium KBS708
@@ -24647,7 +24689,7 @@ Oguchi, A. et al., Unpublished observations.
 <4>S.K. Degtyarev
 <5>GC^GC
 <6>
-<7>
+<7>I
 <8>Chernukhin, V.A., Nayakshina, T.N., Abdurashitov, M.A., Tomilova, Y.E., Mezentseva, N.V., Dedkov, V.S., Mikhnenkova, N.A., Gonchar, D.A., Degtyarev, S.K., (2006) Biotekhnologiya, vol. 0, pp. 26-30.
 
 <1>GluI
@@ -24656,7 +24698,7 @@ Oguchi, A. et al., Unpublished observations.
 <4>S.K. Degtyarev
 <5>GC^NGC
 <6>
-<7>
+<7>I
 <8>Chernukhin, V.A., Chmuzh, E.V., Tomilova, J.E., Nayakshina, T.N., Dedkov, V.S., Degtyarev, S.K., Russian Patent Office, 2008.
 Chernukhin, V.A., Chmuzh, E.V., Tomilova, Y.E., Nayakshina, T.N., Gonchar, D.A., Dedkov, V.S., Degtyarev, S.K., (2007) Ovchinnikov Bull. Biotechnol. Phys. Chem. Biol., vol. 3, pp. 13-17.
 
@@ -24829,7 +24871,7 @@ Teeling, H., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Mar
 <3>Geobacillus stearothermophilus EF60045
 <4>D.-W. Lee
 <5>TACNNNNNNCTC
-<6>?(6)
+<6>2(6),-2(6)
 <7>
 <8>Lee, D.-W., Lee, S.-J., Kim, S.-B., Sung, J.-Y., Ganbat, D., Unpublished observations.
 
@@ -24871,15 +24913,6 @@ Sung, J.Y., Unpublished observations.
 <8>Janulaitis, A., Bitinaite, J., Jaskeleviciene, B., (1983) FEBS Lett., vol. 151, pp. 243-247.
 Petrusyte, M.P., Bitinaite, J.B., Kersulyte, D.R., Menkevicius, S.J., Butkus, V.V., Janulaitis, A., (1987) Dokl. Akad. Nauk., vol. 295, pp. 1250-1253.
 Vaisvila, R., Janulaitis, A., Unpublished observations.
-
-<1>GsuPI
-<2>
-<3>Geobacter sulfurreducens PCA
-<4>ATCC 51573
-<5>GTACAG
-<6>5(6)
-<7>
-<8>Methe, B.A. et al., (2003) Science, vol. 302, pp. 1967-1969.
 
 <1>Gte10669I
 <2>Cdi13750III
@@ -24941,7 +24974,7 @@ Vaisvila, R., Janulaitis, A., Unpublished observations.
 <4>ATCC 11116
 <5>RGCGC^Y
 <6>?(5)
-<7>JNV
+<7>JNRV
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Lunnen, K.D., Barsomian, J.M., Camp, R.R., Card, C.O., Chen, S.-Z., Croft, R., Looney, M.C., Meda, M.M., Moran, L.S., Nwankwo, D.O., Slatko, B.E., Van Cott, E.M., Wilson, G.G., (1988) Gene, vol. 74, pp. 25-32.
 Muzny, D. et al., Unpublished observations.
@@ -24956,7 +24989,7 @@ Tu, C.-P.D., Roychoudhury, R., Wu, R., (1976) Biochem. Biophys. Res. Commun., vo
 <4>ATCC 11116
 <5>GG^CC
 <6>3(5)
-<7>IJNOQRSVX
+<7>IJNQRVX
 <8>Bron, S., Murray, K., (1975) Mol. Gen. Genet., vol. 143, pp. 25-33.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Mann, M.B., Smith, H.O., (1977) Nucleic Acids Res., vol. 4, pp. 4211-4221.
@@ -25393,7 +25426,7 @@ Kroger, M., Hobom, G., Schutte, H., Mayer, H., (1984) Nucleic Acids Res., vol. 1
 <4>ATCC 10014
 <5>GCG^C
 <6>2(5)
-<7>BJNQVX
+<7>BJNQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Roberts, R.J., Anton, B.P., Vincze, T., Unpublished observations.
 Mann, M.B., Smith, H.O., (1979) Proceedings of the Conference on Transmethylation, ed. Usdin, E., Borchardt, R.T., Creveling, C.R. (Elsevier North Holland, New York), vol. 0, pp. 483-492.
@@ -25893,7 +25926,7 @@ Myers, P.A., Roberts, R.J., Unpublished observations.
 <4>ATCC 49699
 <5>GTY^RAC
 <6>5(6)
-<7>BJNOQVX
+<7>BJNQRVX
 <8>Benner, J.S., Rees, P.A., European Patent Office, 1995.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Ii, J.S.B., Rees, P.A., Japanese Patent Office, 1998.
@@ -25921,7 +25954,7 @@ Roy, P.H., Smith, H.O., (1973) J. Mol. Biol., vol. 81, pp. 445-459.
 <4>ATCC 51907
 <5>GTY^RAC
 <6>5(6)
-<7>IOSV
+<7>I
 <8>Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
 Fleischmann, R.D. et al., (1995) Science, vol. 269, pp. 496-512.
 Fleischmann, R.D., Adams, M.D., White, O., Smith, H.O., Venter, J.C., Japanese Patent Office, 2004.
@@ -25938,7 +25971,7 @@ Smith, H.O., Wilcox, K.W., (1970) J. Mol. Biol., vol. 51, pp. 379-391.
 <4>ATCC 51907
 <5>A^AGCTT
 <6>1(6)
-<7>BCIJNQRSVX
+<7>BIJNQRSVX
 <8>Fleischmann, R.D. et al., (1995) Science, vol. 269, pp. 496-512.
 Fleischmann, R.D., Adams, M.D., White, O., Smith, H.O., Venter, J.C., Japanese Patent Office, 2004.
 Fleischmann, R.D., Adams, M.D., White, O., Smith, H.O., Venter, J.C., US Patent Office, 2003.
@@ -25987,7 +26020,7 @@ Roy, P.H., Smith, H.O., (1973) J. Mol. Biol., vol. 81, pp. 445-459.
 <4>G. Leidy
 <5>G^ANTC
 <6>2(6)
-<7>BCIJNOQRVX
+<7>BIJNQRSVX
 <8>Bassing, C.H., Kim, Y.-G., Li, L., Chandrasegaran, S., (1992) Gene, vol. 113, pp. 83-88.
 Chandrasegaran, S., Lunnen, K.D., Smith, H.O., Wilson, G.G., (1988) Gene, vol. 70, pp. 387-392.
 Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
@@ -26051,7 +26084,7 @@ Landthaler, M., Lau, N.C., Shub, D.A., (2004) J. Bacteriol., vol. 186, pp. 4307-
 <4>ATCC 49669
 <5>GTT^AAC
 <6>5(6)
-<7>CIJNQSVX
+<7>IJNQRSVX
 <8>Benner, J.S., Rees, P., European Patent Office, 1995.
 Benner, J.S., Rees, P., US Patent Office, 1994.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -26067,7 +26100,7 @@ Yoo, O.J., Dwyer-Hallquist, P., Agarwal, K.L., (1982) Nucleic Acids Res., vol. 1
 <4>ATCC 49669
 <5>C^CGG
 <6>2(5)
-<7>BINQVX
+<7>BINQRSVX
 <8>Anton, B.P., Fomenkov, A., Roberts, R.J., Unpublished observations.
 Butkus, V., Petrauskiene, L., Maneliene, Z., Klimasauskas, S., Laucys, V., Janulaitis, A., (1987) Nucleic Acids Res., vol. 15, pp. 7091-7102.
 Chatterjee, D.K., US Patent Office, 1993.
@@ -26106,6 +26139,15 @@ Som, S., Friedman, S., (1994) J. Biol. Chem., vol. 269, pp. 25986-25991.
 <6>
 <7>
 <8>Xu, S., Unpublished observations.
+
+<1>M.Hpa2Dam
+<2>MboI
+<3>Hafnia paralvei CRS2402
+<4>S. Hong
+<5>GATC
+<6>2(6)
+<7>
+<8>Hong, S., Cho, S., Unpublished observations.
 
 <1>HphI
 <2>
@@ -28917,7 +28959,7 @@ Siddaramappa, S. et al., Unpublished observations.
 <4>R. Williams
 <5>GR^CGYC
 <6>
-<7>
+<7>R
 <8>Allen, J., Unpublished observations.
 
 <1>Hsp92II
@@ -28926,7 +28968,7 @@ Siddaramappa, S. et al., Unpublished observations.
 <4>R. Williams
 <5>CATG^
 <6>
-<7>
+<7>R
 <8>Allen, J., Unpublished observations.
 
 <1>HspAI
@@ -29020,6 +29062,15 @@ Rechkunova, N.I., Prikhodko, E.A., Shevchenko, A.V., Degtyarev, S.K., Unpublishe
 <7>
 <8>Stadtler, P., von Strandmann, R.P., Walter, T., Frey, B., Auer, H., Hengstenberg, W., Schmitz, G., (1993) Gene, vol. 137, pp. 347-348.
 
+<1>Jch23701I
+<2>PacI
+<3>Jeongeupia chitinilytica KCTC 23701
+<4>KCTC 23701
+<5>TTAATTAA
+<6>
+<7>
+<8>Luyten, Y.A., Morgan, R.D., Unpublished observations.
+
 <1>Jma19592I
 <2>
 <3>Joostella marina DSM 19592
@@ -29039,6 +29090,15 @@ Stackebrandt, E. et al., (2013) Standards in Genomic Sciences, vol. 8, pp. 37-46
 <6>6(6)
 <7>
 <8>Blow, M.J. et al., (2016) PLoS Genet., vol. 12.
+
+<1>Jma19592ORFI
+<2>Jma19592I
+<3>Joostella marina DSM 19592
+<4>DSM 19592
+<5>GTATNAC
+<6>?(6)
+<7>
+<8>Stackebrandt, E. et al., (2013) Standards in Genomic Sciences, vol. 8, pp. 37-46.
 
 <1>Jsp2502II
 <2>
@@ -29232,7 +29292,7 @@ Zakareviciene, L., Lubys, A., Unpublished observations.
 <4>ATCC 49790
 <5>GGTAC^C
 <6>4(6)
-<7>BCIJNOQRSVX
+<7>BIJNQRSVX
 <8>Chatterjee, D., Longo, M., Flynn, E., Oberfelder, R., Japanese Patent Office, 2001.
 Chatterjee, D., Longo, M., Flynn, E., Oberfelder, R., US Patent Office, 2004.
 Chatterjee, D.K., Longo, M., Flynn, E., Oberfelder, R., US Patent Office, 2007.
@@ -29463,15 +29523,6 @@ Lubys, A., Jurenaite, S., Janulaitis, A., (1999) Nucleic Acids Res., vol. 27, pp
 <7>
 <8>Informatics, P., Unpublished observations.
 
-<1>Kpn12208I
-<2>Yru12986I
-<3>Klebsiella pneumoniae 12208
-<4>Q. Liang
-<5>AGGAAG
-<6>5(6)
-<7>
-<8>Liang, Q., Jiang, X., Zhou, D., Unpublished observations.
-
 <1>Kpn12463II
 <2>Lra68I
 <3>Klebsiella pneumoniae NCTC12463
@@ -29629,6 +29680,15 @@ Ryu, J.-I., Unpublished observations.
 <6>?(6)
 <7>
 <8>Conlan, S., Thomas, P.J., Mullikin, J., Palmore, T.N., Frank, K.M., Segre, J.A., Unpublished observations.
+
+<1>M.KpnA25Dam
+<2>MboI
+<3>Klebsiella pneumoniae Kpn-A25
+<4>Y. Chen
+<5>GATC
+<6>2(6)
+<7>
+<8>Chen, Y., Unpublished observations.
 
 <1>M.KpnAR161Dam
 <2>MboI
@@ -30604,7 +30664,7 @@ Zakharova, M.V., Beletskaya, I.V., Denjmukhametov, M.M., Yurkova, T.V., Semenova
 <4>S.K. Degtyarev
 <5>G^CCGGC
 <6>
-<7>
+<7>I
 <8>Dedkov, V.S., Chernukhin, V.A., Degtyarev, S.K., Unpublished observations.
 
 <1>Kro7512II
@@ -30743,6 +30803,15 @@ Tsukahara, S., Yamakawa, H., Takai, K., Takaku, H., (1994) Nucleosides and Nucle
 <7>
 <8>Informatics, P., Unpublished observations.
 
+<1>M.Lad134Dam
+<2>MboI
+<3>Leclercia adecarboxylata WWCOL-134
+<4>J.S. Kim
+<5>GATC
+<6>2(6)
+<7>
+<8>Kim, J.S., Jeong, H.-W., Jin, Y.H., Kim, J., Kim, J.-a., Park, S.H., Yoon, S.-M., Jung, S.-E., Jang, J.I., Kim, E.J., Lee, J.I., Lee, J.-H., Unpublished observations.
+
 <1>M.Lam395Dam
 <2>MboI
 <3>Lelliottia amnigena FDAARGOS_395
@@ -30790,7 +30859,7 @@ Kelly, W., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Marko
 <8>Feyereisen, M., Unpublished observations.
 
 <1>Lbr449I
-<2>AchA6III
+<2>M.AchA6III
 <3>Lactobacillus brevis UCCLBBS449
 <4>M. Feyereisen
 <5>AGCCAG
@@ -30837,6 +30906,16 @@ McDonnell, B., Kelleher, P., Fomenkov, A., Ortiz-Charneco, G., Coughlan, K., Que
 Kelleher, P., Unpublished observations.
 Kelleher, P.R., Unpublished observations.
 McDonnell, B., Unpublished observations.
+
+<1>Lcr047II
+<2>M.Lcr047II
+<3>Lactococcus cremoris UC047
+<4>D. van Sinderen
+<5>AGAAG
+<6>4(6)
+<7>
+<8>Kelleher, P.R., Unpublished observations.
+McDonnell, B., Kelleher, P., Fomenkov, A., Ortiz-Charneco, G., Coughlan, K., Quenee, P., Kulakauskas, S., Cambillau, C., Anton, B.P., de Waal, P.P., van Peij, N.N.M.E., Bottacini, F., Mahoney, J., Roberts, R.J., van Sinderen, D., Unpublished observations.
 
 <1>Lcr109IV
 <2>
@@ -30925,6 +31004,16 @@ Mahony, J., Frantzen, C., Vinogradov, E., Sadovskaya, I., Theodorou, I., Kellehe
 <7>
 <8>Fomenkov, A., Unpublished observations.
 McDonnell, B., Unpublished observations.
+McDonnell, B., Kelleher, P., Fomenkov, A., Ortiz-Charneco, G., Coughlan, K., Quenee, P., Kulakauskas, S., Cambillau, C., Anton, B.P., de Waal, P.P., van Peij, N.N.M.E., Bottacini, F., Mahoney, J., Roberts, R.J., van Sinderen, D., Unpublished observations.
+
+<1>LcrJM4V
+<2>
+<3>Lactococcus cremoris JM4
+<4>A. Fomenkov
+<5>GRTANAG
+<6>6(6)
+<7>
+<8>McDonnell, B., Unpublished observations.
 McDonnell, B., Kelleher, P., Fomenkov, A., Ortiz-Charneco, G., Coughlan, K., Quenee, P., Kulakauskas, S., Cambillau, C., Anton, B.P., de Waal, P.P., van Peij, N.N.M.E., Bottacini, F., Mahoney, J., Roberts, R.J., van Sinderen, D., Unpublished observations.
 
 <1>Lde4408II
@@ -31076,6 +31165,15 @@ Mahony, J., Frantzen, C., Vinogradov, E., Sadovskaya, I., Theodorou, I., Kellehe
 <6>?(6)
 <7>
 <8>Schouler, C., Clier, F., Luisa, A., Lerayer, L., Ehrlich, S.D., Chopin, M.-C., (1998) J. Bacteriol., vol. 180, pp. 407-411.
+
+<1>Lla7005III
+<2>
+<3>Lactococcus lactis subsp. lactis UC7005
+<4>D. van Sinderen
+<5>?
+<6>?(6)
+<7>
+<8>McDonnell, B., Unpublished observations.
 
 <1>M.Lla12830I
 <2>MboI
@@ -31457,7 +31555,7 @@ Murphy, J., Klumpp, J., Mahony, J., O'Connell-Motherway, M., Nauta, A., van Sind
 <8>Huang, T., Xiong, T., Unpublished observations.
 
 <1>Lpl520I
-<2>AchA6III
+<2>M.AchA6III
 <3>Lactobacillus plantarum PC520
 <4>M. Zhao
 <5>AGCCAG
@@ -31686,6 +31784,26 @@ Zheng, Y., Roberts, R.J., International Patent Office, 2010.
 <8>Xu, S.Y., Klein, P., Degtyarev, S.K., Roberts, R.J., (2016) Sci. Rep., vol. 6, pp. 28579.
 Yun, J.H., Cho, Y.J., Chun, J., Hyun, D.W., Bae, J.W., (2014) Standards in Genomic Sciences, vol. 9, pp. 495-504.
 
+<1>LseLS1I
+<2>M.LseLS1I
+<3>Listeria seeligeri
+<4>T. Hain
+<5>CYYANNNNNNNTRTC
+<6>4(6),-4(6)
+<7>
+<8>Steinweg, C., Kuenne, C.T., Billion, A., Mraheil, M.A., Domann, E., Ghai, R., Barbuddhe, S.B., Karst, U., Goesmann, A., Puhler, A., Weisshaar, B., Wehland, J., Lampidis, R., Kreft, J., Goebel, W., Chakraborty, T., Hain, T., (2010) J. Bacteriol., vol. 192, pp. 1473-1474.
+Williams, M.C., Reker, A.E., Margolis, S.R., Liao, J., Wiedmann, M., Rojas, E.R., Meeske, A.J., (2023) Nature Microbiology, vol. 8, pp. 400-409.
+
+<1>LseLS1II
+<2>S.LseLS1II
+<3>Listeria seeligeri
+<4>T. Hain
+<5>CNCANNNNNNNTCNNC
+<6>4(6),-5(6)
+<7>
+<8>Steinweg, C., Kuenne, C.T., Billion, A., Mraheil, M.A., Domann, E., Ghai, R., Barbuddhe, S.B., Karst, U., Goesmann, A., Puhler, A., Weisshaar, B., Wehland, J., Lampidis, R., Kreft, J., Goebel, W., Chakraborty, T., Hain, T., (2010) J. Bacteriol., vol. 192, pp. 1473-1474.
+Williams, M.C., Reker, A.E., Margolis, S.R., Liao, J., Wiedmann, M., Rojas, E.R., Meeske, A.J., (2023) Nature Microbiology, vol. 8, pp. 400-409.
+
 <1>LspI
 <2>AsuII
 <3>Lactobacillus species
@@ -31876,7 +31994,7 @@ Zhu, Z., Roberts, R.J., Unpublished observations.
 <4>K.O. Stetter
 <5>^GTNAC
 <6>
-<7>S
+<7>
 <8>Fomenkov, A., Anton, B.P., Unpublished observations.
 Fomenkov, A., Weigele, P., McClung, C., Madinger, C., Roberts, R.J., (2023) Front. Microbiol., vol. 14, pp. 1112734.
 Schmid, K., Thomm, M., Laminet, A., Laue, F.G., Kessler, C., Stetter, K.O., Schmitt, R., (1984) Nucleic Acids Res., vol. 12, pp. 2619-2628.
@@ -32058,7 +32176,7 @@ Vitkute, J., Kazlauskiene, R., Trinkunaite, L., Kiuduliene, E., Petrusyte, M., B
 <4>ATCC 10900
 <5>^GATC
 <6>2(6)
-<7>BCNQVX
+<7>BNQRVX
 <8>Anton, B.P., Brooks, J.E., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -32073,7 +32191,7 @@ Ueno, T., Ito, H., Kotani, H., Nakajima, K., Japanese Patent Office, 1993.
 <4>ATCC 10900
 <5>GAAGA(8/7)
 <6>?(4),-2(4)
-<7>BIJNQVX
+<7>BIJNQRVX
 <8>Bocklage, H., Heeger, K., Muller-Hill, B., (1991) Nucleic Acids Res., vol. 19, pp. 1007-1013.
 Brown, N.L., Hutchison, C.A. III, Smith, M., (1980) J. Mol. Biol., vol. 140, pp. 143-148.
 Chang, Z., Morgan, R., Unpublished observations.
@@ -33034,7 +33152,7 @@ Wickberg, L., Schildkraut, I., Unpublished observations.
 <4>IFO 12992
 <5>A^CGCGT
 <6>2(4)
-<7>BIJNOQRSVX
+<7>BIJNQRSVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Morgan, R.D., Roberts, R.J., International Patent Office, 2007.
@@ -33332,7 +33450,7 @@ Lartigue, C., Vashee, S., Algire, M.A., Chuang, R.Y., Benders, G.A., Ma, L., Nos
 <4>ATCC 17953
 <5>CCTC(7/6)
 <6>-2(6)
-<7>BINQVX
+<7>BINQSVX
 <8>Brinkley, P., Bautista, D.S., Graham, F.L., (1991) Gene, vol. 100, pp. 267-268.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Harasimowicz-Slowinska, R.I., Skowron, P.M., Unpublished observations.
@@ -33566,7 +33684,7 @@ Vitkute, J., Slyziute, J., Maneliene, Z., Norgeliene, D., Trinkunaite, L., Janul
 <4>F. Kato
 <5>T^CCGGA
 <6>
-<7>OV
+<7>V
 <8>Kato, F., Suetake, T., Murata, A., Mukai, T., Ueki, H., Japanese Patent Office, 1988.
 
 <1>MroNI
@@ -33614,7 +33732,7 @@ Tindall, B.J. et al., (2010) Standards in Genomic Sciences, vol. 3, pp. 26-36.
 <4>NEB 502
 <5>TGG^CCA
 <6>4(4)
-<7>NO
+<7>N
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Meda, M., Wilson, G.G., Slatko, B.E., Unpublished observations.
@@ -33701,7 +33819,7 @@ Zhu, Z., Roberts, R.J., Unpublished observations.
 <4>ATCC 49670
 <5>C^CGG
 <6>1(5)
-<7>BIJNQVX
+<7>BIJNQRSVX
 <8>Anton, B.P., Fomenkov, A., Roberts, R.J., Unpublished observations.
 Butkus, V., Petrauskiene, L., Maneliene, Z., Klimasauskas, S., Laucys, V., Janulaitis, A., (1987) Nucleic Acids Res., vol. 15, pp. 7091-7102.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -33838,7 +33956,7 @@ Wu, V., Unpublished observations.
 <4>S.K. Degtyarev
 <5>CMG^CKG
 <6>?(4)
-<7>INV
+<7>INRV
 <8>Dedkov, V.S., Chernukhin, V.A., Degtyarev, S.K., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Xu, S.-Y., Unpublished observations.
@@ -33881,14 +33999,68 @@ Xu, S.Y., Klein, P., Degtyarev, S.K., Roberts, R.J., (2016) Sci. Rep., vol. 6, p
 <7>
 <8>Dedkov, V.S., Zernov, Y.P., Rechkunova, N.I., Degtyarev, S.K., (1990) Mol. Gen. Mikrobiol. Virusol., vol. 0, pp. 17-18.
 
+<1>MspBKII
+<2>
+<3>Microcystis sp. BK
+<4>R.D. Morgan
+<5>CGCTNAT
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspBKIII
+<2>
+<3>Microcystis sp. BK
+<4>R.D. Morgan
+<5>CGGCNAC
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspBKIV
+<2>
+<3>Microcystis sp. BK
+<4>R.D. Morgan
+<5>GGGCNAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
 <1>MspCI
 <2>AflII
 <3>Micrococcus species
 <4>V. Bouriotis
 <5>C^TTAAG
 <6>
-<7>C
+<7>
 <8>Rina, M., Tzanodaskalaki, M., Karagouni, A., Pagomenou, M., Bouriotis, V., (1992) Nucleic Acids Res., vol. 20, pp. 1806.
+
+<1>MspCDII
+<2>
+<3>Microcystis sp.
+<4>R.D. Morgan
+<5>GCAAAAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspCDIII
+<2>
+<3>Microcystis sp.
+<4>R.D. Morgan
+<5>CTCCNAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspCDIV
+<2>
+<3>Microcystis sp.
+<4>R.D. Morgan
+<5>GCTCNAT
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
 
 <1>MspCY2I
 <2>M.MspCY2I
@@ -33948,6 +34120,15 @@ Teeling, H., Huntemann, M., Han, J., Chen, A., Kyrpides, N., Mavromatis, K., Mar
 Zheng, Y., Cohen-Karni, D., Xu, D., Chin, H.G., Wilson, G., Pradhan, S., Roberts, R.J., (2010) Nucleic Acids Res., vol. 38, pp. 5527-5534.
 Zheng, Y., Roberts, R.J., International Patent Office, 2010.
 
+<1>MspMLII
+<2>Cpe13170II
+<3>Microcystis sp. ML
+<4>R.D. Morgan
+<5>GTTGNAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
 <1>MspNI
 <2>AvaII
 <3>Meiothermus species Nubra I
@@ -33967,6 +34148,42 @@ Sharma, P., Unpublished observations.
 <7>
 <8>Gupta, R., Xu, S.-Y., Sharma, P., Capalsh, N., (2012) Mol. Biol. Rep., vol. 39, pp. 5607-5614.
 
+<1>MspNHII
+<2>MspCDII
+<3>Microcystis sp. NH
+<4>R.D. Morgan
+<5>GCAAAAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspNHIII
+<2>
+<3>Microcystis sp. NH
+<4>R.D. Morgan
+<5>CGCANAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspNHIV
+<2>
+<3>Microcystis sp. NH
+<4>R.D. Morgan
+<5>GGCTNAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspNHV
+<2>
+<3>Microcystis sp. NH
+<4>R.D. Morgan
+<5>GCTCNAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
 <1>MspR9I
 <2>ScrFI
 <3>Micrococcus species R9
@@ -33984,6 +34201,33 @@ Sharma, P., Unpublished observations.
 <6>6(6)
 <7>
 <8>Kim, S.-J., Heo, J., Ahn, J.-H., Kwon, S.-W., Unpublished observations.
+
+<1>MspSTII
+<2>
+<3>Microcystis sp. ST
+<4>R.D. Morgan
+<5>CGCTNAT
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspSTIII
+<2>Lra68I
+<3>Microcystis sp. ST
+<4>R.D. Morgan
+<5>GTTCNAG
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
+
+<1>MspSTIV
+<2>
+<3>Microcystis sp. ST
+<4>R.D. Morgan
+<5>CTCGNAT
+<6>6(6)
+<7>
+<8>Morgan, R.D., Tuyen, L.T.K., Luyten, Y.A., Hoa, B.K., Nguyen-Ngac, L., Unpublished observations.
 
 <1>MspSWI
 <2>SwaI
@@ -35130,7 +35374,7 @@ Masson, J.M., Lefevre, F., Saves, I., Laneelle, M.A., Daffe, M., International P
 <4>A. Janulaitis
 <5>C^AATTG
 <6>3(6)
-<7>BS
+<7>B
 <8>Stakenas, P.S., Zaretskaya, N.M., Maneliene, Z.P., Mauricas, M.M., Butkus, V.V., Yanulaitis, A.A., (1992) Mol. Biol. (Mosk), vol. 26, pp. 546-557.
 
 <1>MvaI
@@ -35351,7 +35595,7 @@ Lunnen, K.D., Wilson, G.G., US Patent Office, 1991.
 <4>ATCC 23870
 <5>GCC^GGC
 <6>?(5)
-<7>CNV
+<7>NR
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Guthrie, E.P., Van Cott, E.M., Taron, C.H., European Patent Office, 1997.
 Guthrie, E.P., Van Cott, E.M., Taron, C.H., US Patent Office, 1994.
@@ -35419,7 +35663,7 @@ Eisen, J. et al., Unpublished observations.
 <4>ATCC 31306
 <5>GG^CGCC
 <6>
-<7>JNQVX
+<7>JNQRVX
 <8>Comb, D.G., Wilson, G., Schildkraut, I., Greenough, L., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -35522,7 +35766,7 @@ Zhu, Z., Roberts, R.J., Unpublished observations.
 <4>NRCC 31006
 <5>CC^SGG
 <6>2(4)
-<7>JNV
+<7>JNRV
 <8>Clark, T., Boitano, M., Anton, B.A., Korlach, J., Roberts, R.J., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Korch, C., Hagblom, P., (1986) Eur. J. Biochem., vol. 161, pp. 519-524.
@@ -35546,7 +35790,7 @@ Watson, R., Zuker, M., Martin, S.M., Visentin, L.P., (1980) FEBS Lett., vol. 118
 <4>ATCC 19070
 <5>C^CATGG
 <6>?(4)
-<7>BCJNOQRSVX
+<7>BJNQRSVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Langdale, J.A., Myers, P.A., Roberts, R.J., Unpublished observations.
 VanCott, E.M., European Patent Office, 1995.
@@ -35635,7 +35879,7 @@ Watson, R.J., Schildkraut, I., Qiang, B.-Q., Martin, S.M., Visentin, L.P., (1982
 <4>NRCC 31009
 <5>^GATC
 <6>
-<7>J
+<7>JR
 <8>Visentin, L.P., Watson, R.J., Martin, S., Zuker, M., Unpublished observations.
 
 <1>I-NfiI
@@ -36247,7 +36491,7 @@ Usuda, Y., Nishio, Y., Matsui, K., Sugimoto, S., Koseki, K., US Patent Office, 2
 <4>ATCC 25999
 <5>G^CTAGC
 <6>6(4)
-<7>BCJNOQRSVX
+<7>BJNQRVX
 <8>Comb, D.G., Grandoni, R., Schildkraut, I., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Fei, L., Sun, D., Roberts, R.J., Unpublished observations.
@@ -36686,7 +36930,7 @@ Bart, A., Pannekoek, Y., Dankert, J., van der Ende, A., (2001) Infect. Immun., v
 <4>ATCC 14630
 <5>GC^GGCCGC
 <6>2(4)
-<7>BCJNOQRSVX
+<7>BJNQRSVX
 <8>Borsetti, R., Wise, D., Qiang, B.-Q., Schildkraut, I., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -36774,7 +37018,7 @@ Roberts, R.J., Unpublished observations.
 <4>ATCC 15906
 <5>TCG^CGA
 <6>2(4)
-<7>CIJNQSVX
+<7>IJNQRSVX
 <8>Comb, D.G., Schildkraut, I., Greenough, L., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -36807,7 +37051,7 @@ Zhu, Z., Pedamallu, C.S., Fomenkov, A., Benner, J., Xu, S.-Y., Unpublished obser
 <4>ATCC 29256
 <5>ATGCA^T
 <6>5(6)
-<7>JNQSVX
+<7>JNQRSVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Longo, M.C., Smith, M.D., US Patent Office, 1995.
@@ -37616,7 +37860,7 @@ Watanabe, M., Yuzawa, H., Handa, N., Kobayashi, I., (2006) Appl. Environ. Microb
 <4>NEB 585
 <5>TTAAT^TAA
 <6>
-<7>BN
+<7>BNS
 <8>Anton, B.P., Fomenkov, A., Morgan, R.D., Murray, I.A., Roberts, R.J., Unpublished observations.
 Kur, J., (1993) Acta Microbiol. Pol., vol. 42, pp. 145-150.
 Morgan, R.D., Unpublished observations.
@@ -37630,7 +37874,7 @@ Polisson, C., Fu, P., Unpublished observations.
 <3>Pseudomonas alcaligenes
 <4>NEB 585
 <5>CCCNNNNNRTTGY
-<6>2(4),?(6)
+<6>2(4)
 <7>
 <8>Anton, B.P., Fomenkov, A., Morgan, R.D., Murray, I.A., Roberts, R.J., Unpublished observations.
 Morgan, R.D., Unpublished observations.
@@ -38402,13 +38646,68 @@ Vitkute, J., Markauskiene, J., Maneliene, Z., Valickiene, D., Trinkunaite, L., K
 <7>
 <8>Li, M.F., Chen, T.Y., Xie, Q.Y., Li, G., Wang, H.Y., Zhu, W., Unpublished observations.
 
+<1>PcaRCII
+<2>
+<3>Pectobacterium carotovorum RC5297
+<4>N. Birkholz
+<5>?
+<6>
+<7>
+<8>Birkholz, N., Jackson, S.A., Fineran, P.C., Unpublished observations.
+
+<1>M.PcaRCDam
+<2>MboI
+<3>Pectobacterium carotovorum RC5297
+<4>N. Birkholz
+<5>GATC
+<6>2(6)
+<7>
+<8>Birkholz, N., Jackson, S.A., Fagerlund, R.D., Fineran, P.C., (2022) Nucleic Acids Res., vol. 50, pp. 3348-3361.
+Birkholz, N., Jackson, S.A., Fineran, P.C., Unpublished observations.
+
+<1>PcaZM1I
+<2>BseRI
+<3>Pectobacterium carotovorum ZM1
+<4>N. Birkholz
+<5>GAGGAG
+<6>5(6),-4(4)
+<7>
+<8>Birkholz, N., Jackson, S.A., Fineran, P.C., Unpublished observations.
+
+<1>M.PcaZM1Dam
+<2>MboI
+<3>Pectobacterium carotovorum ZM1
+<4>N. Birkholz
+<5>GATC
+<6>2(6)
+<7>
+<8>Birkholz, N., Jackson, S.A., Fineran, P.C., Unpublished observations.
+
+<1>M.PcaZM1Dam2
+<2>MboI
+<3>Pectobacterium carotovorum ZM1
+<4>N. Birkholz
+<5>GATC
+<6>?(6)
+<7>
+<8>Birkholz, N., Jackson, S.A., Fineran, P.C., Unpublished observations.
+
+<1>PcaZM1ORF6595
+<2>
+<3>Pectobacterium carotovorum ZM1
+<4>N. Birkholz
+<5>?
+<6>?(6)
+<7>
+<8>Birkholz, N., Jackson, S.A., Fineran, P.C., Unpublished observations.
+
 <1>PceI
 <2>StuI
 <3>Planococcus citreus 55
 <4>S.K. Degtyarev
 <5>AGG^CCT
 <6>
-<7>V
+<7>IV
 <8>Gonchar, D.A., Shinkarenko, N.M., Dedkov, V.S., Popichenko, D.V., Degtyarev, S.K., Unpublished observations.
 
 <1>PciI
@@ -38442,15 +38741,6 @@ Zhu, Z., Xu, S.-Y., Unpublished observations.
 <6>?(6)
 <7>
 <8>Mokrishcheva, M.L., Kertesz-Farkas, A., Nikitin, D.V., (2018) Gene, vol. 660, pp. 8-12.
-
-<1>Pcr308II
-<2>
-<3>Psychrobacter cryohalolentis FDAARGOS_308
-<4>ATCC BAA-1226D-5
-<5>CCAAAG
-<6>5(6)
-<7>
-<8>Kerrigan, L., Tallon, L., Sadzewicz, L., Sengamalay, N., Ott, S., Godinez, A., Nagaraj, S., Vavikolanu, K., Nadendla, S., George, J., Sichtig, H., Unpublished observations.
 
 <1>PcsI
 <2>
@@ -38606,6 +38896,15 @@ Zhu, Z., Xu, S.-Y., Unpublished observations.
 <8>den Bakker, H.C., Tsai, Y.-C., Martin, N., Korlach, J., Wiedmann, M., Unpublished observations.
 Morgan, R.D., Unpublished observations.
 Wiedmann, M., den Bakker, H.C., Korlach, J., Unpublished observations.
+
+<1>PecI
+<2>PsiI
+<3>Paracoccus species 12
+<4>S.K. Degtyarev
+<5>TTA^TAA
+<6>
+<7>I
+<8>Chernukhin, V.A., Dedkov, V.S., Gonchar, D.A., Degtyarev, S.K., Unpublished observations.
 
 <1>Pei9403I
 <2>MboI
@@ -39449,6 +39748,51 @@ Takagi, M., Nishioka, M., Kakihara, H., Kitabayashi, M., Inoue, H., Kawakami, B.
 Schleheck, D., Weiss, M., Pitluck, S., Bruce, D., Land, M.L., Han, S., Saunders, E., Tapia, R., Detter, C., Brettin, T., Han, J., Woyke, T., Goodwin, L., Pennacchio, L., Nolan, M., Cook, A.M., Kjelleberg, S., Thomas, T., (2011) Standards in Genomic Sciences, vol. 5, pp. 298-310.
 Usuda, Y., Nishio, Y., Matsui, K., Sugimoto, S., Koseki, K., US Patent Office, 2008.
 
+<1>PlaT2A4II
+<2>Dpi3084I
+<3>Pseudolactococcus laudensis T2A4
+<4>A. Soto-Serrano
+<5>CGRAG
+<6>4(6)
+<7>
+<8>Soto-Serrano, A., Unpublished observations.
+
+<1>PlaT2D8IV
+<2>Dpi3084I
+<3>Pseudolactococcus laudensis T2D8
+<4>A. Soto-Serrano
+<5>CGRAG
+<6>4(6)
+<7>
+<8>Soto-Serrano, A., Unpublished observations.
+
+<1>PlaT2E8II
+<2>Dpi3084I
+<3>Pseudolactococcus laudensis T2E8
+<4>A. Soto-Serrano
+<5>CGRAG
+<6>4(6)
+<7>
+<8>Soto-Serrano, A., Unpublished observations.
+
+<1>PlaT2E11IV
+<2>LcrJM4V
+<3>Pseudolactococcus laudensis T2E11
+<4>A. Soto-Serrano
+<5>GRTANAG
+<6>6(6)
+<7>
+<8>Soto-Serrano, A., Unpublished observations.
+
+<1>PlaT2F8II
+<2>Dpi3084I
+<3>Pseudolactococcus laudensis T2F8
+<4>A. Soto-Serrano
+<5>CGRAG
+<6>4(6)
+<7>
+<8>Soto-Serrano, A., Unpublished observations.
+
 <1>PleI
 <2>
 <3>Pseudomonas lemoignei
@@ -39560,6 +39904,42 @@ Payelleville, A., Legrand, L., Ogier, J.C., Roques, C., Roulet, A., Bouchez, O.,
 <7>
 <8>Walker, J.N.B., Dean, P.D.G., Saunders, J.R., (1986) Nucleic Acids Res., vol. 14, pp. 1293-1301.
 
+<1>PmaLGII
+<2>EcoP15I
+<3>Prochlorococcus marinus LG
+<4>N. Vo
+<5>CAGCAG
+<6>5(6)
+<7>
+<8>Vo, N., Mullet, J., Unpublished observations.
+
+<1>PmaMED4I
+<2>M.Xor2286II
+<3>Prochlorococcus marinus subsp. pastoris MED4
+<4>N. Vo
+<5>GGAGG
+<6>3(6)
+<7>
+<8>Vo, N., Mullet, J., Unpublished observations.
+
+<1>PmaSS2I
+<2>EcoP15I
+<3>Prochlorococcus marinus SS2
+<4>N. Vo
+<5>CAGCAG
+<6>5(6)
+<7>
+<8>Vo, N., Mullet, J., Unpublished observations.
+
+<1>PmaSS35II
+<2>EcoP15I
+<3>Prochlorococcus marinus SS35
+<4>N. Vo
+<5>CAGCAG
+<6>5(6)
+<7>
+<8>Vo, N., Mullet, J., Unpublished observations.
+
 <1>PmdI
 <2>BbvCI
 <3>Pseudomonas mandelii RFL49
@@ -39575,7 +39955,7 @@ Payelleville, A., Legrand, L., Ogier, J.C., Roques, C., Roulet, A., Bouchez, O.,
 <4>NEB 698
 <5>GTTT^AAAC
 <6>
-<7>N
+<7>NS
 <8>Chang, Z., Morgan, R.D., US Patent Office, 1999.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Morgan, R., Zhou, B., US Patent Office, 1993.
@@ -39987,6 +40367,15 @@ May, B.J., Zhang, Q., Li, L.L., Paustian, M.L., Whittam, T.S., Kapur, V., (2001)
 <7>
 <8>Weule, K., Roberts, R.J., Unpublished observations.
 
+<1>Pni103V
+<2>
+<3>Prevotella nigrescens F0103
+<4>C.D. Johnston
+<5>AAGNNNNNGTC
+<6>2(6),-2(6)
+<7>
+<8>Johnston, C.D., Chen, T., Dewhirst, F.E., Unpublished observations.
+
 <1>I-PnoMI
 <2>
 <3>Phaeosphaeria nodorum SN15
@@ -40205,7 +40594,7 @@ Vitkute, J., Kairaitiene, R., Kiuduliene, E., Petrusyte, M., Butkus, V., Janulai
 <4>V.M. Vogt
 <5>TAACTATGACTCTCTTAAGGTAGCCAAAT(-11/-15)
 <6>
-<7>
+<7>R
 <8>Ellison, E.L., Muscarella, D.E., Vogt, V.M., (1993) J. Cell Biochem. Suppl., vol. 17C, pp. 177.
 Muscarella, D.E., Ellison, E.L., Ruoff, B.M., Vogt, V.M., (1990) Mol. Cell. Biol., vol. 10, pp. 3386-3396.
 Muscarella, D.E., Vogt, V.M., (1989) Cell, vol. 56, pp. 443-454.
@@ -40351,6 +40740,15 @@ Samuelson, J., Xu, S.-Y., Unpublished observations.
 <6>5(6)
 <7>
 <8>Conlan, S., Thomas, P.J., Mullikin, J., Frank, K.M., Segre, J.A., Unpublished observations.
+
+<1>M.Pre06Dam
+<2>MboI
+<3>Providencia rettgeri KZN406
+<4>K. Ramessar
+<5>GATC
+<6>2(6)
+<7>
+<8>Ramessar, K., Kumar, A., Olaniran, A.O., Unpublished observations.
 
 <1>Pru2I
 <2>HaeIII
@@ -40524,6 +40922,15 @@ Pradhan, S., Cummings, M., Roberts, R.J., Adams, R.L.P., (1998) Nucleic Acids Re
 <6>
 <7>
 <8>de Waard, A., Unpublished observations.
+
+<1>Pse31I
+<2>Eco31I
+<3>Peribacillus species 31
+<4>S.K. Degtyarev
+<5>GGTCTC(1/5)
+<6>
+<7>I
+<8>Dedkov, V.S., Chernukhin, V.A., Degtyarev, S.K., Unpublished observations.
 
 <1>Pse18267I
 <2>
@@ -40976,7 +41383,7 @@ Wiedmann, M., den Bakker, H.C., Korlach, J., Unpublished observations.
 <4>NEB 906
 <5>^CCWGG
 <6>?(4)
-<7>N
+<7>NS
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Morgan, R., Xiao, J.-P., Xu, S.-Y., (1998) Appl. Environ. Microbiol., vol. 64, pp. 3669-3673.
 
@@ -41079,7 +41486,7 @@ Wu, V., Unpublished observations.
 <4>R. Gerday
 <5>G^GNCC
 <6>4(5)
-<7>C
+<7>
 <8>Puzio, P., Blau, A., Plesch, G., Kamlage, B., Looser, R., Schmitz, O., Wendel, B., European Patent Office, 2009.
 Rina, M., Caufrier, F., Markaki, M., Mavromatis, K., Kokkinidis, M., Bouriotis, V., (1997) Gene, vol. 197, pp. 353-360.
 
@@ -41128,6 +41535,15 @@ Usuda, Y., Nishio, Y., Matsui, K., Sugimoto, S., Koseki, K., US Patent Office, 2
 <6>2(6)
 <7>
 <8>Kim, S.-J., Heo, J., Kwon, S.-W., Unpublished observations.
+
+<1>PspSS52II
+<2>EcoP15I
+<3>Prochlorococcus species SS52
+<4>N. Vo
+<5>CAGCAG
+<6>5(6)
+<7>
+<8>Vo, N., Mullet, J., Unpublished observations.
 
 <1>M.Psp16SW7Dam
 <2>MboI
@@ -41193,7 +41609,7 @@ Makula, R.A., Unpublished observations.
 <4>ATCC 49762
 <5>CTGCA^G
 <6>5(6)
-<7>BCIJNOQRSVX
+<7>BIJNQRSVX
 <8>Brown, N.L., Smith, M., (1976) FEBS Lett., vol. 65, pp. 284-287.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Handique, A.K., (1994) Curr. Sci., vol. 66, pp. 103-104.
@@ -41270,6 +41686,15 @@ Wiedmann, M., den Bakker, H.C., Korlach, J., Unpublished observations.
 <6>
 <7>
 <8>Myakisheva, T.V., Dedkov, V.S., Kileva, E.V., Abdurashitov, M.A., Shevchenko, A.V., Degtyarev, S.K., Unpublished observations.
+
+<1>M.PstSJM11I
+<2>MboI
+<3>Pantoea stewartii subsp. indologenes SJM_1_1
+<4>X. Xu
+<5>GATC
+<6>2(6)
+<7>
+<8>Xu, X., Qin, C., Lu, J., Justice, N., Miao, W., Liu, W., Unpublished observations.
 
 <1>PsuI
 <2>XhoII
@@ -41387,7 +41812,7 @@ Nkenfou, C., Polisson, C., Nkenfou, J., Notedji, A., Morgan, R., Unpublished obs
 <4>ATCC 13315
 <5>CGAT^CG
 <6>
-<7>BNOQRSX
+<7>BNQRX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Gingeras, T.R., Greenough, L., Schildkraut, I., Roberts, R.J., (1981) Nucleic Acids Res., vol. 9, pp. 4525-4536.
@@ -41401,7 +41826,7 @@ Smith, M.D., Longo, M., Gerard, G.F., Chatterjee, D.K., (1992) Nucleic Acids Res
 <4>ATCC 13315
 <5>CAG^CTG
 <6>4(4)
-<7>BCIJNOQSVX
+<7>BIJNQRSVX
 <8>Butkus, V., Klimasauskas, S., Petrauskiene, L., Maneliene, Z., Lebionka, A., Janulaitis, A., (1987) Biochim. Biophys. Acta, vol. 909, pp. 201-207.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -42422,7 +42847,7 @@ Yu, F., Watanabe, F., Japanese Patent Office, 2007.
 <4>S. Kaplan
 <5>GT^AC
 <6>4(4)
-<7>BCIJNQRVX
+<7>BIJNQRVX
 <8>Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -42727,7 +43152,7 @@ Trautner, T.A., Pawlek, B., Gunthert, U., Canosi, U., Jentsch, S., Freund, M., (
 <4>ATCC 12767
 <5>GAGCT^C
 <6>4(5)
-<7>BJNOQRSVX
+<7>BJNQRSVX
 <8>Arrand, J.R., Myers, P.A., Roberts, R.J., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -42739,7 +43164,7 @@ Xu, S.-Y., Xiao, J.-P., Ettwiller, L., Holden, M., Aliotta, J., Poh, C.L., Dalto
 <4>ATCC 12767
 <5>CCGC^GG
 <6>2(5)
-<7>JNOQVX
+<7>JNQRSVX
 <8>Arrand, J.R., Myers, P.A., Roberts, R.J., Unpublished observations.
 Benner, J., Lunnen, K., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -42861,6 +43286,25 @@ Poch, M.T., Somkuti, G.A., (1995) Appl. Microbiol. Biotechnol., vol. 43, pp. 282
 <7>
 <8>Informatics, P., Unpublished observations.
 
+<1>SagCOH1I
+<2>
+<3>Streptococcus agalactiae COH1
+<4>H. Tettelin
+<5>?
+<6>?(6)
+<7>
+<8>Rosinski-Chupin, I. et al., Unpublished observations.
+
+<1>SagCOH1II
+<2>AsuI
+<3>Streptococcus agalactiae COH1
+<4>H. Tettelin
+<5>GGNCC
+<6>?(5)
+<7>
+<8>Alves, J., Crestani, C., Marroquin, S.M., Johnston, A.B.E., Ring, N., Bowen, C., Reglinski, M., Doran, K.S., Zadoks, R.N., Lynskey, N.N., (2026) Nucleic Acids Res., vol. 54.
+Rosinski-Chupin, I. et al., Unpublished observations.
+
 <1>SaiI
 <2>SimI
 <3>Staphylococcus auricularis RFL18
@@ -42885,7 +43329,7 @@ Poch, M.T., Somkuti, G.A., (1995) Appl. Microbiol. Biotechnol., vol. 43, pp. 282
 <4>ATCC 49789
 <5>G^TCGAC
 <6>5(6)
-<7>BCIJNOQRVX
+<7>BIJNQRSVX
 <8>Alvarez, M.A., Chater, K.F., Rosario, M.R., (1993) Mol. Microbiol., vol. 8, pp. 243-252.
 Arrand, J.R., Myers, P.A., Roberts, R.J., (1978) J. Mol. Biol., vol. 118, pp. 127-135.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -43352,7 +43796,7 @@ Arutyunyan, E.E., Gruber, I.M., Polyachenko, V.M., Kvachadze, L.J., Andriashvili
 <4>ATCC 49834
 <5>^GATC
 <6>4(5)
-<7>CJNVX
+<7>JNRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Klimasauskas, S., Lebionka, A., Butkus, V., Janulaitis, A., Unpublished observations.
@@ -43563,7 +44007,7 @@ Pirone-Davies, C., Hoffmann, M., Roberts, R.J., Muruvanda, T., Timme, R.E., Stra
 <4>S.K. Degtyarev
 <5>CCTGCA^GG
 <6>6(6)
-<7>INV
+<7>INSV
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Lunnen, K., Davis, T., Wilson, G., European Patent Office, 2005.
@@ -43744,7 +44188,7 @@ Blow, M.J. et al., (2016) PLoS Genet., vol. 12.
 <4>H. Takahashi
 <5>AGT^ACT
 <6>5(4)
-<7>BCJNOQVX
+<7>BJNQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Grandoni, R.P., Schildkraut, I., Unpublished observations.
 Stickel, S.K., Roberts, R.J., Unpublished observations.
@@ -46442,7 +46886,7 @@ Okhapkina, S.S., Netesova, N.A., Golikova, L.N., Seregina, E.V., Sosnovtsev, S.V
 <4>ATCC 15051
 <5>GGCCNNNN^NGGCC
 <6>3(4)
-<7>BCIJNOQVX
+<7>BIJNQRSVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Qiang, B.-Q., Schildkraut, I., (1984) Nucleic Acids Res., vol. 12, pp. 4507-4515.
@@ -46899,7 +47343,7 @@ Takahashi, H., Unpublished observations.
 <4>U. Mayr
 <5>TT^CGAA
 <6>
-<7>SV
+<7>V
 <8>Veitinger, S., Schmitz, G.G., Kaluza, K., Jarsch, M., Braun, V., Kessler, C., (1990) Nucleic Acids Res., vol. 18, pp. 3424.
 
 <1>Sfu1762I
@@ -47081,7 +47525,7 @@ Morgan, R.D., Unpublished observations.
 <4>V. Bouriotis
 <5>CCGC^GG
 <6>
-<7>C
+<7>
 <8>Rina, M., Karagouni, A., Pagomenou, M., Bouriotis, V., (1991) Nucleic Acids Res., vol. 19, pp. 6342.
 
 <1>SgrDI
@@ -47182,7 +47626,7 @@ Cohen-Karni, D., Zheng, Y., Unpublished observations.
 <4>A. de Waard
 <5>G^GWCC
 <6>4(5)
-<7>
+<7>R
 <8>Cherry, J.L., (2018) J. Bacteriol., vol. 200.
 Karreman, C., de Waard, A., (1988) J. Bacteriol., vol. 170, pp. 2533-2536.
 Lupker, H.S.C., Dekker, B.M.M., (1981) Biochim. Biophys. Acta, vol. 654, pp. 297-299.
@@ -47328,7 +47772,7 @@ Lupker, H.S.C., Dekker, B.M.M., (1981) Biochim. Biophys. Acta, vol. 654, pp. 297
 <4>ATCC 8664
 <5>C^TCGAG
 <6>
-<7>C
+<7>
 <8>Takahashi, H., Shimizu, M., Saito, H., Ikeda, Y., Sugisaki, H., (1979) Gene, vol. 5, pp. 9-18.
 
 <1>SlbI
@@ -47391,7 +47835,7 @@ Lupker, H.S.C., Dekker, B.M.M., (1981) Biochim. Biophys. Acta, vol. 654, pp. 297
 <4>ATCC 49779
 <5>CCC^GGG
 <6>2(4)
-<7>BCIJNOQRSVX
+<7>BIJNQRSVX
 <8>Butkus, V., Petrauskiene, L., Maneliene, Z., Klimasauskas, S., Laucys, V., Janulaitis, A., (1987) Nucleic Acids Res., vol. 15, pp. 7091-7102.
 Endow, S.A., Roberts, R.J., (1977) J. Mol. Biol., vol. 112, pp. 521-529.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -47803,7 +48247,7 @@ Nolan, M. et al., (2009) Standards in Genomic Sciences, vol. 1, pp. 300-307.
 <4>ATCC 15291
 <5>TAC^GTA
 <6>3(4)
-<7>CN
+<7>NR
 <8>Borsetti, R., Grandoni, R., Schildkraut, I., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Lunnen, K.D., Wilson, G.G., Unpublished observations.
@@ -47991,7 +48435,7 @@ Rachkevych, N., Sybirna, K., Boyko, S., Boretsky, Y., Sibirny, A., (2014) J. Mic
 <4>ATCC 13923
 <5>A^CTAGT
 <6>1(6)
-<7>JNOQRSVX
+<7>JNQRVX
 <8>Chang, Z., Morgan, R., Unpublished observations.
 Comb, D.G., Grandoni, R., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -48023,7 +48467,7 @@ Stewart, F., Morgan, R.D., Unpublished observations.
 <4>NRRL B-3559
 <5>GCATG^C
 <6>
-<7>CIJNOQVX
+<7>IJNQRSVX
 <8>Bhattacharya, S.K., Dubey, A.K., (1994) Biotechnol. Appl. Biochem., vol. 20, pp. 141-146.
 Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
 Flodman, K., Xu, S.-Y., Unpublished observations.
@@ -48139,6 +48583,24 @@ Roberts, R.J., Unpublished observations.
 <7>
 <8>Puchkova, L.I., Radionenko, Y.V., Ushakova, T.A., Repin, V.E., Russian Patent Office, 2005.
 Ushakova, T.A., Puchkova, L.I., Radionenko, Y.V., Gutorov, V.V., Kuvshinov, V.N., Repin, V.E., (2004) Biotekhnologiya, vol. 0, pp. 38-42.
+
+<1>SpnI
+<2>SpnRII
+<3>Streptococcus pneumoniae TIGR4
+<4>C.M. Fraser
+<5>TCGAG
+<6>4(6)
+<7>
+<8>Korlach, J., Roberts, R.J., Unpublished observations.
+
+<1>Spn322II
+<2>SpnRII
+<3>Streptococcus pneumoniae DP1322
+<4>A.B. Janssen
+<5>TCGAG
+<6>4(6)
+<7>
+<8>Janssen, A.B., Gibson, P.S., Veening, J.-W., Unpublished observations.
 
 <1>Spn475V
 <2>SpnRII
@@ -48280,6 +48742,15 @@ Murphy, E., Mounts, W.M., International Patent Office, 2007.
 <6>4(6)
 <7>
 <8>Croucher, N.J., Coupland, P.G., Stevenson, A.E., Callendrello, A., Bentley, S.D., Hanage, W.P., (2014) Nat. Commun., vol. 5, pp. 5471.
+
+<1>SpnR1501II
+<2>SpnRII
+<3>Streptococcus pneumoniae R1501
+<4>P.S. Gibson
+<5>TCGAG
+<6>4(6)
+<7>
+<8>Gibson, P.S., Janssen, A.B., Veening, J.-W., Unpublished observations.
 
 <1>Spns521IV
 <2>SpnRII
@@ -48826,7 +49297,7 @@ Kotani, H., Nomura, Y., Kawashima, Y., Sagawa, H., Takagi, M., Kita, A., Ito, H.
 <4>V. Bouriotis
 <5>AGG^CCT
 <6>
-<7>C
+<7>
 <8>Rina, M., Tzanodaskalaki, M., Karagouni, A., Pagomenou, M., Bouriotis, V., (1992) Nucleic Acids Res., vol. 20, pp. 1808.
 
 <1>SshAI
@@ -49065,7 +49536,7 @@ Uporova, T.M., Kartasheva, I.M., Skripkin, E.A., Lopareva, E.N., Nikolskaya, I.I
 <4>ATCC 13925
 <5>AAT^ATT
 <6>?(6)
-<7>BCIJNQVX
+<7>BIJNQRSVX
 <8>Benner, J.S., Coe, L., Unpublished observations.
 Benner, J.S., Coe, L.H., Unpublished observations.
 Schildkraut, I., Grandoni, R., Unpublished observations.
@@ -49253,6 +49724,7 @@ Kaneko, T. et al., (1996) DNA Res., vol. 3, pp. 185-209.
 <8>Ahlert, D., Stegemann, S., Kahlau, S., Ruf, S., Bock, R., (2009) Mol. Genet. Genomics, vol. 282, pp. 17-24.
 Chen, G., Ding, Q., Wang, Y., Unpublished observations.
 Kaneko, T. et al., (1996) DNA Res., vol. 3, pp. 185-209.
+Lu, Y., Unpublished observations.
 Roberts, R.J., Unpublished observations.
 Trautmann, D., Voss, B., Wilde, A., Al-Babili, S., Hess, W.R., (2012) DNA Res., vol. 19, pp. 435-448.
 
@@ -49265,6 +49737,7 @@ Trautmann, D., Voss, B., Wilde, A., Al-Babili, S., Hess, W.R., (2012) DNA Res., 
 <7>
 <8>Hagemann, M., Gartner, K., Scharnagl, M., Bolay, P., Lott, S.C., Fuss, J., Huettel, B., Reinhardt, R., Klahn, S., Hess, W.R., (2018) DNA Res., vol. 25, pp. 343-352.
 Kaneko, T., Nakamura, Y., Sasamoto, S., Watanabe, A., Kohara, M., Matsumoto, M., Shimpo, S., Yamada, M., Tabata, S., (2003) DNA Res., vol. 10, pp. 221-228.
+Lu, Y., Unpublished observations.
 Trautmann, D., Voss, B., Wilde, A., Al-Babili, S., Hess, W.R., (2012) DNA Res., vol. 19, pp. 435-448.
 
 <1>Ssp11881IV
@@ -49374,15 +49847,6 @@ Trautmann, D., Voss, B., Wilde, A., Al-Babili, S., Hess, W.R., (2012) DNA Res., 
 <6>
 <7>
 <8>Kumano, M., Sakakibara, M., (1988) Baiosaiensu to Indasutori, vol. 46, pp. 38-41.
-
-<1>SspJOR1II
-<2>
-<3>Salarchaeum species JOR-1
-<4>B.P. Anton
-<5>AGCGANC
-<6>5(6)
-<7>
-<8>Anton, B.P., DasSarma, P., Al Madadha, M.E., DasSarma, S.L., Martinez, F.L., Roberts, R.J., DasSarma, S., Unpublished observations.
 
 <1>SspKI
 <2>SplI
@@ -49537,7 +50001,7 @@ Renbaum, P., Abrahamove, D., Fainsod, A., Wilson, G.G., Rottem, S., Razin, A., (
 <4>S. Goff
 <5>GAGCT^C
 <6>
-<7>C
+<7>
 <8>Goff, S.P., Rambach, A., (1978) Gene, vol. 3, pp. 347-352.
 Longo, M.C., Smith, M.D., Harris, R.D., International Patent Office, 1996.
 Muller, F., Stoffel, S., Clarkson, S.G., Unpublished observations.
@@ -50054,7 +50518,7 @@ Steenstrup, T.D., Norby, P.L., International Patent Office, 2007.
 <4>H. Takahashi
 <5>AGG^CCT
 <6>
-<7>JNQX
+<7>JNQRSX
 <8>Casjens, S., Hayden, M., Jackson, E., Deans, R., (1983) J. Virol., vol. 45, pp. 864-867.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Morgan, R.D., Roberts, R.J., International Patent Office, 2007.
@@ -50070,7 +50534,7 @@ Zhu, Z., Xu, S.-Y., Unpublished observations.
 <4>E.S. Anderson
 <5>C^CWWGG
 <6>?(4)
-<7>CJN
+<7>JNR
 <8>Benner, J.S., Unpublished observations.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Mise, K., Nakajima, K., (1985) Gene, vol. 33, pp. 357-361.
@@ -50122,7 +50586,8 @@ Miyahara, M., Mise, K., (1993) Gene, vol. 129, pp. 83-86.
 <5>GATC
 <6>?(6)
 <7>
-<8>Pirone, C., Hoffmann, M., Muruvanda, T., Allard, M., Evans, P., Tallon, L., Sadzewicz, L., Sengamalay, N., Ott, S., Godinez, A., Nagaraj, S., Nadendla, S., Sichtig, H., Unpublished observations.
+<8>McClelland, M. et al., (2001) Nature, vol. 413, pp. 852-856.
+Pirone, C., Hoffmann, M., Muruvanda, T., Allard, M., Evans, P., Tallon, L., Sadzewicz, L., Sengamalay, N., Ott, S., Godinez, A., Nagaraj, S., Nadendla, S., Sichtig, H., Unpublished observations.
 
 <1>M.StyLT2Dcm
 <2>EcoRII
@@ -50340,7 +50805,7 @@ Yun, M.-S., Bae, M., (1993) Proc. Mol. Biol. and Genet., vol. 8, pp. 73-74.
 <4>B. Frey
 <5>ATTT^AAAT
 <6>?(6)
-<7>JNS
+<7>JN
 <8>Higgins, L.S., Kong, H., Unpublished observations.
 Lechner, M., Frey, B., Laue, F., Ankenbauer, W., Schmitz, G., (1992) Fresenius Z. Anal. Chem., vol. 343, pp. 121-122.
 
@@ -50352,6 +50817,16 @@ Lechner, M., Frey, B., Laue, F., Ankenbauer, W., Schmitz, G., (1992) Fresenius Z
 <6>2(6)
 <7>
 <8>Blow, M.J. et al., (2016) PLoS Genet., vol. 12.
+
+<1>Sxa3845I
+<2>NaeI
+<3>Streptomyces xanthophaeus KPP03845
+<4>J. Choi
+<5>GCCGGC
+<6>?(5)
+<7>
+<8>Choi, J., Unpublished observations.
+Fomenkov, A., Unpublished observations.
 
 <1>Sxy1780I
 <2>
@@ -50451,7 +50926,7 @@ Anderson, O.D., Chao, S., Crossman, C., Langridge, P., Lazo, G.R., Pham, J., Rau
 <4>J.I. Harris
 <5>T^CGA
 <6>4(6)
-<7>BCIJNQRVX
+<7>BIJNQRVX
 <8>Anton, B., Unpublished observations.
 Anton, B.P., Brooks, J.E., Unpublished observations.
 Barany, F., Slatko, B., Danzitz, M., Cowburn, D., Schildkraut, I., Wilson, G.G., (1992) Gene, vol. 112, pp. 91-95.
@@ -51057,7 +51532,7 @@ Piknova, M., Pristas, P., Javorsky, P., Kasperowic, A., Michalowski, T., (2004) 
 <4>S.K. Degtyarev
 <5>T^TAA
 <6>
-<7>IV
+<7>IRV
 <8>Prichodko, E.A., Rechnukova, N.I., Degtyarev, S.K., (1991) Sib. Biol. J., vol. 1, pp. 57-59.
 
 <1>Tru28I
@@ -51640,7 +52115,7 @@ Smith, R.M., Pernstich, C., Halford, S.E., (2014) Nucleic Acids Res., vol. 42, p
 <4>T. Oshima
 <5>GACN^NNGTC
 <6>2(6)
-<7>INQVX
+<7>INQRVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Morgan, R.D., Roberts, R.J., International Patent Office, 2007.
 Shinomiya, T., Sato, S., (1980) Nucleic Acids Res., vol. 8, pp. 43-56.
@@ -55610,15 +56085,6 @@ Xu, S.-Y., Unpublished observations.
 <7>
 <8>Dillon, M.M., Cooper, V.S., Unpublished observations.
 
-<1>VchE4II
-<2>
-<3>Vibrio cholerae E4
-<4>K. Huguet
-<5>RTAAAYG
-<6>5(6)
-<7>
-<8>Carraro, N., Sauve, M., Matteau, D., Lauzon, G., Rodrigue, S., Burrus, V., (2014) Front. Microbiol., vol. 5, pp. 44.
-
 <1>M.VchE7946Dam
 <2>MboI
 <3>Vibrio cholerae E7946
@@ -56551,7 +57017,7 @@ Degtyarev, S.K., Rechkunova, N.I., Netesova, N.A., Tchigikov, V.E., Malygin, E.G
 <4>S.K. Degtyarev
 <5>AT^TAAT
 <6>5(6)
-<7>BIV
+<7>BIRV
 <8>Degtyarev, S.K., Prikhodko, E.A., Prikhodko, G.G., Krasnykh, V.N., (1993) Nucleic Acids Res., vol. 21, pp. 2015.
 Degtyarev, S.K., Prikhodko, E.A., Rechkunova, N.I., Prikhodko, G.G., Krasnykh, V.N., (1995) Gene, vol. 157, pp. 65-66.
 Degtyarev, S.K., Repin, V.E., Rechkunova, N.I., Tchigikov, V.E., Malygin, E.G., Mikhajlov, V.V., Rasskazov, V.A., (1987) Bioorg. Khim., vol. 13, pp. 420-421.
@@ -56755,7 +57221,7 @@ Gomez, P., Ribas-Aparicio, R.M., Pelaez, A.I., Gomez, A., Rodicio, M.R., (1997) 
 <4>ATCC 11672
 <5>T^CTAGA
 <6>6(6)
-<7>BCIJMNQRSVX
+<7>BIJMNQRSVX
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Patel, Y., Van Cott, E., Wilson, G.G., McClelland, M., (1990) Nucleic Acids Res., vol. 18, pp. 1603-1607.
@@ -56897,7 +57363,7 @@ Stickel, S.K., Roberts, R.J., Unpublished observations.
 <4>ATCC 13461
 <5>R^GATCY
 <6>5(4)
-<7>V
+<7>RV
 <8>Anton, B.P., Brooks, J.E., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Gingeras, T.R., Roberts, R.J., Unpublished observations.
@@ -56921,7 +57387,7 @@ Stancheva, I., Meehan, R.R., (2000) Genes Dev., vol. 14, pp. 313-327.
 <4>ATCC 9924
 <5>C^CCGGG
 <6>2(4)
-<7>INV
+<7>INRV
 <8>Endow, S.A., Roberts, R.J., (1977) J. Mol. Biol., vol. 112, pp. 521-529.
 Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
@@ -56999,7 +57465,7 @@ Trautner, T.A., Unpublished observations.
 <4>ATCC 49764
 <5>GAANN^NNTTC
 <6>2(6)
-<7>NV
+<7>NRV
 <8>Flodman, K., Xu, S.-Y., Unpublished observations.
 Fomenkov, A., Unpublished observations.
 Fomenkov, A., Roberts, R.J., Unpublished observations.
@@ -57532,7 +57998,7 @@ Zhu, Z., Roberts, R.J., Unpublished observations.
 <4>S.K. Degtyarev
 <5>ATGCA^T
 <6>
-<7>IV
+<7>V
 <8>Dedkov, V.S., Chernukhin, V.A., Degtyarev, S.K., Unpublished observations.
 Dedkov, V.S., Gonchar, D.A., Abdurashitov, M.A., Udalyeva, S.G., Urumceva, L.A., Chernukhin, V.A., Mutylo, G.V., Degtyarev, S.K., (2015) Res. J. Pharm. Biol. Chem. Sci., vol. 6, pp. 1341-1348.
 

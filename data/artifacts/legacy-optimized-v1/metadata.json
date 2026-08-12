@@ -1,0 +1,43 @@
+{
+  "candidate_count": 1597029,
+  "created_at": "2026-08-10T04:02:54.960483+00:00",
+  "enzyme_pair_count": 512,
+  "input_dir": "bundled-reference-build",
+  "normalized_solution_rows": 6549904,
+  "pattern_count": 1335463,
+  "plasmids": [
+    "pGEX-4T-1",
+    "pMAL-c5X",
+    "pET-21a(+)",
+    "pET-28a(+)",
+    "pET-28a(+)_start_codon",
+    "pCold_I",
+    "pUC18",
+    "pQE-3"
+  ],
+  "rule_profile": {
+    "description": "Frozen behavior of the latest optimized HURDLER notebook.",
+    "double_module_before_matching": true,
+    "maximum_distance_is_module_length_exclusive": true,
+    "minimum_is_inclusive": true,
+    "minimum_start_distance": 5,
+    "missing_fidelity_is_compatible": true,
+    "name": "legacy-optimized-v1",
+    "orthogonality_threshold": 1,
+    "plasmid_sites": [
+      "site_i",
+      "site_ii"
+    ],
+    "random_seed": 42,
+    "require_signed_site_ii_iii_overhang_match": true,
+    "schema_version": 1
+  },
+  "schema_version": 1,
+  "solution_catalog": "pattern_solutions.parquet",
+  "source_hashes": {
+    "hurdler_site_i_dataframe.csv": "18c482dd112911c8690eae9aae02a5a302e99d81113d2ba1c384a4fdda90fe7a",
+    "hurdler_site_ii_dataframe.csv": "42f9b58ac1a544f9fec87d1856531cffa14014b3cf8568bab78d33b59b7e6624",
+    "selected_site_iii_enzymes.csv": "824c403d2d245e68507e67b385bd5077dd79c2842c1c7e5264b63b582b6978cc",
+    "site_i_site_ii_pairing_matrix.csv": "6e44b33f0626c526531ae529cf8697bd9a3669a1884ba7d98e4ddf9d82909e03"
+  }
+}

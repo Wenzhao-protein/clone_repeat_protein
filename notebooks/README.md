@@ -1,24 +1,45 @@
 # Notebooks
 
-Topic-grouped Jupyter notebooks. Each folder mirrors a workflow that is
-documented in [`../docs/workflows/`](../docs/workflows/) and (where
-applicable) backed by a Python module under [`../src/hurdler/`](../src/hurdler/).
+Start here: **[`workflows/01_interactive_hurdler_designer.ipynb`](workflows/01_interactive_hurdler_designer.ipynb)** — the annotation-aware v2 Jupyter designer. The [current Colab preview](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb), [main-branch Colab entry](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb), and [Codespaces web designer](https://codespaces.new/Wenzhao-protein/clone_repeat_protein?quickstart=1&ref=agent%2Fvector-aware-designer-v2) use the same controller.
 
-| Folder | Purpose | Backing code / docs |
-|--------|---------|---------------------|
-| [`hurdler/`](hurdler/) | HURDLER three-site combinations and success-rate analysis. | `src/hurdler/pipeline.py`, `src/hurdler/success_rate.py`, `docs/workflows/hurdler_*.md` |
-| [`enzyme_selection/`](enzyme_selection/) | Selection and pairing analyses for restriction enzymes (3-mer coverage, plasmid compatibility, Sankey summaries). | `docs/workflows/enzyme_selection.md` |
-| [`codon_optimization/`](codon_optimization/) | Codon-optimisation experiments and benchmark notebooks. | `codon_opt_benchmark_extended/README.md` |
-| [`agarose_gel/`](agarose_gel/) | Agarose-gel image quantification. | `agarose_gel_analysis/` |
-| [`sec/`](sec/) | Size-exclusion chromatography processing. | `SEC/` |
-| [`utils/`](utils/) | One-off notebooks that curate `data/reference_output/` from raw databases (REBASE, NEB, codon usage, methylation, plasmids). | `data/reference_input/` → `data/reference_output/` |
+The canonical notebooks are deliberately thin.
 
-## Conventions
+| Directory | Responsibility |
+|---|---|
+| `reference/` | Reference manifests, sparse lookup QC, direct RepeatsDB acquisition, and strict designed DSSP/Foldseek boundary evidence |
+| `tasks/` | Queries, 1--60AA rates, Stage-1 compatibility, Stage-2 adaptive IDT/GA capacity, exact long-DNA active/latent assembly, and run status |
+| `workflows/` | Interactive end-user HURDLER construct design and export |
 
-- Each notebook should start with a markdown cell stating: purpose,
-  required inputs (paths under `data/`), expected outputs (paths under
-  `output/`), and the matching module/script (if any).
-- Notebooks should call into `src/hurdler/` rather than re-implementing
-  stable logic.
-- Backup, executed, and exploratory copies belong in
-  [`../archive/notebooks/`](../archive/notebooks/), not here.
+Each canonical notebook has a tagged parameter cell, frozen rule profile,
+input hashes, row/filter summaries, limitations, and deterministic PDF/PNG
+outputs where applicable. Scientific computation belongs in `src/hurdler`.
+
+The older topic directories (`hurdler`, `enzyme_selection`, `utils`,
+`codon_optimization`, `agarose_gel`, and `sec`) are retained for historical
+reproduction. Their clean-kernel results and exact failures are recorded in
+`studies/hurdler_validation/step05_reproducibility/tables/execution_status.csv`.
+They do not override canonical package results.
+
+The interactive workflow uses fast sequence periodicity only, requires a
+person to confirm or modify full-input unit coordinates, and does not run DSSP,
+Foldseek, or structure prediction. Its scientific computations and explicit v2
+schemas live in `src/hurdler/vector_design.py`; notebooks contain parameters,
+widgets, confirmation and display logic only. Protein matching is independent
+of plasmids. Annotated retained-backbone filtering, four MCS schemes,
+restoration, strict feature protection, IDT scoring and Bulk Input export occur
+only after a protein RE pair exists.
+
+`tasks/08_long_repetitive_dna_assembly.ipynb` is the separate exact-nucleotide
+complete-route workflow (`arbitrary-dna-complete-route-v2`). It documents both
+credential formats, rejects interactive manual input in headless runs, and
+reads compact Digs-sharded summaries from `step06_repetitive_dna_assembly`.
+Functional donor cores shorter than 90 bp are reported as complementary
+sticky-end primer pairs and deliberately bypass IDT gBlocks scoring; the 90 bp
+boundary is strict. The legacy final-replacement percentage is shown only as
+QC and never as a reviewer-response result.
+
+Execute the canonical production notebooks through the pinned universal SIF
+and Papermill wrapper via
+`studies/hurdler_validation/scripts/execute_sif_notebook.py`. Executed
+notebooks, HTML and manifests are separate artifacts; source notebooks remain
+output-free.

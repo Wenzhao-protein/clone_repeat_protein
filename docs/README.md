@@ -6,6 +6,7 @@ lives here.
 
 ## Start here
 
+- [`../data/results/README.md`](../data/results/README.md) — Public one-row-per-module Natural/Designed HURDLER and IDT result catalog.
 - [`architecture.md`](architecture.md) — How the code, notebooks, reference
   data, and generated outputs relate.
 - [`glossary.md`](glossary.md) — Domain terminology (HURDLER, Site I/II/III,

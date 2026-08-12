@@ -1,0 +1,16 @@
+{
+  "schema_version": "vector-aware-hurdler-designer-v2",
+  "run_date": "2026-08-11",
+  "credential_material_persisted": false,
+  "credential_path_persisted": false,
+  "ordering_performed": false,
+  "endpoint_purpose": "complexity_scoring_only",
+  "request_length_bp": 198,
+  "dna_sha256": "e0bf59a3655381e1a2e7b6733a7f6dc5784eb128fd30bf719e32cdff017ab1e1",
+  "idt_score_policy": "idt-rule-score-sum-lt10-v1",
+  "idt_status": "passed",
+  "idt_complexity_score": 0.0,
+  "idt_explicit_pass": true,
+  "positive_score_rule_names": [],
+  "response_sha256": "0e4cb7fb26c0d1b0883e00252a0ac638fba167e7fa1d032b08cbf96b88a0e5b2"
+}

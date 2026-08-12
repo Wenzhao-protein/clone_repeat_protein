@@ -1,0 +1,39 @@
+{
+  "schema_version": "vector-aware-hurdler-designer-v2",
+  "query": {
+    "schema_version": "vector-aware-hurdler-designer-v2",
+    "input_mode": "split",
+    "sequence_id": "example_twenty_residue_repeat",
+    "n_cap": "M",
+    "repeat_module": "ACDEFGHIKLMNPQRSTVWY",
+    "c_cap": "G",
+    "repeat_copies": 3,
+    "full_protein_sequence": "",
+    "repeat_region_start": null,
+    "repeat_region_end": null,
+    "repeat_period": null,
+    "site_i_allowlist": [],
+    "site_ii_allowlist": [],
+    "site_iii_allowlist": [],
+    "plasmid_allowlist": [],
+    "allow_left_cutter_in_hurdler_pair": false,
+    "allow_right_cutter_in_hurdler_pair": false
+  },
+  "selection": {
+    "candidate_id": "0b95a278cda31ca2d187",
+    "profile_id": "pCold_I",
+    "scheme_id": "pCold_I:inside/inside",
+    "site_iii_enzyme": "BbsI",
+    "advanced_pair_per_round": false
+  },
+  "validation_mode": "batch",
+  "max_repeat_copies": 3,
+  "population_size": 4,
+  "mutation_rate": 0.08,
+  "crossover_rate": 0.75,
+  "elite_fraction": 0.15,
+  "seed": 42,
+  "generation_schedule": [10, 100],
+  "auto_adjust_weights_from_idt": true,
+  "max_purchase_bp": 3000
+}

@@ -1,21 +1,24 @@
-# envs
+# Environments
 
-Conda environment files for the workflows in this repository.
+`hurdler.yml` is the maintained portable environment definition.
+`hurdler-linux-64.lock` is the explicit package lock used for the validation
+campaign. `condarc.yml` records the channel policy without machine-specific
+paths or credentials.
 
-| File | Purpose | Used by |
-|------|---------|---------|
-| `codon_opt.yml` | Core analysis env: `pandas`, `numpy`, `biopython`, `matplotlib`, `seaborn`, `tqdm`, `scipy`, plus codon-optimisation deps. | HURDLER pipeline, enzyme-selection notebooks, codon-optimisation notebooks. |
-| `visualization.yml` | Visualisation env (PyMOL / Schrödinger channel). | Structure / 3D-visualisation notebooks only. |
+The maintained environment includes DSSP 4 (`mkdssp`) so residue-level
+secondary structure is generated reproducibly rather than inferred from PDB
+header records.
 
-## Usage
-
-```bash
-conda env create -f envs/codon_opt.yml
-conda activate codon_opt
-```
-
-Re-create after the YAML changes:
+`hurdler-pip.lock` pins the pip-only packages. Kaleido is fixed at 0.2.1
+because it bundles a headless renderer; Kaleido 1.x requires a system Chrome
+binary that is absent from the Digs universal container.
 
 ```bash
-conda env update -f envs/codon_opt.yml --prune
+/net/software/conda/bin/conda env create \
+  --prefix /home/wendai/.conda/envs/hurdler \
+  --file envs/hurdler.yml
+/home/wendai/.conda/envs/hurdler/bin/pip install -e .
 ```
+
+The older environment files remain historical snapshots for adjacent
+subprojects and are not the HURDLER validation environment.

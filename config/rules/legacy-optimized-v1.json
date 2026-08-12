@@ -1,0 +1,14 @@
+{
+  "name": "legacy-optimized-v1",
+  "schema_version": 1,
+  "orthogonality_threshold": 1,
+  "missing_fidelity_is_compatible": true,
+  "require_signed_site_ii_iii_overhang_match": true,
+  "plasmid_sites": ["site_i", "site_ii"],
+  "minimum_start_distance": 5,
+  "minimum_is_inclusive": true,
+  "maximum_distance_is_module_length_exclusive": true,
+  "double_module_before_matching": true,
+  "random_seed": 42,
+  "description": "Frozen behavior of the latest optimized HURDLER notebook."
+}

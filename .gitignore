@@ -129,6 +129,9 @@ celerybeat.pid
 
 # Environments
 .env
+idt.env
+config/idt.env
+*.secrets.env
 .venv
 env/
 venv/
@@ -190,6 +193,24 @@ codon_opt_benchmark_extended/*.xlsx
 *.npy
 *.npz
 
+# The interactive designer intentionally vendors the complete frozen lookup so
+# a fresh clone can query all eight plasmids without scratch or network access.
+!data/artifacts/
+!data/artifacts/legacy-optimized-v1/
+!data/artifacts/legacy-optimized-v1/pattern_index.npz
+!data/artifacts/legacy-optimized-v1/pattern_solutions.parquet/
+!data/artifacts/legacy-optimized-v1/pattern_solutions.parquet/**
+!data/artifacts/vector-aware-hurdler-v2/
+!data/artifacts/vector-aware-hurdler-v2/**
+
+# Production Digs runs are reproducible from committed scripts/manifests but
+# contain multi-gigabyte traces and tables that belong on /net/scratch.
+studies/hurdler_validation/step*/runs/
+studies/hurdler_validation/step*/tables/
+studies/hurdler_validation/step*/html/
+studies/hurdler_validation/step*/notebooks/
+studies/hurdler_validation/step*/figures/
+
 # Ignore Mac system files
 .DS_Store
 ._*
@@ -217,3 +238,7 @@ SEC/input/20250530_sec_result_total.mat
 # Executed notebook scratch
 notebooks/**/*-executed.ipynb
 notebooks/**/.ipynb_checkpoints/
+notebooks/**/output/
+
+# Generated legacy execution mirrors are reproducibility products, not source.
+studies/hurdler_validation/step05_reproducibility/legacy_notebooks/

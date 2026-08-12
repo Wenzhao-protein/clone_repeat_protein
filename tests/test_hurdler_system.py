@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 import pandas as pd
 
+# Historical executable smoke script, not a pytest module.
+__test__ = False
+
 
 def test_file_exists(filepath, description):
     """Test if a file exists"""

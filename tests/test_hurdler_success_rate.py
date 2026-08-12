@@ -13,6 +13,9 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Historical executable analysis script, not a pytest module.
+__test__ = False
+
 def generate_random_aa_sequence(length):
     """生成随机氨基酸序列"""
     amino_acids = 'ACDEFGHIKLMNPQRSTVWY'

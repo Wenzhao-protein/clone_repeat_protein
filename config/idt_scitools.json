@@ -1,0 +1,12 @@
+{
+  "service": "IDT SciTools Plus API",
+  "swagger": "https://www.idtdna.com/restapi/swagger/ui/index",
+  "swagger_spec": "https://www.idtdna.com/restapi/swagger/docs/v1",
+  "complexity_endpoint": "https://www.idtdna.com/restapi/v1/Complexities/ScreenGblockSequences",
+  "operation_id": "Complexity_ScreenGblockSequences",
+  "request_schema": "array of {Name: string, Sequence: string}",
+  "authentication": "OAuth2 password grant using an IDT account API client",
+  "rate_limit_calls_per_minute": 500,
+  "retrieved_date": "2026-08-09",
+  "notes": "This integration only scores the exact locally optimized, HURDLER-window-locked sequence. It never requests or adopts an IDT codon-optimized replacement. The public response schema is an untyped object. HTTP 200 alone is not treated as a passing complexity score. No credentials are stored in this repository."
+}

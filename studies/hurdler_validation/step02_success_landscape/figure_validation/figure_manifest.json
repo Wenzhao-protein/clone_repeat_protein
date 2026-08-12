@@ -1,0 +1,19 @@
+[
+  {
+    "figure_id":"success_rate_1_60",
+    "source_notebook":"notebooks\/tasks\/02_success_rate_1_60.ipynb",
+    "source_sha256":"934c824cdfafeb766c6925ca164a0806b179e9ad1e389059b31ff2a7327b9dc3",
+    "png":"\/mnt\/home\/wendai\/projects\/hurdler\/clone_repeat_protein\/studies\/hurdler_validation\/step02_success_landscape\/figures\/success_rate_1_60.png",
+    "pdf":"\/mnt\/home\/wendai\/projects\/hurdler\/clone_repeat_protein\/studies\/hurdler_validation\/step02_success_landscape\/figures\/success_rate_1_60.pdf",
+    "png_sha256":"fb5cdf58dd6cf1bac01d80f305152713bcdba4b4d69249f060ce3e40c802f9e7",
+    "pdf_sha256":"c21149605e5cd2703e2b864990b242586c0564203458269df33388be27df8650",
+    "width_px":7135,
+    "height_px":3538,
+    "png_bytes":1392041,
+    "pdf_bytes":39606,
+    "generated_at":"2026-08-11T06:48:37.831582+00:00",
+    "style":"original-repo continuous lines and circular markers",
+    "analysis_version":"historical-notebook-success-v1",
+    "status":"passed"
+  }
+]

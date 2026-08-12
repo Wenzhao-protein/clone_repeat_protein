@@ -1,0 +1,15 @@
+{
+  "schema_version": "vector-aware-hurdler-designer-v2",
+  "input_mode": "split",
+  "sequence_id": "example_polyalanine",
+  "n_cap": "M",
+  "repeat_module": "AAAAAA",
+  "c_cap": "G",
+  "repeat_copies": 3,
+  "site_i_allowlist": [],
+  "site_ii_allowlist": [],
+  "site_iii_allowlist": [],
+  "plasmid_allowlist": [],
+  "allow_left_cutter_in_hurdler_pair": false,
+  "allow_right_cutter_in_hurdler_pair": false
+}

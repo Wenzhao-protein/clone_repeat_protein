@@ -1,0 +1,41 @@
+name: hurdler
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - biotite>=1.0
+  - biopython>=1.83
+  - duckdb>=1.1
+  - dssp>=4.4
+  - h5py>=3.10
+  - ipykernel>=6.29
+  - ipywidgets>=8.1
+  - jupyterlab>=4.1
+  - matplotlib>=3.8
+  - mafft>=7.520
+  - nbclient>=0.10
+  - nbconvert>=7.16
+  - nbformat>=5.10
+  - notebook>=7.1
+  - numpy>=1.26
+  - openpyxl>=3.1
+  - pandas>=2.1
+  - papermill>=2.6
+  - pillow>=10
+  - poppler
+  - pip
+  - plotly>=5.20
+  - pyarrow>=15
+  - pytest>=8
+  - pytest-cov>=5
+  - requests>=2.31
+  - scipy>=1.12
+  - seaborn>=0.13
+  - tqdm>=4.66
+  - pip:
+      - dnachisel>=3.2
+      - marimo==0.23.16
+      # 0.2.1 bundles its renderer; Kaleido >=1 needs a system Chrome binary,
+      # which is intentionally absent from the Digs universal container.
+      - kaleido==0.2.1
+      - scikit-opt>=0.6.6

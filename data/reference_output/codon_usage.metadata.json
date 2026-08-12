@@ -1,0 +1,9 @@
+{
+  "organism": "Escherichia coli K-12",
+  "taxonomy_id": 83333,
+  "source": "Kazusa Codon Usage Database",
+  "source_url": "https://www.kazusa.or.jp/codon/cgi-bin/showcodon.cgi?aa=11&species=83333&style=GCG",
+  "retrieved_date": "2026-08-09",
+  "units": "codons per thousand",
+  "correction": "Restored AGT=7.2 and AGC=16.6, which were absent from the historical CSV; all 64 codons are now present."
+}
