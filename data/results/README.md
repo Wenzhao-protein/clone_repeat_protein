@@ -1,5 +1,10 @@
 # Natural/Designed repeat-protein results
 
+For the paper-level provenance of all 182 designed modules, see the
+[designed-module citation guide](../../docs/designed_repeat_protein_citations.md)
+and its machine-readable
+[`designed_repeat_protein_citations.csv`](designed_repeat_protein_citations.csv).
+
 [`natural_designed_repeat_protein_hurdler_idt.csv`](natural_designed_repeat_protein_hurdler_idt.csv)
 is the public, spreadsheet-oriented export of the active
 `expanded-middle-repeatsdb-foldseek-v1` corpus. It deliberately excludes the

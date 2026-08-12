@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 import pytest
 
@@ -11,6 +13,8 @@ from hurdler.ga_optimization import (
     ga_sequence_metrics,
     genetic_refine_dna,
     load_restriction_sites,
+    repeat_aware_synonymous_refine,
+    repeated_kmer_coverage,
     repeated_re_site_excess,
 )
 from hurdler.idt import summarize_complexity_response, write_cached_response
@@ -85,6 +89,27 @@ def test_warm_start_ga_retains_ranked_elites_and_continues_generation_count():
     assert second_state.total_generations == 5
     assert set(first_state.elite_sequences) & set(second_state.elite_sequences)
     assert translate_dna(first) == translate_dna(second) == "A" * 12
+
+
+def test_repeat_aware_seed_reduces_coverage_and_long_repeats_without_changing_protein():
+    protein = "NEQIQAVIDAGALPALVQLLSSP" * 5
+    original = "".join(ga_optimization.GENETIC_CODE[aa][0] for aa in protein)
+    refined, metrics = repeat_aware_synonymous_refine(
+        original,
+        locked_positions={0, 7},
+        seed=42,
+        steps=10_000,
+    )
+    assert translate_dna(refined) == protein
+    assert refined[:3] == original[:3]
+    assert refined[21:24] == original[21:24]
+    assert repeated_kmer_coverage(refined, 8) < repeated_kmer_coverage(original, 8)
+    assert metrics["repeat_aware_final_repeated_13mer"] <= metrics[
+        "repeat_aware_initial_repeated_13mer"
+    ]
+    assert metrics["repeat_aware_final_repeated_14mer"] <= metrics[
+        "repeat_aware_initial_repeated_14mer"
+    ]
 
 
 def test_local_gate_is_selected_pair_only_and_gc_is_left_to_idt():
@@ -377,6 +402,37 @@ def test_idt_gblocks_response_uses_ordered_rule_lists():
     assert failed["idt_violation_count"] == 1
     assert '"Overall Repeat"' in failed["idt_violation_names_json"]
     assert '"actual_value"' in failed["idt_rule_details_json"]
+
+
+def test_idt_rule_geometry_is_retained_for_actionable_ga_feedback():
+    summary = summarize_complexity_response(
+        [[{
+            "Name": "Repeat Length (Fragment)",
+            "IsViolated": True,
+            "Score": 7.0,
+            "ActualValue": 23.0,
+            "DisplayText": "repeat at two locations",
+            "RepeatedSegment": "AACCGGTTAACCGGTTAACCGGT",
+            "ForwardLocations": [100, 352],
+            "ReverseLocations": [710],
+            "StartIndex": 100,
+            "TerminalEnd": 5,
+            "ThresholdOutput": {
+                "ThresholdType": 1,
+                "Value": 13,
+                "WindowLength": 90,
+            },
+        }]],
+        sequence_index=0,
+    )
+    details = json.loads(summary["idt_rule_details_json"])
+    assert details[0]["display_text"] == "repeat at two locations"
+    assert details[0]["repeated_segment"] == "AACCGGTTAACCGGTTAACCGGT"
+    assert details[0]["forward_locations"] == [100, 352]
+    assert details[0]["reverse_locations"] == [710]
+    assert details[0]["terminal_end"] == 5
+    assert details[0]["threshold_value"] == 13
+    assert details[0]["threshold_window_length"] == 90
 
 
 def test_idt_empty_position_matched_rule_list_is_orderable():

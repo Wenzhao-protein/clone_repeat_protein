@@ -21,9 +21,33 @@ from hurdler.vector_design import (
     DesignSelection,
     _exact_split_boundary,
     _adapt_ga_parameters_from_idt,
+    _idt_feedback_guidance,
     design_construct_v2,
     design_query,
 )
+
+
+def test_idt_feedback_coordinates_are_clipped_to_mutable_coding_core():
+    fragment = {
+        "fragment_id": "secondary",
+        "purchase_sequence": "AAAACCGGTTAACCTTTT",
+        "core_start_bp": 4,
+        "core_end_bp": 14,
+    }
+    audit = {
+        "fragment_id": "secondary",
+        "idt_rule_details_json": (
+            '[{"name":"Overall Repeat","score":4.0,"threshold_value":40},'
+            '{"name":"Repeat Length (Fragment)","score":3.0,'
+            '"repeated_segment":"CCGG","forward_locations":[0,4,10]}]'
+        ),
+    }
+    guidance = _idt_feedback_guidance([audit], [fragment])
+    assert guidance["repeat_coverage_threshold"] == 40
+    assert [0, 10] in guidance["target_ranges"]
+    assert [0, 4] in guidance["target_ranges"]
+    assert [6, 10] in guidance["target_ranges"]
+    assert guidance["repeat_aware_steps"] == 40_000
 
 
 def test_bundled_plasmid_database_has_seven_references_eight_profiles_and_four_schemes():

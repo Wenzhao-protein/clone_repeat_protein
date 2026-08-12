@@ -31,6 +31,7 @@ from .io import sha256_file, utc_now, write_json_atomic
 DNA_ASSEMBLY_VERSION = "arbitrary-dna-active-latent-v1"
 DNA_COMPLETE_ROUTE_VERSION = "arbitrary-dna-complete-route-v2"
 DEFAULT_CLAMP = "GCGCGC"
+IDT_FRIENDLY_CLAMP = "AACATT"
 DEFAULT_OLIGO_MIN_BP = 20
 DEFAULT_OLIGO_MAX_BP = 200
 DEFAULT_GBLOCK_MIN_BP = 125
@@ -445,6 +446,7 @@ def _type_iis_flank(
     *,
     left: bool,
     overhang_sequence: str,
+    clamp_sequence: str = DEFAULT_CLAMP,
 ) -> str:
     """Build a disposable adapter that exposes the requested cohesive end.
 
@@ -453,6 +455,7 @@ def _type_iis_flank(
     and are removed or become the transient cohesive end after digestion.
     """
     overhang = validate_dna(overhang_sequence)
+    clamp = validate_dna(clamp_sequence)
     if len(overhang) != geometry.overhang_length:
         raise ValueError(
             f"{geometry.enzyme} requires a {geometry.overhang_length}-nt overhang, got {len(overhang)}"
@@ -460,8 +463,8 @@ def _type_iis_flank(
     spacer_length = max(0, geometry.top_cut_offset - len(geometry.recognition_site))
     spacer = ("ACGT" * (math.ceil(spacer_length / 4)))[:spacer_length]
     if left:
-        return DEFAULT_CLAMP + geometry.recognition_site + spacer + overhang
-    return reverse_complement(overhang + spacer + geometry.recognition_site) + DEFAULT_CLAMP
+        return clamp + geometry.recognition_site + spacer + overhang
+    return reverse_complement(overhang + spacer + geometry.recognition_site) + clamp
 
 
 def _product_type(length: int) -> str | None:

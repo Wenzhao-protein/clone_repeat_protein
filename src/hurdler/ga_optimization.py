@@ -48,6 +48,12 @@ GA_SCORE_PROFILE = {
     "terminal_repeat_proxy": 100,
     "gc_window_soft_violation": 100,
     "negative_log_cai": 50,
+    # These feedback terms are dormant until a live IDT response supplies
+    # rule thresholds, exact repeated segments, or affected coordinates.
+    "idt_repeat_coverage_excess": 1_000,
+    "idt_window_repeat_coverage_excess": 2_500,
+    "idt_reported_segment_occurrences": 50_000,
+    "idt_terminal_gc_excess": 10_000,
 }
 
 IDT_FEEDBACK_MULTIPLIER = 2.0
@@ -131,6 +137,247 @@ def terminal_repeat_proxy(dna: str, k: int = 10, terminal_window: int = 30) -> i
     return sum(max(0, counts[kmer] - 1) for kmer in terminal_kmers)
 
 
+def _repeated_kmer_mask(dna: str, k: int) -> bytearray:
+    positions: dict[str, list[int]] = {}
+    for index in range(max(0, len(dna) - k + 1)):
+        positions.setdefault(dna[index : index + k], []).append(index)
+    covered = bytearray(len(dna))
+    for starts in positions.values():
+        if len(starts) < 2:
+            continue
+        for index in starts:
+            covered[index : index + k] = b"\x01" * k
+    return covered
+
+
+def _coverage_from_mask(covered: bytearray, start: int, end: int) -> float:
+    lower = max(0, int(start))
+    upper = min(len(covered), int(end))
+    if upper <= lower:
+        return 0.0
+    return 100.0 * sum(covered[lower:upper]) / (upper - lower)
+
+
+def repeated_kmer_coverage(
+    dna: str,
+    k: int = 8,
+    *,
+    start: int = 0,
+    end: int | None = None,
+) -> float:
+    """Percentage of bases covered by a k-mer occurring more than once.
+
+    IDT reports ``Overall Repeat`` and ``Windowed Repeat Percentage`` as base
+    coverage rather than merely the number of duplicate k-mers.  This proxy
+    preserves that distinction while remaining cheap enough for every GA
+    fitness evaluation.
+    """
+    if not dna:
+        return 0.0
+    covered = _repeated_kmer_mask(dna, k)
+    lower = max(0, int(start))
+    upper = min(len(dna), len(dna) if end is None else int(end))
+    return _coverage_from_mask(covered, lower, upper)
+
+
+def repeat_aware_synonymous_refine(
+    dna: str,
+    *,
+    locked_positions: set[int],
+    seed: int,
+    steps: int = 40_000,
+    k: int = 8,
+    long_repeat_weights: tuple[float, float] = (24.0, 36.0),
+) -> tuple[str, dict[str, Any]]:
+    """Reduce repeated-k-mer base coverage with synonymous local moves.
+
+    IDT's ``Overall Repeat`` rule measures base coverage, so one synonymous
+    codon change can remove several overlapping repeated 8-mers.  This
+    incremental annealer updates only k-mers touching the candidate codon and
+    supplies a focused warm-start seed to the population GA.
+    """
+    sequence = str(dna).upper()
+    protein = translate_dna(sequence)
+    if not sequence or len(sequence) % 3:
+        raise ValueError("DNA must be a non-empty coding sequence")
+    if steps < 0:
+        raise ValueError("steps cannot be negative")
+    if k < 2:
+        raise ValueError("repeat k-mer length must be at least two")
+
+    rng = np.random.default_rng(int(seed))
+    bases = list(sequence)
+    codons = [sequence[index : index + 3] for index in range(0, len(sequence), 3)]
+    tracked_k = (k, 13, 14)
+    positions: dict[int, dict[str, set[int]]] = {length: {} for length in tracked_k}
+    for length in tracked_k:
+        for start in range(max(0, len(bases) - length + 1)):
+            motif = "".join(bases[start : start + length])
+            positions[length].setdefault(motif, set()).add(start)
+    coverage_counts = [0] * len(bases)
+    covered_bases = 0
+    repeat_excess = {
+        length: sum(max(0, len(starts) - 1) for starts in positions[length].values())
+        for length in (13, 14)
+    }
+
+    def add_motif_contribution(motif: str, delta: int) -> None:
+        nonlocal covered_bases
+        starts = positions[k].get(motif, set())
+        if len(starts) < 2:
+            return
+        for start in starts:
+            for base_index in range(start, start + k):
+                before = coverage_counts[base_index]
+                coverage_counts[base_index] += delta
+                if before == 0 and coverage_counts[base_index] > 0:
+                    covered_bases += 1
+                elif before > 0 and coverage_counts[base_index] == 0:
+                    covered_bases -= 1
+
+    for motif in tuple(positions[k]):
+        add_motif_contribution(motif, 1)
+
+    def objective() -> float:
+        return (
+            float(covered_bases)
+            + float(long_repeat_weights[0]) * repeat_excess[13]
+            + float(long_repeat_weights[1]) * repeat_excess[14]
+        )
+
+    def apply_codon(codon_position: int, new_codon: str) -> str:
+        """Apply one codon and update all three repeat trackers."""
+        base_start = codon_position * 3
+        old_codon = "".join(bases[base_start : base_start + 3])
+        affected: dict[int, tuple[int, ...]] = {
+            length: tuple(
+                range(
+                    max(0, base_start - length + 1),
+                    min(len(bases) - length + 1, base_start + 3),
+                )
+            )
+            for length in tracked_k
+        }
+        old_motifs = {
+            length: {
+                start: "".join(bases[start : start + length])
+                for start in affected[length]
+            }
+            for length in tracked_k
+        }
+        bases[base_start : base_start + 3] = new_codon
+        new_motifs = {
+            length: {
+                start: "".join(bases[start : start + length])
+                for start in affected[length]
+            }
+            for length in tracked_k
+        }
+        for length in tracked_k:
+            changed = set(old_motifs[length].values()) | set(new_motifs[length].values())
+            if length == k:
+                for motif in changed:
+                    add_motif_contribution(motif, -1)
+            else:
+                before = sum(
+                    max(0, len(positions[length].get(motif, set())) - 1)
+                    for motif in changed
+                )
+            for start, motif in old_motifs[length].items():
+                positions[length][motif].discard(start)
+            for start, motif in new_motifs[length].items():
+                positions[length].setdefault(motif, set()).add(start)
+            if length == k:
+                for motif in changed:
+                    add_motif_contribution(motif, 1)
+            else:
+                after = sum(
+                    max(0, len(positions[length].get(motif, set())) - 1)
+                    for motif in changed
+                )
+                repeat_excess[length] += after - before
+        codons[codon_position] = new_codon
+        return old_codon
+
+    mutable_positions = tuple(
+        position
+        for position, aa in enumerate(protein)
+        if position not in locked_positions and len(GENETIC_CODE[aa]) > 1
+    )
+    if not mutable_positions or steps == 0:
+        coverage = repeated_kmer_coverage(sequence, k)
+        return sequence, {
+            "repeat_aware_steps": int(steps),
+            "repeat_aware_initial_coverage": coverage,
+            "repeat_aware_final_coverage": coverage,
+        }
+
+    initial_covered = covered_bases
+    initial_repeat_excess = dict(repeat_excess)
+    current_objective = objective()
+    best_objective = current_objective
+    best_covered = covered_bases
+    best_repeat_excess = dict(repeat_excess)
+    best_sequence = sequence
+    accepted_moves = 0
+    for step in range(int(steps)):
+        codon_position = int(rng.choice(mutable_positions))
+        old_codon = codons[codon_position]
+        alternatives = tuple(
+            codon for codon in GENETIC_CODE[protein[codon_position]] if codon != old_codon
+        )
+        new_codon = str(rng.choice(alternatives))
+        old_objective = current_objective
+        apply_codon(codon_position, new_codon)
+        new_objective = objective()
+
+        temperature = max(0.02, 4.0 * (1.0 - step / max(1, int(steps))))
+        accepted = new_objective <= old_objective or rng.random() < math.exp(
+            (old_objective - new_objective) / temperature
+        )
+        if accepted:
+            current_objective = new_objective
+            accepted_moves += 1
+            if current_objective < best_objective:
+                best_objective = current_objective
+                best_covered = covered_bases
+                best_repeat_excess = dict(repeat_excess)
+                best_sequence = "".join(bases)
+            continue
+        apply_codon(codon_position, old_codon)
+        current_objective = old_objective
+
+    if translate_dna(best_sequence) != protein:
+        raise AssertionError("Repeat-aware refinement changed translation")
+    for position in locked_positions:
+        if best_sequence[position * 3 : position * 3 + 3] != sequence[position * 3 : position * 3 + 3]:
+            raise AssertionError("Repeat-aware refinement changed a locked codon")
+    return best_sequence, {
+        "repeat_aware_steps": int(steps),
+        "repeat_aware_accepted_moves": int(accepted_moves),
+        "repeat_aware_initial_coverage": 100.0 * initial_covered / len(sequence),
+        "repeat_aware_final_coverage": 100.0 * best_covered / len(sequence),
+        "repeat_aware_initial_repeated_13mer": int(initial_repeat_excess[13]),
+        "repeat_aware_final_repeated_13mer": int(best_repeat_excess[13]),
+        "repeat_aware_initial_repeated_14mer": int(initial_repeat_excess[14]),
+        "repeat_aware_final_repeated_14mer": int(best_repeat_excess[14]),
+        "repeat_aware_objective": float(best_objective),
+    }
+
+
+def _overlapping_pattern_count(dna: str, pattern: str) -> int:
+    pattern = str(pattern).upper()
+    if not pattern:
+        return 0
+    patterns = {pattern, reverse_complement(pattern)}
+    return sum(
+        1
+        for motif in patterns
+        for start in range(max(0, len(dna) - len(motif) + 1))
+        if dna.startswith(motif, start)
+    )
+
+
 def adjust_ga_score_profile_from_idt(
     score_profile: dict[str, float],
     idt_summary: dict[str, Any],
@@ -163,14 +410,25 @@ def adjust_ga_score_profile_from_idt(
         keys: set[str] = set()
         if "gc" in lowered:
             keys.add("gc_window_soft_violation")
+            if "terminal" in lowered:
+                keys.add("idt_terminal_gc_excess")
         if "hairpin" in lowered or "palindrome" in lowered:
             keys.add("hairpin_10mer_proxy")
         if "homopolymer" in lowered:
             keys.add("homopolymer_excess")
         if "terminal" in lowered:
-            keys.update({"terminal_repeat_proxy", "repeated_13mer"})
+            keys.update({
+                "terminal_repeat_proxy", "repeated_13mer",
+                "idt_reported_segment_occurrences",
+            })
         if "repeat" in lowered or "ssa" in lowered:
-            keys.update({"repeated_8mer", "repeated_13mer", "repeated_14mer"})
+            keys.update({
+                "repeated_8mer", "repeated_13mer", "repeated_14mer",
+                "idt_repeat_coverage_excess",
+                "idt_reported_segment_occurrences",
+            })
+            if "window" in lowered:
+                keys.add("idt_window_repeat_coverage_excess")
         if "restriction site" in lowered:
             keys.add("repeated_re_site_excess")
         if not keys:
@@ -202,8 +460,12 @@ def ga_sequence_metrics(
     recognition_sites: tuple[str, ...],
     selected_site_limits: dict[str, int],
     score_profile: dict[str, float] | None = None,
+    idt_feedback_guidance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    profile = dict(GA_SCORE_PROFILE if score_profile is None else score_profile)
+    profile = {
+        **GA_SCORE_PROFILE,
+        **({} if score_profile is None else score_profile),
+    }
     gc_min, gc_max = gc_window_extrema(dna, 50)
     selected_excess = sum(
         max(0, recognition_site_count(dna, site) - limit)
@@ -218,6 +480,52 @@ def ga_sequence_metrics(
     homopolymers = homopolymer_excess(dna)
     terminal_repeats = terminal_repeat_proxy(dna)
     cai = codon_adaptation_index(dna, codon_weights)
+    guidance = dict(idt_feedback_guidance or {})
+    repeat_threshold = float(guidance.get("repeat_coverage_threshold", 100.0))
+    repeat_mask = _repeated_kmer_mask(dna, 8) if guidance else bytearray(len(dna))
+    repeat_coverage = (
+        _coverage_from_mask(repeat_mask, 0, len(dna)) if guidance else 0.0
+    )
+    repeat_coverage_excess = max(0.0, repeat_coverage - repeat_threshold)
+    window_excess = 0.0
+    window_coverages: list[dict[str, Any]] = []
+    for raw_window in guidance.get("repeat_windows", []):
+        if not isinstance(raw_window, dict):
+            continue
+        start = max(0, int(raw_window.get("start", 0)))
+        end = min(len(dna), int(raw_window.get("end", start)))
+        threshold = float(raw_window.get("threshold", 100.0))
+        coverage = _coverage_from_mask(repeat_mask, start, end)
+        excess = max(0.0, coverage - threshold)
+        window_excess += excess
+        window_coverages.append(
+            {"start": start, "end": end, "coverage": coverage, "threshold": threshold}
+        )
+    reported_segments = tuple(
+        str(value).upper()
+        for value in guidance.get("avoid_segments", [])
+        if str(value) and set(str(value).upper()) <= set("ACGT")
+    )
+    segment_occurrences = sum(
+        _overlapping_pattern_count(dna, segment) for segment in reported_segments
+    )
+    terminal_gc_excess = 0.0
+    terminal_gc_metrics: list[dict[str, Any]] = []
+    for raw_window in guidance.get("terminal_gc_windows", []):
+        if not isinstance(raw_window, dict):
+            continue
+        start = max(0, int(raw_window.get("start", 0)))
+        end = min(len(dna), int(raw_window.get("end", start)))
+        if end <= start:
+            continue
+        threshold = float(raw_window.get("threshold", 100.0))
+        region = dna[start:end]
+        gc_percentage = 100.0 * (region.count("G") + region.count("C")) / len(region)
+        excess = max(0.0, gc_percentage - threshold)
+        terminal_gc_excess += excess
+        terminal_gc_metrics.append(
+            {"start": start, "end": end, "gc_percentage": gc_percentage, "threshold": threshold}
+        )
     gc_violation = max(0.0, 0.25 - gc_min) + max(0.0, gc_max - 0.75)
     gc_soft_violation = max(0.0, 0.35 - gc_min) + max(0.0, gc_max - 0.65)
     score = (
@@ -232,6 +540,10 @@ def ga_sequence_metrics(
         + profile["homopolymer_excess"] * homopolymers
         + profile["terminal_repeat_proxy"] * terminal_repeats
         - profile["negative_log_cai"] * math.log(max(cai, 1e-12))
+        + profile["idt_repeat_coverage_excess"] * repeat_coverage_excess
+        + profile["idt_window_repeat_coverage_excess"] * window_excess
+        + profile["idt_reported_segment_occurrences"] * segment_occurrences
+        + profile["idt_terminal_gc_excess"] * terminal_gc_excess
     )
     return {
         "ga_score": float(score),
@@ -249,6 +561,13 @@ def ga_sequence_metrics(
         "ga_gc_bounds_passed": bool(gc_violation == 0),
         "gc_50bp_soft_violation": float(gc_soft_violation),
         "cai_kazusa_83333": float(cai),
+        "idt_repeat_coverage_percentage_proxy": float(repeat_coverage),
+        "idt_repeat_coverage_excess_proxy": float(repeat_coverage_excess),
+        "idt_window_repeat_coverage_excess_proxy": float(window_excess),
+        "idt_window_repeat_coverage_json": json.dumps(window_coverages, sort_keys=True),
+        "idt_reported_segment_occurrences": int(segment_occurrences),
+        "idt_terminal_gc_excess_proxy": float(terminal_gc_excess),
+        "idt_terminal_gc_json": json.dumps(terminal_gc_metrics, sort_keys=True),
         # Live IDT, not a duplicated local GC cutoff, is the orderability
         # gate. Locally, only the frozen selected Site-I/Site-II counts are
         # hard constraints.
@@ -270,6 +589,7 @@ def genetic_refine_dna(
     crossover_rate: float = 1.0,
     elite_fraction: float = 0.125,
     score_profile: dict[str, float] | None = None,
+    idt_feedback_guidance: dict[str, Any] | None = None,
     population_state: GAPopulationState | None = None,
     elite_seed_count: int = 6,
     capture_population_state: bool = False,
@@ -295,8 +615,21 @@ def genetic_refine_dna(
         if population_state.rng_state:
             rng.bit_generator.state = population_state.rng_state
     cache: dict[str, dict[str, Any]] = {}
-    profile = dict(GA_SCORE_PROFILE if score_profile is None else score_profile)
+    profile = {
+        **GA_SCORE_PROFILE,
+        **({} if score_profile is None else score_profile),
+    }
     context = dict(progress_context or {})
+    guidance = dict(idt_feedback_guidance or {})
+    hotspot_codons: set[int] = set()
+    for raw_range in guidance.get("target_ranges", []):
+        if not isinstance(raw_range, (list, tuple)) or len(raw_range) != 2:
+            continue
+        start = max(0, int(raw_range[0]))
+        end = min(len(dna), int(raw_range[1]))
+        if end > start:
+            hotspot_codons.update(range(start // 3, (end - 1) // 3 + 1))
+    hotspot_mutation_rate = float(guidance.get("hotspot_mutation_rate", 0.65))
     started = time.monotonic()
     emit_progress(
         progress_callback,
@@ -316,13 +649,15 @@ def genetic_refine_dna(
                 recognition_sites,
                 selected_site_limits,
                 score_profile=profile,
+                idt_feedback_guidance=guidance,
             )
         return cache[sequence]
 
     def mutate(sequence: str, rate: float) -> str:
         child = [sequence[index : index + 3] for index in range(0, len(sequence), 3)]
         for position, aa in enumerate(protein):
-            if position in locked_positions or rng.random() >= rate:
+            position_rate = max(rate, hotspot_mutation_rate) if position in hotspot_codons else rate
+            if position in locked_positions or rng.random() >= position_rate:
                 continue
             choices = GENETIC_CODE[aa]
             weights = np.array([codon_weights.get(codon, 1.0) for codon in choices], dtype=float)
@@ -345,7 +680,33 @@ def genetic_refine_dna(
             ):
                 continue
             warm_sequences.append(sequence)
-    population = list(dict.fromkeys([*warm_sequences, repaired]))
+    repeat_aware_metrics: dict[str, Any] = {}
+    repeat_aware_steps = int(guidance.get("repeat_aware_steps", 0))
+    repeat_aware_seed: str | None = None
+    if repeat_aware_steps > 0:
+        repeat_aware_start = min(
+            [*warm_sequences, repaired],
+            key=lambda sequence: (repeated_kmer_coverage(sequence, 8), sequence),
+        )
+        repeat_aware_seed, repeat_aware_metrics = repeat_aware_synonymous_refine(
+            repeat_aware_start,
+            locked_positions=locked_positions,
+            seed=seed + 7919,
+            steps=repeat_aware_steps,
+            k=8,
+        )
+        repeat_aware_seed = _repair_site_limits(
+            repeat_aware_seed,
+            protein,
+            locked_positions,
+            selected_site_limits,
+            codon_weights,
+        )
+    population = list(
+        dict.fromkeys(
+            [*warm_sequences, *([] if repeat_aware_seed is None else [repeat_aware_seed]), repaired]
+        )
+    )
     seed_pool = tuple(population)
     while len(population) < population_size:
         parent = seed_pool[len(population) % len(seed_pool)]
@@ -423,6 +784,7 @@ def genetic_refine_dna(
             "ga_crossover_rate": float(crossover_rate),
             "ga_elite_fraction": float(elite_fraction),
             "ga_score_profile_json": json.dumps(profile, sort_keys=True),
+            **repeat_aware_metrics,
         }
     )
     if capture_population_state:

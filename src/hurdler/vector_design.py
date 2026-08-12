@@ -29,7 +29,7 @@ from .ga_optimization import (
     genetic_refine_dna,
     load_restriction_sites,
 )
-from .dna_assembly import _type_iis_flank, load_enzyme_catalog
+from .dna_assembly import IDT_FRIENDLY_CLAMP, _type_iis_flank, load_enzyme_catalog
 from .io import sha256_file, utc_now, write_json_atomic
 from .optimization import (
     diversify_codons,
@@ -495,6 +495,9 @@ def _actual_fragments(
             "product_length_valid": 20 <= len(purchase) <= 3000,
             "left_restoration_bp": len(prefix) if ordinal == 1 else 0,
             "right_restoration_bp": len(suffix) if ordinal == len(chunks) else 0,
+            "core_start_bp": len(prefix) if ordinal == 1 else 0,
+            "core_end_bp": (len(prefix) if ordinal == 1 else 0) + len(chunk),
+            "core_length_bp": len(chunk),
         })
     return rows
 
@@ -721,11 +724,13 @@ def _secondary_adapters(
         site_iii,
         left=True,
         overhang_sequence=site_i.ovhgseq,
+        clamp_sequence=IDT_FRIENDLY_CLAMP,
     )
     right = _type_iis_flank(
         site_iii,
         left=False,
         overhang_sequence=site_ii.ovhgseq,
+        clamp_sequence=IDT_FRIENDLY_CLAMP,
     )
     return left, right, {
         "site_iii_enzyme": site_iii.enzyme,
@@ -841,6 +846,155 @@ def _adapt_ga_parameters_from_idt(
     }
 
 
+def _finite_number(value: Any) -> float | None:
+    if (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    ):
+        return float(value)
+    return None
+
+
+def _idt_feedback_guidance(
+    audits: Sequence[Mapping[str, Any]],
+    fragments: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Translate IDT rule geometry into core-DNA GA targets.
+
+    API coordinates refer to the submitted purchase fragment, which can carry
+    disposable Type-IIS adapters or vector-restoration sequence.  Guidance is
+    clipped and translated to the optimizable protein-coding core so a reported
+    location cannot accidentally mutate an adapter or protected vector base.
+    """
+    fragment_by_id = {str(row.get("fragment_id")): row for row in fragments}
+    target_ranges: set[tuple[int, int]] = set()
+    repeat_windows: list[dict[str, Any]] = []
+    terminal_gc_windows: list[dict[str, Any]] = []
+    avoid_segments: list[str] = []
+    rule_targets: list[dict[str, Any]] = []
+    repeat_threshold = 100.0
+
+    for audit in audits:
+        fragment = fragment_by_id.get(str(audit.get("fragment_id")))
+        if fragment is None:
+            continue
+        purchase = str(fragment.get("purchase_sequence") or "").upper()
+        core_start = int(fragment.get("core_start_bp", 0))
+        core_end = int(fragment.get("core_end_bp", len(purchase)))
+        core_length = max(0, core_end - core_start)
+        try:
+            details = json.loads(str(audit.get("idt_rule_details_json") or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            details = []
+        for detail in details if isinstance(details, list) else []:
+            if not isinstance(detail, dict):
+                continue
+            score = _finite_number(detail.get("score"))
+            if score is None or score <= 0:
+                continue
+            name = str(detail.get("name") or "unnamed_rule")
+            lowered = name.lower()
+            threshold = _finite_number(detail.get("threshold_value"))
+            repeated_segment = str(detail.get("repeated_segment") or "").upper()
+            locations = [
+                int(value)
+                for key in ("forward_locations", "reverse_locations")
+                for value in detail.get(key, [])
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            ]
+            detail_ranges: list[tuple[int, int]] = []
+
+            if repeated_segment and set(repeated_segment) <= set("ACGT"):
+                core = purchase[core_start:core_end]
+                if repeated_segment in core or reverse_complement(repeated_segment) in core:
+                    avoid_segments.append(repeated_segment)
+                for location in locations:
+                    clipped_start = max(core_start, int(location)) - core_start
+                    clipped_end = min(core_end, int(location) + len(repeated_segment)) - core_start
+                    if clipped_end > clipped_start:
+                        detail_ranges.append((clipped_start, clipped_end))
+
+            if "windowed repeat" in lowered:
+                start_index = int(_finite_number(detail.get("start_index")) or 0)
+                window_length = int(
+                    _finite_number(detail.get("threshold_window_length")) or 90
+                )
+                clipped_start = max(core_start, start_index) - core_start
+                clipped_end = min(core_end, start_index + window_length) - core_start
+                if clipped_end > clipped_start:
+                    window_threshold = threshold if threshold is not None else 88.0
+                    repeat_windows.append(
+                        {
+                            "start": clipped_start,
+                            "end": clipped_end,
+                            "threshold": window_threshold,
+                            "rule": name,
+                        }
+                    )
+                    detail_ranges.append((clipped_start, clipped_end))
+
+            if "overall repeat" in lowered and threshold is not None:
+                repeat_threshold = min(repeat_threshold, threshold)
+                # This global rule has no locations.  The complete coding core
+                # is its actionable target; adapters remain immutable here.
+                if core_length:
+                    detail_ranges.append((0, core_length))
+
+            terminal_end_value = int(
+                _finite_number(detail.get("terminal_end")) or 0
+            )
+            if (
+                "terminal" in lowered or terminal_end_value in {3, 5}
+            ) and "gc" in lowered:
+                terminal_end = terminal_end_value
+                purchase_start, purchase_end = (
+                    (0, min(60, len(purchase)))
+                    if terminal_end == 5
+                    else (max(0, len(purchase) - 60), len(purchase))
+                )
+                clipped_start = max(core_start, purchase_start) - core_start
+                clipped_end = min(core_end, purchase_end) - core_start
+                if clipped_end > clipped_start:
+                    terminal_gc_windows.append(
+                        {
+                            "start": clipped_start,
+                            "end": clipped_end,
+                            "threshold": threshold if threshold is not None else 68.0,
+                            "terminal_end": terminal_end,
+                            "rule": name,
+                        }
+                    )
+                    detail_ranges.append((clipped_start, clipped_end))
+
+            target_ranges.update(detail_ranges)
+            rule_targets.append(
+                {
+                    "name": name,
+                    "score": score,
+                    "actual_value": detail.get("actual_value"),
+                    "threshold_value": threshold,
+                    "repeated_segment": repeated_segment,
+                    "core_ranges": [list(value) for value in detail_ranges],
+                }
+            )
+
+    # Latest concrete segments are most useful; cap retained guidance so a
+    # long 100-round run cannot accumulate an unbounded obsolete blacklist.
+    unique_segments = list(dict.fromkeys(avoid_segments))[-16:]
+    return {
+        "schema_version": "idt-structured-ga-feedback-v1",
+        "repeat_coverage_threshold": repeat_threshold,
+        "repeat_windows": repeat_windows[-8:],
+        "terminal_gc_windows": terminal_gc_windows[-4:],
+        "avoid_segments": unique_segments,
+        "target_ranges": [list(value) for value in sorted(target_ranges)][-32:],
+        "hotspot_mutation_rate": 0.65,
+        "repeat_aware_steps": 40_000 if repeat_threshold < 100.0 else 0,
+        "rule_targets": rule_targets,
+    }
+
+
 def _rdl_purchase_fragments(
     request: DesignRequestV2,
     route: Mapping[str, Any],
@@ -872,6 +1026,9 @@ def _rdl_purchase_fragments(
         "left_adapter": left_adapter,
         "right_adapter": right_adapter,
         "adapter_bases_removed_after_digest": True,
+        "core_start_bp": len(left_adapter),
+        "core_end_bp": len(left_adapter) + len(dna_sequence),
+        "core_length_bp": len(dna_sequence),
     }], True
 
 
@@ -895,6 +1052,7 @@ def _rdl_fragment_attempt(
     crossover_rate: float | None = None,
     feedback_round: int = 1,
     excluded_idt_sha256: set[str] | None = None,
+    idt_feedback_guidance: dict[str, Any] | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Optimize one exact primary or reusable secondary purchase sequence."""
@@ -944,6 +1102,7 @@ def _rdl_fragment_attempt(
         population_size=active_population,
         generations=int(generations),
         score_profile=score_profile,
+        idt_feedback_guidance=idt_feedback_guidance,
         mutation_rate=active_mutation,
         crossover_rate=active_crossover,
         elite_fraction=request.elite_fraction,
@@ -1134,12 +1293,14 @@ def _run_fragment_schedule(
     mutation_rate = float(request.mutation_rate)
     crossover_rate = float(request.crossover_rate)
     scored_hashes: set[str] = set()
+    guidance: dict[str, Any] = {}
     rounds = 1 if request.validation_mode == "batch" else int(request.max_idt_feedback_rounds)
     base_profile = {
         **GA_SCORE_PROFILE,
         **{str(key): float(value) for key, value in request.score_weights.items()},
     }
     for feedback_round in range(1, rounds + 1):
+        audit_start = len(aggregate_audit)
         result = _rdl_fragment_attempt(
             request,
             candidate,
@@ -1159,6 +1320,7 @@ def _run_fragment_schedule(
             crossover_rate=crossover_rate,
             feedback_round=feedback_round,
             excluded_idt_sha256=scored_hashes,
+            idt_feedback_guidance=guidance,
             progress_callback=progress_callback,
         )
         population_state = result["population_state"]
@@ -1178,6 +1340,7 @@ def _run_fragment_schedule(
         for fragment in result.get("fragments", []):
             if result.get("idt_request_attempted"):
                 scored_hashes.add(str(fragment.get("purchase_sha256") or ""))
+        round_audits = aggregate_audit[audit_start:]
         feedback_row = {
             "fragment_kind": fragment_kind,
             "repeat_copies": int(copies),
@@ -1188,6 +1351,7 @@ def _run_fragment_schedule(
             "idt_status": result["idt_status"],
             "idt_complexity_score": result["idt_complexity_score"],
             "candidate_sha256": hashlib.sha256(str(result["dna_sequence"]).encode()).hexdigest(),
+            "guidance_applied_json": json.dumps(guidance, sort_keys=True),
         }
         feedback_history.append(feedback_row)
         if result.get("passed"):
@@ -1200,8 +1364,12 @@ def _run_fragment_schedule(
         adjustments: list[dict[str, Any]] = []
         score = result.get("idt_complexity_score")
         if request.validation_mode == "api" and isinstance(score, (int, float)):
+            next_guidance = _idt_feedback_guidance(
+                round_audits,
+                result.get("fragments", []),
+            )
             if request.auto_adjust_weights_from_idt:
-                for row in aggregate_audit[-len(result.get("fragments", [])) :]:
+                for row in round_audits:
                     updated, changes = adjust_ga_score_profile_from_idt(score_profile, row)
                     for key, value in updated.items():
                         ceiling = float(base_profile.get(key, value)) * float(request.max_weight_multiplier)
@@ -1219,6 +1387,7 @@ def _run_fragment_schedule(
                 )
             else:
                 tier = {"tier": "disabled"}
+            guidance = next_guidance
         else:
             tier = {"tier": "no_numeric_idt_rejection"}
         parameter_row = {
@@ -1231,6 +1400,7 @@ def _run_fragment_schedule(
             "parameter_policy_json": json.dumps(tier, sort_keys=True),
             "weight_adjustments_json": json.dumps(adjustments, sort_keys=True),
             "score_weights_json": json.dumps(score_profile, sort_keys=True),
+            "next_guidance_json": json.dumps(guidance, sort_keys=True),
         }
         parameter_history.append(parameter_row)
         emit_progress(

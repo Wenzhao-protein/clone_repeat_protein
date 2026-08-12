@@ -54,6 +54,8 @@ plasmid/enzyme route, and the independently validated 1,800-bp and 3,000-bp
 maximum constructs. An `*_idt_accepted_dna` cell is populated only when the
 exact DNA translated correctly, had no selected-pair excess sites, carried a
 maximum-copy proof, and received a live IDT rule-score sum strictly below 10.
+The accompanying [designed-module citation guide](docs/designed_repeat_protein_citations.md)
+maps all 182 designed rows to 17 DOI papers and two PDB-only records.
 
 The v2 interactive designer is the fastest user entry point. It first queries
 all 776 protein-level Site-I/Site-II pairs, then evaluates the retained long
@@ -75,6 +77,11 @@ candidates; score tiers automatically increase population and mutation/
 crossover settings within documented caps. The default limit is 100 feedback
 rounds of 10 GA generations per tested copy count. Missing or non-numeric IDT
 scores stop with an explicit error rather than being treated as a rejection.
+Feedback preserves IDT's reported repeat segments, forward/reverse locations,
+window starts, terminal side, observed values, and thresholds. These fields
+drive coding-core hotspot mutation and a repeat-aware synonymous warm start
+that jointly reduces repeated-8-mer coverage and duplicated 13/14-mers;
+adapter-only failures are kept separate from mutable coding coordinates.
 Every successful bundle also contains IDT Bulk Input
 CSV/TSV/FASTA. It never uses IDT codon optimization and never submits an order.
 Run the local page with `hurdler web`.

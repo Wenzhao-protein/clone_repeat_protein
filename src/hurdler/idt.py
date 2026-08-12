@@ -487,8 +487,33 @@ def summarize_complexity_response(
                 "is_violated": bool(rule["IsViolated"]),
                 "actual_value": rule.get("ActualValue"),
                 "score": rule.get("Score"),
+                "display_text": str(rule.get("DisplayText") or ""),
+                "repeated_segment": str(rule.get("RepeatedSegment") or "").upper(),
+                "forward_locations": [
+                    int(value)
+                    for value in (rule.get("ForwardLocations") or [])
+                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                ],
+                "reverse_locations": [
+                    int(value)
+                    for value in (rule.get("ReverseLocations") or [])
+                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                ],
+                "start_index": rule.get("StartIndex"),
+                "terminal_end": rule.get("TerminalEnd"),
+                "length": rule.get("Length"),
+                "minimum_repeat_length": rule.get("MinimumRepeatLength"),
+                "gc_percentage": rule.get("GCPercentage"),
+                "repeat_percentage": rule.get("RepeatPercentage"),
+                "rank": rule.get("Rank"),
                 "threshold_type": threshold.get("ThresholdType"),
                 "threshold_value": threshold.get("Value"),
+                "threshold_window_length": threshold.get("WindowLength"),
+                "threshold_min_length": threshold.get("MinLength"),
+                "threshold_max_length": threshold.get("MaxLength"),
+                "threshold_min_percentage": threshold.get("MinPercentage"),
+                "threshold_max_percentage": threshold.get("MaxPercentage"),
+                "threshold_quantity": threshold.get("Quantity"),
             }
         )
     score_total: float | None = None
