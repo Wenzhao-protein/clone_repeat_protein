@@ -140,6 +140,17 @@ def test_colab_user_inputs_are_native_params_visible_before_execution():
         assert not re.search(rf"^{secret}\s*=.*#@param", COLAB_NOTEBOOK.read_text(), re.MULTILINE)
 
 
+def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
+    source = _colab_cell_source("hurdler-initialize")
+    assert "COLAB_RELEASE_TAG" not in source
+    assert "import google.colab" in source
+    assert '"pip", "install", "-e"' in source
+    assert 'sys.path.insert(0, source_dir)' in source
+    namespace: dict[str, object] = {}
+    exec(compile(source, "hurdler-initialize", "exec"), namespace)
+    assert namespace["hurdler_package"].__name__ == "hurdler"
+
+
 def test_colab_run_all_queries_but_never_auto_confirms_rank_one(colab_runtime_namespace):
     state = colab_runtime_namespace["state"]
     assert state["query_result"].status == "compatible_unoptimized"

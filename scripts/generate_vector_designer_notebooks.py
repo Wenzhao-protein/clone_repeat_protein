@@ -339,18 +339,54 @@ COLAB_BOOTSTRAP = r'''#@markdown Select the Git branch used by this notebook pre
 repository_ref = "agent/vector-aware-designer-v2" #@param ["agent/vector-aware-designer-v2", "main"] {allow-input: true}
 
 # Colab-only bootstrap: computation and credentials stay in this runtime.
-import os, subprocess, sys
+import importlib
+import importlib.util
+import os
+import subprocess
+import sys
 from pathlib import Path
 
-if "COLAB_RELEASE_TAG" in os.environ:
-    if not Path("/content/clone_repeat_protein").exists():
+repository_dir = Path("/content/clone_repeat_protein")
+try:
+    import google.colab  # noqa: F401
+except ImportError:
+    running_in_colab = repository_dir.parent.is_dir()
+else:
+    running_in_colab = True
+
+if running_in_colab:
+    if (repository_dir / ".git").is_dir():
+        subprocess.run(
+            ["git", "-C", str(repository_dir), "fetch", "--depth=1", "origin", repository_ref],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repository_dir), "checkout", "--detach", "FETCH_HEAD"],
+            check=True,
+        )
+    else:
         subprocess.run([
             "git", "clone", "--branch", repository_ref, "--single-branch",
             "https://github.com/Wenzhao-protein/clone_repeat_protein",
-            "/content/clone_repeat_protein",
+            str(repository_dir),
         ], check=True)
-    os.chdir("/content/clone_repeat_protein")
+    os.chdir(repository_dir)
     subprocess.run([sys.executable, "-m", "pip", "install", "-e", ".[notebooks,optimization]"], check=True)
+    source_dir = str(repository_dir / "src")
+    if source_dir not in sys.path:
+        sys.path.insert(0, source_dir)
+    for module_name in tuple(sys.modules):
+        if module_name == "hurdler" or module_name.startswith("hurdler."):
+            del sys.modules[module_name]
+    importlib.invalidate_caches()
+elif importlib.util.find_spec("hurdler") is None:
+    raise RuntimeError(
+        "HURDLER is not installed. In Colab, run this initialization cell; "
+        "locally, install the project with python -m pip install -e ."
+    )
+
+hurdler_package = importlib.import_module("hurdler")
+print(f"HURDLER ready: {Path(hurdler_package.__file__).resolve()}")
 '''
 
 
