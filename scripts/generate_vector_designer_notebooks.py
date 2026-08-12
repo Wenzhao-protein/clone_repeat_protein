@@ -23,6 +23,11 @@ Workflow: enter/confirm sequence → query all allowed RE pairs → inspect
 `RE pair → plasmid profile → cut scheme → restoration/silencing` → select a
 route → optionally optimize → use live IDT complexity scoring or export Bulk
 Input files. IDT is used only for scoring, never for codon optimization.
+
+**Colab users:** choose **Runtime → Run all** once.  The implementation cells
+are shown as compact forms by default; double-click a form header or choose
+**Show code** to inspect the underlying Python.  After initialization, use the
+displayed fields, menus, checkboxes, and buttons from top to bottom.
 """
 
 
@@ -87,6 +92,20 @@ def _csv_tuple(value):
 
 state = {"query_result": None}
 
+split_inputs = widgets.VBox([widgets.HBox([n_cap, copies, c_cap]), module])
+full_inputs = widgets.VBox([
+    full_protein,
+    widgets.HTML("Confirm the inferred 1-based repeat coordinates before querying."),
+    widgets.HBox([repeat_start, repeat_end, repeat_period]),
+])
+
+def _sync_input_mode(_=None):
+    split_inputs.layout.display = "" if input_mode.value == "split" else "none"
+    full_inputs.layout.display = "" if input_mode.value == "full" else "none"
+
+input_mode.observe(_sync_input_mode, names="value")
+_sync_input_mode()
+
 def _current_query():
     return CompatibilityQuery(
         schema_version=DESIGN_SCHEMA_VERSION_V2,
@@ -130,10 +149,10 @@ def _run_query(_=None):
 query_button.on_click(_run_query)
 display(widgets.VBox([
     input_mode,
-    widgets.HBox([n_cap, copies, c_cap]), module,
-    full_protein, widgets.HBox([repeat_start, repeat_end, repeat_period]),
+    split_inputs, full_inputs,
     widgets.HBox([site_i_allow, site_ii_allow, site_iii_allow]), plasmid_allow,
-    widgets.HBox([allow_left, allow_right]), query_button, query_output, route_choice,
+    widgets.HBox([allow_left, allow_right]), query_button, query_output,
+    widgets.HTML("<h3>Confirm one HURDLER RE-pair/vector route</h3>"), route_choice,
 ]))
 '''
 
@@ -163,7 +182,32 @@ weights = widgets.Textarea(value=json.dumps({
 }, sort_keys=True), description="GA weights", layout=widgets.Layout(width="95%", height="130px"))
 output_dir = widgets.Text(value="output/interactive_vector_aware_design", description="Output")
 run_button = widgets.Button(description="2. Optimize / export", button_style="success")
+download_button = widgets.Button(description="Download design bundle", icon="download")
+download_button.layout.display = "none"
 run_output = widgets.Output()
+credential_controls = widgets.VBox([])
+path_credentials = widgets.VBox([credential_path])
+manual_credentials = widgets.VBox([
+    widgets.HBox([client_id, client_secret]),
+    widgets.HBox([username, password]), access_token,
+])
+upload_credentials = widgets.VBox([credential_upload])
+
+def _sync_credential_mode(_=None):
+    path_credentials.layout.display = "" if credential_mode.value == "path" else "none"
+    manual_credentials.layout.display = "" if credential_mode.value == "manual" else "none"
+    upload_credentials.layout.display = "" if credential_mode.value == "upload" else "none"
+
+def _sync_validation_mode(_=None):
+    credential_controls.layout.display = "" if validation_mode.value == "api" else "none"
+
+credential_controls.children = (
+    credential_mode, path_credentials, manual_credentials, upload_credentials,
+)
+credential_mode.observe(_sync_credential_mode, names="value")
+validation_mode.observe(_sync_validation_mode, names="value")
+_sync_credential_mode()
+_sync_validation_mode()
 
 def _configure_credentials():
     if validation_mode.value != "api":
@@ -219,17 +263,32 @@ def _run_design(_=None):
         )
         result = design_construct_v2(request, idt_scorer=scorer)
         files = write_design_outputs_v2(result, output_dir.value)
+        state["design_files"] = files
         print(result.status, "—", result.message)
         display(pd.DataFrame(result.primary_fragments))
         display(pd.DataFrame(result.cloning_steps))
         print(files)
+        download_button.layout.display = ""
+
+def _download_design(_=None):
+    import shutil
+    source = Path(output_dir.value)
+    if not source.is_dir():
+        raise FileNotFoundError("Run the design step before downloading files")
+    archive = Path(shutil.make_archive(str(source), "zip", source))
+    if "COLAB_RELEASE_TAG" in os.environ:
+        from google.colab import files as colab_files
+        colab_files.download(str(archive))
+    else:
+        with run_output:
+            print(f"Design bundle: {archive.resolve()}")
 
 run_button.on_click(_run_design)
+download_button.on_click(_download_design)
 display(widgets.VBox([
-    validation_mode, credential_mode, credential_path,
-    widgets.HBox([client_id, client_secret]), widgets.HBox([username, password]), access_token, credential_upload,
+    validation_mode, credential_controls,
     widgets.HBox([population, max_copies, mutation]), widgets.HBox([crossover, elite]), widgets.HBox([seed, auto_feedback]),
-    weights, output_dir, run_button, run_output,
+    weights, output_dir, run_button, download_button, run_output,
 ]))
 '''
 
@@ -273,18 +332,87 @@ if "COLAB_RELEASE_TAG" in os.environ:
 '''
 
 
+def _code_cell(
+    source: str,
+    *,
+    colab: bool,
+    cell_id: str,
+    title: str,
+    tags: list[str] | None = None,
+):
+    if colab:
+        source = f"#@title {title}\n" + source
+    cell = nbf.v4.new_code_cell(source)
+    cell.metadata["id"] = cell_id
+    if tags:
+        cell.metadata["tags"] = tags
+    if colab:
+        cell.metadata["cellView"] = "form"
+        cell.metadata["colab"] = {}
+    return cell
+
+
 def notebook(*, colab: bool = False):
     nb = nbf.v4.new_notebook()
     nb.metadata = {
         "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
         "language_info": {"name": "python", "version": "3.11"},
     }
-    cells = [nbf.v4.new_markdown_cell(INTRO)]
+    intro = nbf.v4.new_markdown_cell(INTRO)
+    intro.metadata["id"] = "hurdler-introduction"
+    cells = [intro]
     if colab:
-        cells.append(nbf.v4.new_code_cell(COLAB_BOOTSTRAP))
-    parameters = nbf.v4.new_code_cell(PARAMETERS)
-    parameters.metadata["tags"] = ["parameters"]
-    cells.extend([parameters, nbf.v4.new_code_cell(IMPORTS), nbf.v4.new_markdown_cell("## 1. Protein and RE-pair/vector query"), nbf.v4.new_code_cell(WIDGETS), nbf.v4.new_markdown_cell("## 2. Optional optimization, live IDT scoring, or Bulk Input export"), nbf.v4.new_code_cell(OPTIMIZER), nbf.v4.new_code_cell(SMOKE)])
+        cells.append(
+            _code_cell(
+                COLAB_BOOTSTRAP,
+                colab=True,
+                cell_id="hurdler-initialize",
+                title="0. Initialize HURDLER (run once)",
+            )
+        )
+    cells.extend(
+        [
+            _code_cell(
+                PARAMETERS,
+                colab=colab,
+                cell_id="hurdler-parameters",
+                title="Notebook defaults",
+                tags=["parameters"],
+            ),
+            _code_cell(
+                IMPORTS,
+                colab=colab,
+                cell_id="hurdler-imports",
+                title="Load the HURDLER design engine",
+            ),
+            nbf.v4.new_markdown_cell(
+                "## 1. Enter a protein, query RE pairs, and confirm a route"
+            ),
+            _code_cell(
+                WIDGETS,
+                colab=colab,
+                cell_id="hurdler-query-controls",
+                title="Protein and RE-pair/vector controls",
+            ),
+            nbf.v4.new_markdown_cell(
+                "## 2. Optional codon optimization and IDT scoring/export"
+            ),
+            _code_cell(
+                OPTIMIZER,
+                colab=colab,
+                cell_id="hurdler-optimization-controls",
+                title="GA, IDT, and file export controls",
+            ),
+            _code_cell(
+                SMOKE,
+                colab=colab,
+                cell_id="hurdler-headless-smoke",
+                title="Automated validation hook (normally inactive)",
+            ),
+        ]
+    )
+    for index, cell in enumerate(cells):
+        cell.metadata.setdefault("id", f"hurdler-cell-{index:02d}")
     for cell in cells:
         if cell.cell_type == "code":
             cell.execution_count = None

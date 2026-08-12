@@ -1,8 +1,8 @@
 # Interactive workflows
 
 1. [`01_interactive_hurdler_designer.ipynb`](01_interactive_hurdler_designer.ipynb) — Jupyter interface for split or exact full-protein input, 776 protein-level RE pairs, eight annotated plasmid profiles/four cut schemes, restoration/silencing review, GA controls, live IDT scoring or Bulk Input export.
-2. [`02_colab_hurdler_designer.ipynb`](02_colab_hurdler_designer.ipynb) — [open the current branch directly in Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb); it clones and installs this exact review branch before presenting the same credential-safe widgets.
-3. [`../../apps/hurdler_designer.py`](../../apps/hurdler_designer.py) — [open the browser app in Codespaces](https://codespaces.new/Wenzhao-protein/clone_repeat_protein?quickstart=1&ref=agent%2Fvector-aware-designer-v2), or run it locally with `hurdler web`; computation and credentials remain in the active user runtime.
+2. [`02_colab_hurdler_designer.ipynb`](02_colab_hurdler_designer.ipynb) — [open the current branch directly in Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb); it clones and installs this exact review branch before presenting credential-safe form controls with code hidden by default.
+3. [`../../apps/hurdler_designer.py`](../../apps/hurdler_designer.py) — run the browser app locally with `./scripts/start_hurdler_web.sh`; computation and credentials remain on the user's machine.
 
 The entries are thin layers over `hurdler.vector_design`. They do not run DSSP,
 Foldseek, or structure prediction. The plasmid-independent lookup is committed

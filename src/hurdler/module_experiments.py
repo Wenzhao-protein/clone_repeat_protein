@@ -8,7 +8,9 @@ inputs required by the reporting notebook.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import io
 import json
 from pathlib import Path
 from typing import Any, Iterable
@@ -709,30 +711,37 @@ def plot_maximum_copy_scatter(
     plt.close(figure)
 
 
+def _open_audit_text(source: Path):
+    if source.suffix == ".gz":
+        return gzip.open(source, "rt", encoding="utf-8")
+    return source.open("r", encoding="utf-8")
+
+
 def _load_idt_audits(paths: Iterable[str | Path]) -> tuple[list[dict[str, Any]], set[str]]:
     records: dict[str, dict[str, Any]] = {}
     for source in (Path(path) for path in paths):
         if not source.is_file():
             raise FileNotFoundError(f"IDT audit file does not exist: {source}")
-        for line_number, line in enumerate(source.read_text().splitlines(), start=1):
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Invalid IDT audit JSON at {source}:{line_number}"
-                ) from exc
-            response_sha = str(
-                record.get("response_sha256")
-                or record.get("summary", {}).get("idt_response_sha256")
-                or ""
-            )
-            if len(response_sha) != 64:
-                raise ValueError(
-                    f"IDT audit record lacks a SHA256 at {source}:{line_number}"
+        with _open_audit_text(source) as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Invalid IDT audit JSON at {source}:{line_number}"
+                    ) from exc
+                response_sha = str(
+                    record.get("response_sha256")
+                    or record.get("summary", {}).get("idt_response_sha256")
+                    or ""
                 )
-            records.setdefault(response_sha, record)
+                if len(response_sha) != 64:
+                    raise ValueError(
+                        f"IDT audit record lacks a SHA256 at {source}:{line_number}"
+                    )
+                records.setdefault(response_sha, record)
     return list(records.values()), set(records)
 
 
@@ -1028,20 +1037,35 @@ def finalize_adaptive_copy_results(
 
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
+    compact_results = results.drop(
+        columns=["adaptive_search_trace_json"], errors="ignore"
+    )
     for name, frame in (
-        ("maximum_copy_results", results),
+        ("maximum_copy_results", compact_results),
         ("adaptive_copy_search_trace", traces),
         ("adaptive_copy_validation", validation),
         ("module_final_summary", summary),
     ):
         frame.to_parquet(destination / f"{name}.parquet", index=False)
-        frame.to_csv(destination / f"{name}.csv", index=False)
+    # The validation CSV is compact enough for manual review.  Large result,
+    # trace, and summary CSV mirrors are deliberately not generated.
+    validation.to_csv(destination / "adaptive_copy_validation.csv", index=False)
 
-    with (destination / "idt_audit_records.jsonl").open("w") as handle:
-        for record in sorted(
-            audit_records, key=lambda item: str(item.get("response_sha256", ""))
-        ):
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    audit_output = destination / "idt_audit_records.jsonl.gz"
+    with audit_output.open("wb") as raw_handle:
+        with gzip.GzipFile(
+            filename="",
+            mode="wb",
+            fileobj=raw_handle,
+            compresslevel=6,
+            mtime=0,
+        ) as compressed_handle:
+            with io.TextIOWrapper(compressed_handle, encoding="utf-8") as handle:
+                for record in sorted(
+                    audit_records,
+                    key=lambda item: str(item.get("response_sha256", "")),
+                ):
+                    handle.write(json.dumps(record, sort_keys=True) + "\n")
     with (destination / "optimized_constructs.fasta").open("w") as dna_handle, (
         destination / "optimized_constructs.protein.fasta"
     ).open("w") as protein_handle:
@@ -1072,6 +1096,13 @@ def finalize_adaptive_copy_results(
         "compatibility_rows": len(compatibility),
         "accepted_rows": int(validation.validation_passed.sum()),
         "idt_audit_records": len(audit_records),
+        "artifacts": {
+            "maximum_copy_results": "maximum_copy_results.parquet",
+            "adaptive_copy_search_trace": "adaptive_copy_search_trace.parquet",
+            "adaptive_copy_validation": "adaptive_copy_validation.parquet",
+            "module_final_summary": "module_final_summary.parquet",
+            "idt_audit": "idt_audit_records.jsonl.gz",
+        },
         "status_counts": results.get(
             "optimization_status", pd.Series(dtype=str)
         )

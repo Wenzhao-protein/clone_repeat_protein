@@ -431,6 +431,13 @@ def test_adaptive_finalizer_validates_translation_sites_idt_and_proof(tmp_path):
     assert trace.generations.eq(100).all()
     assert len(finalized) == 2
     assert len(summary) == 2
+    compact = pd.read_parquet(tmp_path / "final/maximum_copy_results.parquet")
+    assert "adaptive_search_trace_json" not in compact
+    assert len(pd.read_parquet(tmp_path / "final/adaptive_copy_search_trace.parquet")) == 2
+    assert (tmp_path / "final/idt_audit_records.jsonl.gz").stat().st_size > 0
+    assert not (tmp_path / "final/maximum_copy_results.csv").exists()
+    assert not (tmp_path / "final/adaptive_copy_search_trace.csv").exists()
+    assert not (tmp_path / "final/module_final_summary.csv").exists()
     assert (tmp_path / "final/optimized_constructs.fasta").stat().st_size > 0
     assert (tmp_path / "final/maximum_verified_repeat_copies.png").stat().st_size > 0
 

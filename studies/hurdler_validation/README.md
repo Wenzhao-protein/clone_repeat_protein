@@ -14,6 +14,14 @@ Raw module, structure, Foldseek, GA, and IDT audit shards are written to the
 shared `/net/scratch` mirror. Compact finalized tables, FASTA files, figures,
 executed notebooks, HTML reports, and run manifests are promoted to `/home`.
 
+Completed active Stage-1/Stage-2 production shards are removed only after the
+finalized-table integrity gate passes. The authoritative cleanup record is
+[`DIGS_CLEANUP_MANIFEST.json`](DIGS_CLEANUP_MANIFEST.json): it preserves result
+hashes, row counts, IDT audit hashes, Slurm job IDs, deleted sizes, and exact
+regeneration commands. Stage-2 search traces are normalized in Parquet rather
+than duplicated inside every maximum-result row; raw IDT responses are retained
+as a validated `jsonl.gz` audit artifact.
+
 Stages:
 
 1. `step01_reference_lookup`: hash reference inputs and build the sparse index.

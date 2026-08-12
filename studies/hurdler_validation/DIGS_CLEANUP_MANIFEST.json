@@ -1,0 +1,286 @@
+{
+  "compaction": {
+    "after_bytes": 36716950,
+    "before_bytes": 473836660,
+    "embedded_trace_removed": true,
+    "sha256": "a1ba4f0589da1a716484b3d3939011182fdee5df840be419e241896d8953a470"
+  },
+  "completed_unix_time": 1786504455.7025652,
+  "corpus_version": "expanded-middle-repeatsdb-foldseek-v1",
+  "created_unix_time": 1786504368.7108064,
+  "deleted": [
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 3131064140,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/maximum_copy_results.csv"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 1997470300,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/adaptive_copy_search_trace.csv"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 123354300,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/module_final_summary.csv"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 54338953,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/module_compatibility.csv"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 2664285465,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/idt_audit_records.jsonl"
+    },
+    {
+      "files": 384,
+      "kind": "directory",
+      "logical_bytes": 232541332,
+      "path": "$SCRATCH/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/raw"
+    },
+    {
+      "files": 56632,
+      "kind": "directory",
+      "logical_bytes": 9781509708,
+      "path": "$SCRATCH/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/raw"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 8192,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/finalize.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 528384,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/production.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 8192,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/smoke.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 8192,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/smoke_compact.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 8192,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/finalize_authoritative.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 8192,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/prepare.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 8192,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/prepare_compact.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 8192,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/prepare_group4.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 25776128,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/production.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 663552,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/recovery_authoritative_cycle1.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 17367040,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/recovery_final.state"
+    },
+    {
+      "files": 1,
+      "kind": "file",
+      "logical_bytes": 4186112,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/recovery_overload.state"
+    }
+  ],
+  "deleted_files": 57033,
+  "deleted_logical_bytes": 18033142758,
+  "idt_audit": {
+    "compressed_bytes": 191492566,
+    "compressed_sha256": "dc32ad970be3d39614d2f3bdaea8ee32d7b5eb23068568b47870b1da3d216199",
+    "path": "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/idt_audit_records.jsonl.gz",
+    "records": 546608,
+    "referenced_accepted_response_hashes": 10288,
+    "uncompressed_sha256": "219811059d5b1af123de36f8f44236a5d1fd0aa111766adee3d6e60c9c515a88",
+    "unique_response_hashes": 546608
+  },
+  "recovery_commands": [
+    "cd $REPO && python scripts/create_module_experiment_tasks.py stage1 --catalog $REPO/studies/hurdler_validation/step03_module_corpus/tables/expanded-middle-repeatsdb-foldseek-v1/module_catalog.parquet --run-dir $REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility --scratch-run-dir $SCRATCH/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility --final-output-dir $REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1 --shards 128",
+    "cd $REPO && python scripts/create_module_experiment_tasks.py stage2 --compatibility $REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/module_compatibility.parquet --run-dir $REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive --scratch-run-dir $SCRATCH/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive --final-output-dir $REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1 --modules-per-task 4"
+  ],
+  "retained_results": {
+    "$REPO/data/results/natural_designed_repeat_protein_hurdler_idt.csv": {
+      "bytes": 99297520,
+      "sha256": "19e83de1257b22cb9c6f5828da4a733ee8dcf8854cae30c340141d08e68ad1a9"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/adaptive_copy_search_trace.parquet": {
+      "bytes": 249239160,
+      "sha256": "de53598b346d1bb1a781419eedc2c1b42bd54496a6a7763e98a7c454a0fbe2e5"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/adaptive_copy_validation.parquet": {
+      "bytes": 644988,
+      "sha256": "a296efefb59d410e413fee5af41f261ccc40a0c50383285836d00eb7fc1bc775"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/maximum_copy_results.parquet": {
+      "bytes": 36716950,
+      "sha256": "a1ba4f0589da1a716484b3d3939011182fdee5df840be419e241896d8953a470"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/module_compatibility.parquet": {
+      "bytes": 13975461,
+      "sha256": "5ed7239e8a27785e93dc0efc48b5eb3f2838d69e41f803a288317d4fb9c79333"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/module_compatibility_candidates.parquet": {
+      "bytes": 168924835,
+      "sha256": "494b1b1511c3809d82ef3250eb59b57b6393f601632138e44a0a16417196a32b"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/module_final_summary.parquet": {
+      "bytes": 30908213,
+      "sha256": "205a4c792e71d670da3b48ad2c0461438de8843dd6000f27383ff00123c04776"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/optimized_constructs.fasta": {
+      "bytes": 36460449,
+      "sha256": "6a2218375bbf718aaef07e79a312eec4d79a6d079760ce2392c0bf467d5e864d"
+    },
+    "$REPO/studies/hurdler_validation/step04_module_optimization/tables/expanded-middle-repeatsdb-foldseek-v1/optimized_constructs.protein.fasta": {
+      "bytes": 14112966,
+      "sha256": "d9b244f6fbfa24455dbcc4b8afa49b4b570e2c3bb8b30ad04177cd07a4bccac1"
+    }
+  },
+  "schema_version": "digs-cleanup-manifest-v1",
+  "status": "passed",
+  "taskrunner_states": [
+    {
+      "bytes": 8192,
+      "job_id": 17503421,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/finalize.state",
+      "sha256": "ce3f551efb7102bc1b58503517fb1bef470a16e9b32291ffa3ecd87d8e427c62"
+    },
+    {
+      "bytes": 528384,
+      "job_id": 17503171,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/production.state",
+      "sha256": "7dc1cd1e743c3e8a71a02917e2fbef6c73ea1f29e4d8380b8acca940d787ce71"
+    },
+    {
+      "bytes": 8192,
+      "job_id": 17503069,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/smoke.state",
+      "sha256": "d621d911932e643b05b10247291c35a51cbb9892cc6989973540c77e010f951f"
+    },
+    {
+      "bytes": 8192,
+      "job_id": 17503129,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run101_expanded_stage1_compatibility/taskfiles/smoke_compact.state",
+      "sha256": "9524a0e5a8ab58be92069346356f0af140739b4d464088d352064d55efe3efe3"
+    },
+    {
+      "bytes": 8192,
+      "job_id": 17572290,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/finalize_authoritative.state",
+      "sha256": "5582ab5946b22c8987c835beefc9b55d43a7e7894894f2da0d070d6788fcd19a"
+    },
+    {
+      "bytes": 8192,
+      "job_id": 17504363,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/prepare.state",
+      "sha256": "0bd73ddb79bdac20102fb5e9c2a21a6a0ffa5fa8a0420ab6b4aed64e02554849"
+    },
+    {
+      "bytes": 8192,
+      "job_id": 17504804,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/prepare_compact.state",
+      "sha256": "60cc776607878d1734b5b723f0cf54dd456e2dddf829be85243b56c0b704bfeb"
+    },
+    {
+      "bytes": 8192,
+      "job_id": 17504919,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/prepare_group4.state",
+      "sha256": "ba4de958c48cfa944e7acb60e394c7b9cb17901ce3c76cdcbef7e33662d8bc68"
+    },
+    {
+      "bytes": 25776128,
+      "job_id": 17506750,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/production.state",
+      "sha256": "17d03c1cc92932d1fa0451986b0bae29c292fa836954f1d8bb475d998e6f6878"
+    },
+    {
+      "bytes": 663552,
+      "job_id": 17552832,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/recovery_authoritative_cycle1.state",
+      "sha256": "ab340aced6a104e617b47cba57da51eeb84909cc5f02fe8704382854156f8a82"
+    },
+    {
+      "bytes": 17367040,
+      "job_id": 17516073,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/recovery_final.state",
+      "sha256": "cf75a82659b4eca303e847b5008438c815cb34c928ff080b5d5bee652c22ef87"
+    },
+    {
+      "bytes": 4186112,
+      "job_id": 17509203,
+      "path": "$REPO/studies/hurdler_validation/step04_module_optimization/runs/run103_expanded_stage2_adaptive/taskfiles/recovery_overload.state",
+      "sha256": "86cba3f88831c83419a36cf6186075e1623e1a1c35c30ab2d15206cb39a1fa1d"
+    }
+  ],
+  "validation": {
+    "accepted": 48163,
+    "compatible": 25168,
+    "invalid_accepted_rows": 0,
+    "invalid_capacity_proofs": 0,
+    "missing_next_copy_100_generation_proofs": 0,
+    "module_capacity_results": 50336,
+    "modules": 26095,
+    "no_two_copy_capacity": 2,
+    "public_csv_rows": 26095,
+    "summary_rows": 26095,
+    "trace_rows": 806726,
+    "translated_accepted_rows": 48163,
+    "unique_module_capacity_results": 50336
+  },
+  "validation_after_cleanup": {
+    "accepted": 48163,
+    "compatible": 25168,
+    "invalid_accepted_rows": 0,
+    "invalid_capacity_proofs": 0,
+    "missing_next_copy_100_generation_proofs": 0,
+    "module_capacity_results": 50336,
+    "modules": 26095,
+    "no_two_copy_capacity": 2,
+    "public_csv_rows": 26095,
+    "summary_rows": 26095,
+    "trace_rows": 806726,
+    "translated_accepted_rows": 48163,
+    "unique_module_capacity_results": 50336
+  }
+}

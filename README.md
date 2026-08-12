@@ -1,28 +1,40 @@
 # HURDLER repeat-protein cloning
 
-**[Repeat-protein results CSV](data/results/natural_designed_repeat_protein_hurdler_idt.csv) · [Notebooks](notebooks/README.md) · [Open the current preview in Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) · [Open the web designer in Codespaces](https://codespaces.new/Wenzhao-protein/clone_repeat_protein?quickstart=1&ref=agent%2Fvector-aware-designer-v2) · [Command-line workflows](#install-and-test)**
+**[Open the current preview in Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) · [Run the local web designer](#local-web-designer)**
 
 [![Open current preview in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb)
-[![Open web designer in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Wenzhao-protein/clone_repeat_protein?quickstart=1&ref=agent%2Fvector-aware-designer-v2)
 
 ## Test in a browser
 
 - **Colab:** use the badge above to open the review branch immediately. The
   notebook clones that exact branch, installs the locked project extras, and
-  exposes the full vector-aware workflow. After this branch is merged, the
+  exposes the full vector-aware workflow as compact forms. Choose
+  **Runtime → Run all**, then work through the input fields and menus; code is
+  hidden by default and can be inspected by double-clicking a form header.
+  After this branch is merged, the
   permanent [main-branch Colab link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb)
   provides the same entry point.
-- **Web page:** use the Codespaces badge. The checked-in dev-container installs
-  HURDLER and starts the Marimo designer on forwarded port 2718 automatically.
-  If the preview does not open, run
-  `hurdler web --host 0.0.0.0 --port 2718 --no-browser` in the browser terminal,
-  then open port **2718** from the **Ports** panel.
-- **Local browser:** clone the repository, run
-  `pip install -e ".[notebooks,optimization]"`, then run `hurdler web`.
+- **Local browser:** follow the commands below. The final script starts the
+  Marimo app on `127.0.0.1:2718` and opens it in your browser.
 
-All three interfaces use the same `hurdler.vector_design` implementation.
-Credentials and IDT scoring stay inside the active Colab, Codespaces, or local
-process; the software produces design files only and never submits an order.
+Both interfaces use the same `hurdler.vector_design` implementation.
+Credentials and IDT scoring stay inside the active Colab or local process; the
+software produces design files only and never submits an order.
+
+## Local web designer
+
+```bash
+git clone https://github.com/Wenzhao-protein/clone_repeat_protein.git
+cd clone_repeat_protein
+conda env create -f envs/hurdler.yml
+conda activate hurdler
+python -m pip install -e ".[notebooks,optimization]"
+./scripts/start_hurdler_web.sh
+```
+
+The launcher checks that the active Python environment contains HURDLER and
+Marimo before starting. Advanced users can select another port or suppress the
+browser launch with `--port PORT` or `--no-browser`.
 
 The public [Natural/Designed repeat-protein result catalog](data/results/README.md)
 contains one manually searchable row for every active middle module. It includes

@@ -32,14 +32,33 @@ def test_notebook_source_is_output_free_and_has_no_widget_state():
     assert ".config/hurdler/idt.env" not in text
 
 
+def test_colab_cells_are_named_hidden_forms():
+    payload = json.loads(COLAB_NOTEBOOK.read_text())
+    ids = []
+    for cell in payload["cells"]:
+        cell_id = cell.get("metadata", {}).get("id")
+        assert cell_id
+        ids.append(cell_id)
+        if cell["cell_type"] != "code":
+            continue
+        assert cell["metadata"]["cellView"] == "form"
+        assert cell["metadata"]["colab"] == {}
+        assert "".join(cell["source"]).startswith("#@title ")
+        assert cell.get("outputs", []) == []
+        assert cell.get("execution_count") is None
+    assert len(ids) == len(set(ids))
+
+
 def test_readme_notebook_links_resolve():
     assert NOTEBOOK.is_file()
     assert COLAB_NOTEBOOK.is_file()
     assert (ROOT / "apps" / "hurdler_designer.py").is_file()
+    assert (ROOT / "scripts" / "start_hurdler_web.sh").is_file()
     assert (ROOT / "notebooks" / "README.md").is_file()
-    assert "notebooks/workflows/01_interactive_hurdler_designer.ipynb" in (
-        ROOT / "README.md"
-    ).read_text()
+    readme = (ROOT / "README.md").read_text()
+    assert "notebooks/workflows/01_interactive_hurdler_designer.ipynb" in readme
+    assert "./scripts/start_hurdler_web.sh" in readme
+    assert "codespaces" not in readme.lower()
 
 
 def test_bundled_index_checksum_manifest():
@@ -84,10 +103,13 @@ def test_unversioned_v1_request_requires_explicit_compatibility_flag(tmp_path):
         )
 
 
-def test_notebook_headless_mock_executes_clean_kernel(tmp_path, monkeypatch):
+@pytest.mark.parametrize("notebook_path", [NOTEBOOK, COLAB_NOTEBOOK])
+def test_notebook_headless_mock_executes_clean_kernel(
+    tmp_path, monkeypatch, notebook_path
+):
     monkeypatch.setenv("HURDLER_NOTEBOOK_SMOKE", "1")
     monkeypatch.setenv("HURDLER_NOTEBOOK_SMOKE_OUTPUT", str(tmp_path / "design"))
-    notebook = nbformat.read(NOTEBOOK, as_version=4)
+    notebook = nbformat.read(notebook_path, as_version=4)
     executed = NotebookClient(
         notebook,
         timeout=180,
