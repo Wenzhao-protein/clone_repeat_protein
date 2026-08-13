@@ -189,6 +189,7 @@ class DesignRequestV2:
     max_crossover_rate: float = 0.95
     max_weight_multiplier: float = 1024.0
     max_purchase_bp: int = GBLOCK_MAX_BP
+    ga_workers: int = 1
 
     def __post_init__(self) -> None:
         if self.schema_version != DESIGN_SCHEMA_VERSION_V2:
@@ -204,6 +205,10 @@ class DesignRequestV2:
             )
         if int(self.population_size) < 2:
             raise ValueError("population_size must be at least two")
+        if isinstance(self.ga_workers, bool) or not isinstance(self.ga_workers, int):
+            raise ValueError("ga_workers must be a positive integer")
+        if self.ga_workers < 1:
+            raise ValueError("ga_workers must be a positive integer")
         if isinstance(self.minimum_secondary_copies, bool) or not isinstance(
             self.minimum_secondary_copies, int
         ):
@@ -786,6 +791,7 @@ def _evaluate_split_copy_count(
         elite_fraction=request.elite_fraction,
         progress_callback=progress_callback,
         progress_context={"fragment_kind": "legacy_whole_construct", "copies": copy_count},
+        ga_workers=request.ga_workers,
     )
     if translate_dna(refined) != protein:
         raise AssertionError("Adaptive GA changed the exact target protein")
@@ -1303,6 +1309,7 @@ def _rdl_fragment_attempt(
             "mutation_rate": active_mutation,
             "crossover_rate": active_crossover,
         },
+        ga_workers=request.ga_workers,
     )
     if translate_dna(refined) != protein:
         raise AssertionError("RDL fragment GA changed the exact target protein")
@@ -2328,6 +2335,7 @@ def design_construct_v2(
             mutation_rate=request.mutation_rate,
             crossover_rate=request.crossover_rate,
             elite_fraction=request.elite_fraction,
+            ga_workers=request.ga_workers,
         )
         if translate_dna(refined) != protein:
             raise AssertionError("GA changed the exact target protein")
@@ -2488,6 +2496,7 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         ),
         "minimum_secondary_copies": result.request.get("minimum_secondary_copies"),
         "maximum_secondary_copies": result.request.get("maximum_secondary_copies"),
+        "ga_workers": result.request.get("ga_workers", 1),
         "query_fingerprint": hashlib.sha256(
             json.dumps(result.request.get("query", {}), sort_keys=True).encode()
         ).hexdigest(),

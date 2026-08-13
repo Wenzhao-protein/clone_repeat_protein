@@ -53,6 +53,46 @@ def test_ga_refinement_preserves_translation_and_selected_site_limits():
     assert metrics["ga_repeated_re_site_excess_removed"] >= 0
 
 
+def test_spawn_parallel_fitness_is_deterministic_for_1_2_4_and_16_workers():
+    original = "GCA" * 24
+    weights = {"GCG": 1.0, "GCC": 1.0, "GCA": 1.0, "GCT": 1.0}
+    outputs = []
+    for workers in (1, 2, 4, 16):
+        refined, metrics = genetic_refine_dna(
+            original,
+            locked_positions={0, 23},
+            selected_site_limits={"GCAGCA": 0},
+            recognition_sites=("GCAGCA", "GCGGCG"),
+            codon_weights=weights,
+            seed=8675309,
+            population_size=24,
+            generations=3,
+            mutation_rate=0.08,
+            crossover_rate=0.75,
+            elite_fraction=0.15,
+            ga_workers=workers,
+        )
+        comparable = {
+            key: value
+            for key, value in metrics.items()
+            if key not in {
+                "ga_workers",
+                "ga_parallel_backend",
+                "ga_worker_process_count_observed",
+            }
+        }
+        outputs.append((refined, comparable))
+        assert metrics["ga_parallel_backend"] == (
+            "serial" if workers == 1 else "spawn_process_pool"
+        )
+        if workers > 1:
+            assert metrics["ga_worker_process_count_observed"] >= 1
+    assert all(output == outputs[0] for output in outputs[1:])
+    assert translate_dna(outputs[0][0]) == "A" * 24
+    assert outputs[0][0][:3] == original[:3]
+    assert outputs[0][0][-3:] == original[-3:]
+
+
 def test_warm_start_ga_retains_ranked_elites_and_continues_generation_count():
     original = "GCA" * 12
     weights = {"GCG": 1.0, "GCC": 1.0, "GCA": 1.0, "GCT": 1.0}

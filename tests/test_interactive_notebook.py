@@ -149,6 +149,14 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert "_clear_credential_upload()" in controller
     assert "write_secondary_checkpoint" in _colab_cell_source("hurdler-imports")
     assert "timestamped_results_archive" in _colab_cell_source("hurdler-imports")
+    assert "create_external_ga_bundle" in _colab_cell_source("hurdler-imports")
+    assert 'description="Run GA in Colab"' in controller
+    assert 'description="Export local / Slurm GA bundle"' in controller
+    assert 'value=16, min=1, max=1024, description="GA worker CPUs"' in controller
+    assert 'value=32, min=1, max=1_048_576, description="Total memory (GB)"' in controller
+    assert 'value="24:00:00", description="Walltime"' in controller
+    assert 'value="cpu", description="Partition"' in controller
+    assert 'value="~/.config/hurdler/idt.env"' in controller
     assert "CircularGraphicRecord" in _colab_cell_source("hurdler-imports")
 
 
@@ -240,6 +248,41 @@ def test_colab_form_edit_invalidates_confirmed_route(colab_runtime_namespace):
     namespace["n_cap_widget"].value = "MM"
     assert namespace["state"]["confirmed_route"] is None
     assert namespace["design_button"].disabled is True
+
+
+def test_colab_external_bundle_freezes_request_and_is_invalidated_by_ga_edits(
+    tmp_path, colab_runtime_namespace
+):
+    namespace = colab_runtime_namespace
+    assert namespace["export_bundle_button"].disabled is True
+    _confirm_first_colab_route(namespace)
+    assert namespace["export_bundle_button"].disabled is False
+    namespace["validation_mode_widget"].value = "batch"
+    namespace["output_directory_widget"].value = str(tmp_path / "runtime")
+    namespace["external_worker_cpus"].value = 4
+    namespace["external_memory_gb"].value = 12
+    namespace["external_walltime"].value = "02:30:00"
+    namespace["external_partition"].value = "cpu"
+    namespace["secondary_search_mode_widget"].value = "bounded"
+    namespace["minimum_secondary_number"].value = 3
+    namespace["maximum_secondary_number"].value = 7
+    namespace["_export_external_bundle"]()
+    assert namespace["state"]["external_bundle_error"] is None, namespace["state"]["external_bundle_error"]
+    bundle = Path(namespace["state"]["external_bundle"])
+    assert bundle.is_file()
+    with zipfile.ZipFile(bundle) as archive:
+        request = json.loads(archive.read("request.json"))
+        script = archive.read("run_ga.sh").decode()
+    assert request["ga_workers"] == 4
+    assert request["minimum_secondary_copies"] == 3
+    assert request["maximum_secondary_copies"] == 7
+    assert request["query"]["max_restoration_length_bp"] == 100
+    assert "#SBATCH --cpus-per-task=4" in script
+    assert "#SBATCH --mem=12G" in script
+    assert "#SBATCH --time=02:30:00" in script
+    assert "--idt-credential-file" not in script
+    namespace["population_number"].value = int(namespace["population_number"].value) + 4
+    assert namespace["state"]["external_bundle"] is None
 
 
 def test_colab_secrets_prefers_access_token_and_clears_environment(colab_runtime_namespace):

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -50,6 +52,8 @@ from .idt import (
     configure_idt_credentials,
     load_idt_credentials,
 )
+from .design_artifacts import timestamped_results_archive, write_secondary_checkpoint
+from .progress import DesignProgressEvent
 from .index import PatternIndex, build_pattern_index
 from .io import write_json_atomic
 from .protein_index import ProteinPatternIndex, build_protein_pattern_index
@@ -481,9 +485,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--idt-credential-file",
         type=Path,
         default=IDT_CREDENTIAL_PATH,
-        help="Repo-external mode-600 env file; used only when request.optimize is true",
+        help="Repo-external mode-600 env file; used only for validation_mode=api",
     )
     design.add_argument("--auth-method", choices=["password", "access_token"], default=None)
+    design.add_argument("--progress-jsonl", type=Path)
+    design.add_argument("--checkpoint-zip", type=Path)
+    design.add_argument("--checkpoint-interval-seconds", type=float, default=180.0)
+    design.add_argument("--final-archive-dir", type=Path)
+    design.add_argument("--fail-on-nonaccepted", action="store_true")
     design.add_argument(
         "--legacy-v1",
         action="store_true",
@@ -491,6 +500,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     design.add_argument("--protein-index-dir", type=Path, default=bundled_protein_index_dir())
     design.add_argument("--plasmid-reference", type=Path, default=bundled_plasmid_reference_path())
+
+    idt_preflight = subparsers.add_parser(
+        "idt-preflight",
+        help="Validate external IDT credentials and one fixed 125-bp complexity call",
+    )
+    idt_preflight.add_argument(
+        "--idt-credential-file", type=Path, default=IDT_CREDENTIAL_PATH
+    )
+    idt_preflight.add_argument(
+        "--auth-method", choices=["password", "access_token"], default=None
+    )
 
     design_query_parser = subparsers.add_parser(
         "design-query", help="Enumerate protein RE pairs and annotation-safe vector cut routes"
@@ -904,12 +924,102 @@ def main(argv: list[str] | None = None) -> int:
         if args.output:
             write_json_atomic(query_result.to_dict(), args.output)
         _print(query_result.to_dict())
+    elif args.command == "idt-preflight":
+        credential_status = configure_idt_credentials(
+            mode="path",
+            path=args.idt_credential_file,
+            auth_method=args.auth_method,
+            headless=True,
+            include_path_in_status=False,
+        )
+        with tempfile.TemporaryDirectory(prefix="hurdler_idt_preflight_") as temporary:
+            scorer = IDTComplexityScorer(Path(temporary) / "idt_preflight_audit.jsonl")
+            summary = scorer.score(
+                "hurdler_preflight_125bp",
+                "ACGT" * 31 + "A",
+            )
+        score = summary.get("idt_complexity_score")
+        if (
+            not isinstance(score, (int, float))
+            or isinstance(score, bool)
+            or not math.isfinite(float(score))
+        ):
+            raise RuntimeError(
+                "IDT preflight response did not contain a finite numeric rule-score sum"
+            )
+        _print(
+            {
+                "status": "passed",
+                "credential_mode": credential_status["credential_mode"],
+                "auth_method": credential_status["auth_method"],
+                "control_length_bp": 125,
+                "numeric_score_received": True,
+                "score_policy": IDT_SCORE_POLICY,
+                "orderability_not_required_for_preflight": True,
+            }
+        )
+        return 0
     elif args.command == "design-construct":
         payload = json.loads(args.request.read_text())
         if payload.get("schema_version") == DESIGN_SCHEMA_VERSION_V2:
             request_v2 = DesignRequestV2.from_dict(payload)
             scorer = None
             credential_status = None
+            progress_path = args.progress_jsonl
+            checkpoint_path = args.checkpoint_zip
+            if args.checkpoint_interval_seconds <= 0:
+                raise ValueError("--checkpoint-interval-seconds must be positive")
+            if progress_path is not None:
+                progress_path.parent.mkdir(parents=True, exist_ok=True)
+                progress_path.touch(exist_ok=True)
+            checkpoint_state: dict[str, object] = {
+                "best": None,
+                "last_write": 0.0,
+                "tested_copies": set(),
+                "status": "starting",
+            }
+
+            def persist_checkpoint(*, force: bool = False) -> None:
+                if checkpoint_path is None:
+                    return
+                now = time.monotonic()
+                if (
+                    not force
+                    and now - float(checkpoint_state["last_write"])
+                    < float(args.checkpoint_interval_seconds)
+                ):
+                    return
+                best = checkpoint_state["best"]
+                payload = dict(best) if isinstance(best, dict) else {
+                    "event": "heartbeat",
+                    "sequence_id": request_v2.query.sequence_id,
+                    "validation_mode": request_v2.validation_mode,
+                    "accepted_secondary_available": False,
+                    "status": checkpoint_state["status"],
+                    "tested_lengths": sorted(checkpoint_state["tested_copies"]),
+                    "failure_reason": "No live-IDT-accepted secondary has been obtained yet",
+                }
+                write_secondary_checkpoint(payload, checkpoint_path)
+                checkpoint_state["last_write"] = now
+
+            def progress_callback(event: DesignProgressEvent) -> None:
+                checkpoint_state["status"] = f"{event.stage}:{event.status}"
+                if event.copies is not None:
+                    checkpoint_state["tested_copies"].add(int(event.copies))
+                if progress_path is not None:
+                    with progress_path.open("a") as handle:
+                        handle.write(json.dumps(event.to_dict(), sort_keys=True) + "\n")
+                persist_checkpoint(force=False)
+
+            def checkpoint_callback(payload: dict) -> None:
+                previous = checkpoint_state["best"]
+                improved = previous is None or int(payload.get("repeat_copies", 0)) > int(
+                    previous.get("repeat_copies", 0)
+                )
+                if improved:
+                    checkpoint_state["best"] = dict(payload)
+                persist_checkpoint(force=improved)
+
             if request_v2.validation_mode == "api":
                 credential_status = configure_idt_credentials(
                     mode="path",
@@ -924,8 +1034,18 @@ def main(argv: list[str] | None = None) -> int:
                 protein_index_dir=args.protein_index_dir,
                 plasmid_reference_path=args.plasmid_reference,
                 idt_scorer=scorer,
+                progress_callback=progress_callback,
+                checkpoint_callback=checkpoint_callback,
             )
             files_v2 = write_design_outputs_v2(result_v2, args.output_dir)
+            persist_checkpoint(force=True)
+            final_archive = None
+            if args.final_archive_dir is not None:
+                final_archive = timestamped_results_archive(
+                    args.output_dir,
+                    args.final_archive_dir,
+                    sequence_id=request_v2.query.sequence_id,
+                )
             _print(
                 {
                     "schema_version": result_v2.schema_version,
@@ -935,9 +1055,17 @@ def main(argv: list[str] | None = None) -> int:
                     "vector_route_count": len(result_v2.vector_routes),
                     "output_files": files_v2,
                     "credential_status": credential_status,
+                    "progress_jsonl": str(progress_path) if progress_path else None,
+                    "checkpoint_zip": str(checkpoint_path) if checkpoint_path else None,
+                    "final_archive": str(final_archive) if final_archive else None,
                 }
             )
-            return 0
+            accepted_statuses = {
+                "idt_accepted",
+                "optimized_unvalidated_batch",
+                "compatible_unoptimized",
+            }
+            return int(args.fail_on_nonaccepted and result_v2.status not in accepted_statuses)
         if not args.legacy_v1:
             raise SystemExit(
                 f"A v2 request must declare schema_version={DESIGN_SCHEMA_VERSION_V2!r}; "

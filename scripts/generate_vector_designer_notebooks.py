@@ -69,7 +69,11 @@ boundary while Site II is re-silenced after ligation.
    repeated RE sites, GC, repeated k-mers, hairpin proxies and codon usage in
    its score. In Live API mode every completed candidate is sent to IDT for
    **complexity scoring only**; HURDLER never uses an IDT optimization result.
-6. Download the UTC-stamped ZIP. It contains purchase FASTA/CSV, IDT and GA
+6. Either run GA inside Colab or export a reproducible Local + Slurm bundle.
+   The external bundle freezes the complete request, exact Git commit, Conda
+   YAML, 16-CPU/32-GB/24-hour defaults, checkpoint commands and an external
+   mode-600 IDT credential path; it never copies credential values.
+7. Download the UTC-stamped result ZIP. It contains purchase FASTA/CSV, IDT and GA
    audits, `step00_plasmid.gb`, every `stepXX_insert.gb` and
    `stepXX_plasmid.gb`, translations, manifests, and static plasmid maps.
 
@@ -82,8 +86,10 @@ The interactive viewer can switch step/molecule, draw plasmids circularly or
 linearly, focus on the cloning region, and show bases/codon translation when
 zoomed. See the [DNA Features Viewer documentation](https://edinburgh-genome-foundry.github.io/DnaFeaturesViewer/index.html).
 
-Credentials are kept only in runtime memory/environment, cleared after use,
+Credentials used inside Colab are kept only in runtime memory/environment, cleared after use,
 and never copied to Drive, GenBank, manifests, notebook output, or ZIP files.
+The external runner independently reads its configured repo-external env file
+on the target machine and performs a live 125-bp IDT API preflight before GA.
 """
 
 
@@ -454,6 +460,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import time
 import traceback
 from dataclasses import asdict, replace
@@ -482,6 +489,7 @@ from hurdler.design_artifacts import (
     timestamped_results_archive,
     write_secondary_checkpoint,
 )
+from hurdler.external_ga import ExternalGAResources, create_external_ga_bundle
 from hurdler.protein_index import ProteinPatternIndex
 from hurdler.progress import DesignProgressEvent
 from hurdler.vector_design import (
@@ -1112,6 +1120,9 @@ state = {
     "best_checkpoint": None,
     "last_checkpoint_write": 0.0,
     "checkpoint_archive": None,
+    "external_bundle": None,
+    "external_bundle_fingerprint": None,
+    "external_bundle_error": None,
 }
 
 query_button = widgets.Button(description="Run / re-run HURDLER query", button_style="primary")
@@ -1246,6 +1257,10 @@ def _invalidate_confirmation(message=""):
     design_button.disabled = True
     download_button.disabled = True
     state["design_result"] = None
+    state["external_bundle"] = None
+    state["external_bundle_fingerprint"] = None
+    if "export_bundle_button" in globals():
+        export_bundle_button.disabled = True
     if "viewer_panel" in globals():
         viewer_panel.layout.display = "none"
     if message:
@@ -1578,6 +1593,7 @@ def _confirm_route(_button=None):
         state["confirmed_fingerprint"] = current
         ga_panel.layout.display = ""
         design_button.disabled = False
+        export_bundle_button.disabled = False
         _update_secondary_lengths()
         display(Markdown(
             f"**Confirmed:** {route['site_i_enzyme']} / {route['site_ii_enzyme']} / "
@@ -1655,6 +1671,24 @@ credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False,
 output_directory_widget = widgets.Text(value="/content/hurdler_runs/current", description="Runtime work folder", layout=widgets.Layout(width="98%"))
 auto_download_widget = widgets.Checkbox(value=True, description="Auto-download ZIP after success")
 verbose_generations = widgets.Checkbox(value=False, description="Show every GA generation in Advanced log")
+
+external_worker_cpus = widgets.BoundedIntText(value=16, min=1, max=1024, description="GA worker CPUs")
+external_memory_gb = widgets.BoundedIntText(value=32, min=1, max=1_048_576, description="Total memory (GB)")
+external_walltime = widgets.Text(value="24:00:00", description="Walltime")
+external_partition = widgets.Text(value="cpu", description="Partition")
+external_account = widgets.Text(value="", description="Account")
+external_qos = widgets.Text(value="", description="QoS")
+external_constraint = widgets.Text(value="", description="Constraint")
+external_conda_environment = widgets.Text(value="hurdler", description="Conda env")
+external_result_directory = widgets.Text(value="results", description="Results folder")
+external_idt_credential_path = widgets.Text(
+    value="~/.config/hurdler/idt.env", description="External IDT env",
+    layout=widgets.Layout(width="98%"),
+)
+external_idt_auth = widgets.Dropdown(
+    options=(("Auto-detect", "auto"), ("Password grant", "password"), ("Access token", "access_token")),
+    value="auto", description="External IDT auth",
+)
 
 population_card, population_number = _numeric_control("Population", 16, 4, 256, 4, integer=True, help_text="Candidates per GA generation; larger values improve exploration but cost time.")
 mutation_card, mutation_number = _numeric_control("Mutation rate", 0.08, 0.001, 0.5, 0.001, help_text="Probability of synonymous codon mutation; higher values explore more aggressively.")
@@ -1786,6 +1820,31 @@ advanced_panel = widgets.VBox([
     _two_per_row(list(weight_widgets.values())),
 ])
 
+external_resource_panel = widgets.Accordion(children=[widgets.VBox([
+    widgets.HTML(
+        "<p><b>Portable Local + Slurm run.</b> These resources apply to the exported bundle. "
+        "Fitness calculations use the requested worker processes; random operations and IDT calls stay serial. "
+        "Account, QoS and constraint are optional and accept scheduler-safe names only.</p>"
+    ),
+    _two_per_row([
+        _help_card("GA worker CPUs", external_worker_cpus, unit="CPUs", default="16", purpose="Parallel fitness workers and Slurm cpus-per-task.", allowed="integer 1–1,024", effect="The external preflight fails if fewer CPUs are available."),
+        _help_card("Total memory", external_memory_gb, unit="GB", default="32", purpose="Total Slurm memory request.", allowed="positive integer", effect="Local mode reports the request; Slurm enforces it."),
+        _help_card("Walltime", external_walltime, unit="HH:MM:SS", default="24:00:00", purpose="Slurm job limit.", allowed="HH:MM:SS or D-HH:MM:SS", effect="The scheduler stops jobs that exceed it."),
+        _help_card("Partition", external_partition, unit="Slurm name", default="cpu", purpose="CPU partition used by sbatch.", allowed="letters, digits, dot, underscore, hyphen", effect="Must exist on the target cluster."),
+    ]),
+    _two_per_row([
+        _help_card("Account", external_account, unit="optional", default="empty", purpose="Optional Slurm billing account.", allowed="safe scheduler name", effect="Adds a structured --account directive."),
+        _help_card("QoS", external_qos, unit="optional", default="empty", purpose="Optional Slurm quality of service.", allowed="safe scheduler name", effect="Adds a structured --qos directive."),
+        _help_card("Constraint", external_constraint, unit="optional", default="empty", purpose="Optional node feature constraint.", allowed="safe scheduler name", effect="Adds a structured --constraint directive."),
+        _help_card("Conda environment", external_conda_environment, unit="name", default="hurdler", purpose="Environment created/activated by run_ga.sh.", allowed="safe environment name", effect="setup uses the bundled YAML."),
+    ]),
+    _help_card("External results folder", external_result_directory, unit="path", default="results", purpose="Stores progress, checkpoint and final archives.", allowed="relative bundle path or absolute shared path", effect="Compute nodes must be able to write it."),
+    _help_card("External IDT env path", external_idt_credential_path, unit="path", default="~/.config/hurdler/idt.env", purpose="Credential file on the target machine; its contents are never copied.", allowed="repo-external owner-only file", effect="Required only for Live API requests."),
+    _help_card("External authentication", external_idt_auth, unit="method", default="auto-detect", purpose="Tells the external preflight which env-file format to require.", allowed="auto, password, access token", effect="Auto accepts exactly one complete credential format."),
+])])
+external_resource_panel.set_title(0, "External Local / Slurm resources")
+external_resource_panel.selected_index = None
+
 
 def _sync_settings(_change=None):
     advanced_panel.layout.display = "" if settings_mode.value == "advanced" else "none"
@@ -1809,8 +1868,12 @@ generation_progress = widgets.IntProgress(value=0, min=0, max=1, description="GA
 current_html = widgets.HTML("")
 attempt_log_html = widgets.HTML("<pre>No attempts yet.</pre>")
 design_output = widgets.Output()
-design_button = widgets.Button(description="Optimize exact target / export", button_style="success", disabled=True)
+design_button = widgets.Button(description="Run GA in Colab", button_style="success", disabled=True)
+export_bundle_button = widgets.Button(
+    description="Export local / Slurm GA bundle", button_style="info", icon="archive", disabled=True
+)
 download_button = widgets.Button(description="Download design ZIP", icon="download", disabled=True)
+external_bundle_output = widgets.Output()
 
 
 def _generation_schedule():
@@ -2000,6 +2063,112 @@ def _configure_api_credentials():
         _clear_credential_upload()
 
 
+def _build_design_request(*, ga_workers):
+    route = state.get("confirmed_route")
+    if route is None:
+        raise RuntimeError("Confirm the RE/plasmid route before creating a GA request")
+    query = _current_query()
+    current = _query_fingerprint(query)
+    if current != state.get("confirmed_fingerprint"):
+        _invalidate_confirmation()
+        raise RuntimeError("Protein/RE/plasmid settings changed; re-run the query and confirm again")
+    minimum_secondary, maximum_secondary = _secondary_bounds()
+    return DesignRequestV2(
+        schema_version=DESIGN_SCHEMA_VERSION_V2,
+        query=query,
+        selection=DesignSelection(
+            route["candidate_id"], route["profile_id"], route["scheme_id"],
+            str(state["confirmed_site_iii"]),
+        ),
+        validation_mode=validation_mode_widget.value,
+        assembly_strategy="exact_reused_secondary_rdl",
+        population_size=int(population_number.value),
+        mutation_rate=float(mutation_number.value),
+        crossover_rate=float(crossover_number.value),
+        elite_fraction=float(elite_number.value),
+        seed=int(seed_number.value),
+        generation_schedule=_generation_schedule(),
+        score_weights={name: float(widget.value) for name, widget in weight_widgets.items()},
+        auto_adjust_weights_from_idt=bool(auto_weight_feedback.value),
+        minimum_secondary_copies=minimum_secondary,
+        maximum_secondary_copies=maximum_secondary,
+        max_idt_feedback_rounds=int(feedback_round_number.value),
+        generations_per_feedback_round=int(generations_per_round_number.value),
+        elite_seed_count=int(elite_seed_number.value),
+        auto_adjust_ga_parameters_from_idt=bool(auto_parameter_feedback.value),
+        max_population_size=int(max_population_number.value),
+        max_mutation_rate=float(max_mutation_number.value),
+        max_crossover_rate=float(max_crossover_number.value),
+        ga_workers=int(ga_workers),
+    )
+
+
+def _bundle_fingerprint(request, resources):
+    payload = {
+        "request": asdict(request),
+        "resources": asdict(resources),
+        "credential_path": external_idt_credential_path.value if request.validation_mode == "api" else None,
+        "auth_method": external_idt_auth.value if request.validation_mode == "api" else None,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _invalidate_external_bundle(_change=None):
+    state["external_bundle"] = None
+    state["external_bundle_fingerprint"] = None
+    state["external_bundle_error"] = None
+
+
+def _export_external_bundle(_button=None):
+    with external_bundle_output:
+        clear_output(wait=True)
+        state["external_bundle_error"] = None
+        try:
+            resources = ExternalGAResources(
+                worker_cpus=int(external_worker_cpus.value),
+                memory_gb=int(external_memory_gb.value),
+                walltime=str(external_walltime.value).strip(),
+                partition=str(external_partition.value).strip(),
+                account=str(external_account.value).strip(),
+                qos=str(external_qos.value).strip(),
+                constraint=str(external_constraint.value).strip(),
+                conda_environment=str(external_conda_environment.value).strip(),
+                result_directory=str(external_result_directory.value).strip(),
+            )
+            request = _build_design_request(ga_workers=resources.worker_cpus)
+            if request.validation_mode == "api" and not external_idt_credential_path.value.strip():
+                raise ValueError("Live IDT mode requires the credential path that will exist on the target machine")
+            commit = subprocess.check_output(
+                ["git", "-C", str(project_root), "rev-parse", "HEAD"], text=True
+            ).strip()
+            bundle_root = Path("/content/hurdler_bundles") if Path("/content").is_dir() else Path(output_directory_widget.value).parent / "bundles"
+            bundle = create_external_ga_bundle(
+                request,
+                bundle_root,
+                repository_commit=commit,
+                environment_file=project_root / "envs" / "hurdler.yml",
+                resources=resources,
+                idt_credential_path=str(external_idt_credential_path.value).strip(),
+                auth_method=str(external_idt_auth.value),
+            )
+            state["external_bundle"] = bundle
+            state["external_bundle_fingerprint"] = _bundle_fingerprint(request, resources)
+            display(Markdown(
+                f"**External GA bundle prepared:** `{bundle.name}`  \n"
+                f"Frozen commit: `{commit}` · workers: `{resources.worker_cpus}` · memory: `{resources.memory_gb} GB`.  \n"
+                "The ZIP contains only the external IDT path/auth method—no credential values."
+            ))
+            try:
+                from google.colab import files as colab_files
+            except ImportError:
+                display(Markdown(f"Bundle path: `{bundle.resolve()}`"))
+            else:
+                colab_files.download(str(bundle))
+        except Exception as exc:
+            state["external_bundle_error"] = f"{type(exc).__name__}: {exc}"
+            display(Markdown(f"**Bundle export failed safely:** `{type(exc).__name__}: {exc}`"))
+
+
 def _download_design(_button=None):
     archive = state.get("archive")
     if archive is None or not Path(archive).is_file():
@@ -2036,10 +2205,6 @@ def _run_design(_button=None):
         clear_output(wait=True)
     try:
         query = _current_query()
-        current = _query_fingerprint(query)
-        if current != state.get("confirmed_fingerprint"):
-            _invalidate_confirmation()
-            raise RuntimeError("Protein/RE/plasmid settings changed; re-run the query and confirm again")
         mode = validation_mode_widget.value
         scorer = None
         output_directory = Path(output_directory_widget.value)
@@ -2050,34 +2215,7 @@ def _run_design(_button=None):
         if mode == "api":
             _configure_api_credentials()
             scorer = IDTComplexityScorer(output_directory / "idt_audit.jsonl")
-        minimum_secondary, maximum_secondary = _secondary_bounds()
-        request = DesignRequestV2(
-            schema_version=DESIGN_SCHEMA_VERSION_V2,
-            query=query,
-            selection=DesignSelection(
-                route["candidate_id"], route["profile_id"], route["scheme_id"],
-                str(state["confirmed_site_iii"]),
-            ),
-            validation_mode=mode,
-            assembly_strategy="exact_reused_secondary_rdl",
-            population_size=int(population_number.value),
-            mutation_rate=float(mutation_number.value),
-            crossover_rate=float(crossover_number.value),
-            elite_fraction=float(elite_number.value),
-            seed=int(seed_number.value),
-            generation_schedule=_generation_schedule(),
-            score_weights={name: float(widget.value) for name, widget in weight_widgets.items()},
-            auto_adjust_weights_from_idt=bool(auto_weight_feedback.value),
-            minimum_secondary_copies=minimum_secondary,
-            maximum_secondary_copies=maximum_secondary,
-            max_idt_feedback_rounds=int(feedback_round_number.value),
-            generations_per_feedback_round=int(generations_per_round_number.value),
-            elite_seed_count=int(elite_seed_number.value),
-            auto_adjust_ga_parameters_from_idt=bool(auto_parameter_feedback.value),
-            max_population_size=int(max_population_number.value),
-            max_mutation_rate=float(max_mutation_number.value),
-            max_crossover_rate=float(max_crossover_number.value),
-        )
+        request = _build_design_request(ga_workers=1)
         result = design_construct_v2(
             request,
             idt_scorer=scorer,
@@ -2121,7 +2259,7 @@ def _run_design(_button=None):
                 display(widgets.HTML("<details><summary>Sanitized traceback</summary><pre>" + traceback.format_exc() + "</pre></details>"))
     finally:
         clear_idt_secret_environment()
-        design_button.description = "Optimize exact target / export"
+        design_button.description = "Run GA in Colab"
         design_button.disabled = state.get("confirmed_route") is None
 
 
@@ -2291,7 +2429,23 @@ viewer_render_button.on_click(_render_viewer)
 
 
 design_button.on_click(_run_design)
+export_bundle_button.on_click(_export_external_bundle)
 download_button.on_click(_download_design)
+
+for ga_bundle_widget in (
+    validation_mode_widget, secondary_search_mode_widget,
+    minimum_secondary_number, maximum_secondary_number,
+    population_number, mutation_number, crossover_number, elite_number,
+    feedback_round_number, generations_per_round_number, elite_seed_number,
+    max_population_number, max_mutation_number, max_crossover_number,
+    seed_number, generation_schedule_widget, auto_weight_feedback,
+    auto_parameter_feedback, external_worker_cpus, external_memory_gb,
+    external_walltime, external_partition, external_account, external_qos,
+    external_constraint, external_conda_environment, external_result_directory,
+    external_idt_credential_path, external_idt_auth,
+    *weight_widgets.values(),
+):
+    ga_bundle_widget.observe(_invalidate_external_bundle, names="value")
 
 credential_upload_row = widgets.HBox([credential_path, credential_upload])
 basic_panel = widgets.VBox([
@@ -2308,10 +2462,11 @@ basic_panel = widgets.VBox([
     _help_card("Runtime work folder", output_directory_widget, unit="path", default="/content/hurdler_runs/current", purpose="Stores active computation and complete uncompressed outputs.", allowed="runtime path", effect="Drive mode still computes here and copies only ZIP archives."),
 ])
 ga_panel = widgets.VBox([
-    basic_panel, advanced_panel,
+    basic_panel, advanced_panel, external_resource_panel,
     widgets.HTML("<h3>Live progress</h3>"), stage_html, generation_progress,
     current_html, attempt_log_html,
-    widgets.HBox([design_button, download_button]), design_output, viewer_panel,
+    widgets.HBox([design_button, export_bundle_button, download_button]),
+    external_bundle_output, design_output, viewer_panel,
 ])
 ga_panel.layout.display = "none"
 secondary_search_mode_widget.observe(_update_secondary_lengths, names="value")
@@ -2367,7 +2522,7 @@ COLAB_VECTOR_ROUTE_PANEL = r'''display(widgets.VBox([
 
 
 COLAB_GA_PANEL = r'''display(widgets.VBox([
-    widgets.HTML("<h2>7. GA, IDT scoring, progress, and export</h2>"),
+    widgets.HTML("<h2>7. Run in Colab or export a Local / Slurm GA bundle</h2>"),
     widgets.HTML("This panel remains hidden until an RE/plasmid route is confirmed."),
     ga_panel,
 ]))'''

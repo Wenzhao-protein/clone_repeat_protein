@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+import hurdler.cli as cli
+
 from hurdler.idt import (
     ACCESS_TOKEN_ENV,
     REQUIRED_CREDENTIAL_ENV,
@@ -162,3 +164,36 @@ def test_path_status_can_omit_the_actual_path(tmp_path):
         include_path_in_status=False,
     )
     assert "credential_path" not in status
+
+
+def test_idt_preflight_cli_requires_a_parseable_numeric_score(monkeypatch, tmp_path, capsys):
+    credential = _secure(tmp_path / "idt.env", "IDT_ACCESS_TOKEN=never-printed\n")
+    monkeypatch.setattr(
+        cli,
+        "configure_idt_credentials",
+        lambda **_kwargs: {"credential_mode": "path", "auth_method": "access_token"},
+    )
+
+    class Scorer:
+        def __init__(self, _path):
+            pass
+
+        def score(self, name, sequence):
+            assert name == "hurdler_preflight_125bp"
+            assert len(sequence) == 125
+            return {"idt_complexity_score": 17.5}
+
+    monkeypatch.setattr(cli, "IDTComplexityScorer", Scorer)
+    assert cli.main(["idt-preflight", "--idt-credential-file", str(credential)]) == 0
+    output = capsys.readouterr().out
+    assert '"status": "passed"' in output
+    assert "never-printed" not in output
+    assert "17.5" not in output
+
+    class UnclassifiedScorer(Scorer):
+        def score(self, name, sequence):
+            return {"idt_complexity_score": None}
+
+    monkeypatch.setattr(cli, "IDTComplexityScorer", UnclassifiedScorer)
+    with pytest.raises(RuntimeError, match="finite numeric"):
+        cli.main(["idt-preflight", "--idt-credential-file", str(credential)])

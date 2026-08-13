@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+import multiprocessing
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -58,6 +61,41 @@ GA_SCORE_PROFILE = {
 
 IDT_FEEDBACK_MULTIPLIER = 2.0
 GA_RE_SITE_POLICY = "nonselected-re-sites-soft-score-selected-sites-hard-v2"
+
+
+_GA_WORKER_CONTEXT: dict[str, Any] = {}
+
+
+def _initialize_ga_metric_worker(
+    codon_weights: dict[str, float],
+    recognition_sites: tuple[str, ...],
+    selected_site_limits: dict[str, int],
+    score_profile: dict[str, float],
+    idt_feedback_guidance: dict[str, Any],
+) -> None:
+    """Install immutable fitness inputs once in each spawn worker."""
+    global _GA_WORKER_CONTEXT
+    _GA_WORKER_CONTEXT = {
+        "codon_weights": codon_weights,
+        "recognition_sites": recognition_sites,
+        "selected_site_limits": selected_site_limits,
+        "score_profile": score_profile,
+        "idt_feedback_guidance": idt_feedback_guidance,
+    }
+
+
+def _ga_metric_worker(sequence: str) -> tuple[str, dict[str, Any], int]:
+    """Evaluate one candidate without random state or network access."""
+    context = _GA_WORKER_CONTEXT
+    metrics = ga_sequence_metrics(
+        sequence,
+        context["codon_weights"],
+        context["recognition_sites"],
+        context["selected_site_limits"],
+        score_profile=context["score_profile"],
+        idt_feedback_guidance=context["idt_feedback_guidance"],
+    )
+    return sequence, metrics, os.getpid()
 
 
 @dataclass
@@ -615,10 +653,13 @@ def genetic_refine_dna(
     capture_population_state: bool = False,
     progress_callback: ProgressCallback | None = None,
     progress_context: dict[str, Any] | None = None,
+    ga_workers: int = 1,
 ) -> tuple[str, dict[str, Any]]:
     """Refine synonymous codons with the RE-repeat term in every fitness call."""
     if translate_dna(dna) == "":
         raise ValueError("DNA cannot be empty")
+    if isinstance(ga_workers, bool) or not isinstance(ga_workers, int) or ga_workers < 1:
+        raise ValueError("ga_workers must be a positive integer")
     protein = translate_dna(dna)
     codons = [dna[index : index + 3] for index in range(0, len(dna), 3)]
     repaired = _repair_site_limits(
@@ -672,6 +713,22 @@ def genetic_refine_dna(
                 idt_feedback_guidance=guidance,
             )
         return cache[sequence]
+
+    worker_process_ids: set[int] = set()
+
+    def serial_metrics_many(sequences: Sequence[str]) -> None:
+        for sequence in sorted(set(sequences)):
+            metrics(sequence)
+
+    def parallel_metrics_many(
+        sequences: Sequence[str], executor: ProcessPoolExecutor
+    ) -> None:
+        missing = [sequence for sequence in sorted(set(sequences)) if sequence not in cache]
+        if not missing:
+            return
+        for sequence, row, worker_pid in executor.map(_ga_metric_worker, missing):
+            cache[sequence] = row
+            worker_process_ids.add(int(worker_pid))
 
     def mutate(sequence: str, rate: float) -> str:
         child = [sequence[index : index + 3] for index in range(0, len(sequence), 3)]
@@ -734,44 +791,65 @@ def genetic_refine_dna(
         population.append(mutate(parent, max(mutation_rate, 0.03)))
     initial_metrics = metrics(dna)
     best = repaired
-    for _generation in range(generations):
-        population = sorted(
-            set(population),
-            key=lambda sequence: (metrics(sequence)["ga_score"], sequence),
-        )
-        if metrics(population[0])["ga_score"] < metrics(best)["ga_score"]:
-            best = population[0]
-        parents = population[: max(2, min(elite_seed_count, len(population)))]
-        elite_count = max(1, min(len(parents), round(population_size * float(elite_fraction))))
-        next_population = parents[:elite_count]
-        while len(next_population) < population_size:
-            first, second = rng.choice(parents, size=2, replace=True)
-            first_codons = [first[index : index + 3] for index in range(0, len(first), 3)]
-            second_codons = [second[index : index + 3] for index in range(0, len(second), 3)]
-            if rng.random() < float(crossover_rate):
-                mask = rng.random(len(codons)) < 0.5
-                child = "".join(
-                    first_codons[position] if mask[position] else second_codons[position]
-                    for position in range(len(codons))
-                )
-            else:
-                child = str(first)
-            next_population.append(mutate(child, mutation_rate))
-        population = next_population
-        current = metrics(best)
-        emit_progress(
-            progress_callback,
-            stage="ga",
-            status="running",
-            generations=int(generations),
-            generation=int(_generation + 1),
-            ga_score=float(current["ga_score"]),
-            selected_pair_re_site_excess=int(
-                current.get("selected_pair_re_site_excess", current["selected_re_site_excess"])
+    def run_generations(evaluate_many: Callable[[Sequence[str]], None]) -> None:
+        nonlocal population, best
+        for _generation in range(generations):
+            evaluate_many([*population, best])
+            population = sorted(
+                set(population),
+                key=lambda sequence: (metrics(sequence)["ga_score"], sequence),
+            )
+            if metrics(population[0])["ga_score"] < metrics(best)["ga_score"]:
+                best = population[0]
+            parents = population[: max(2, min(elite_seed_count, len(population)))]
+            elite_count = max(1, min(len(parents), round(population_size * float(elite_fraction))))
+            next_population = parents[:elite_count]
+            while len(next_population) < population_size:
+                first, second = rng.choice(parents, size=2, replace=True)
+                first_codons = [first[index : index + 3] for index in range(0, len(first), 3)]
+                second_codons = [second[index : index + 3] for index in range(0, len(second), 3)]
+                if rng.random() < float(crossover_rate):
+                    mask = rng.random(len(codons)) < 0.5
+                    child = "".join(
+                        first_codons[position] if mask[position] else second_codons[position]
+                        for position in range(len(codons))
+                    )
+                else:
+                    child = str(first)
+                next_population.append(mutate(child, mutation_rate))
+            population = next_population
+            current = metrics(best)
+            emit_progress(
+                progress_callback,
+                stage="ga",
+                status="running",
+                generations=int(generations),
+                generation=int(_generation + 1),
+                ga_score=float(current["ga_score"]),
+                selected_pair_re_site_excess=int(
+                    current.get("selected_pair_re_site_excess", current["selected_re_site_excess"])
+                ),
+                elapsed_seconds=time.monotonic() - started,
+                **context,
+            )
+
+    if ga_workers == 1:
+        run_generations(serial_metrics_many)
+    else:
+        spawn_context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(
+            max_workers=ga_workers,
+            mp_context=spawn_context,
+            initializer=_initialize_ga_metric_worker,
+            initargs=(
+                codon_weights,
+                recognition_sites,
+                selected_site_limits,
+                profile,
+                guidance,
             ),
-            elapsed_seconds=time.monotonic() - started,
-            **context,
-        )
+        ) as executor:
+            run_generations(lambda sequences: parallel_metrics_many(sequences, executor))
     ranked_population = sorted(
         set([best, *population]),
         key=lambda sequence: (metrics(sequence)["ga_score"], sequence),
@@ -804,6 +882,9 @@ def genetic_refine_dna(
             "ga_mutation_rate": float(mutation_rate),
             "ga_crossover_rate": float(crossover_rate),
             "ga_elite_fraction": float(elite_fraction),
+            "ga_workers": int(ga_workers),
+            "ga_parallel_backend": "spawn_process_pool" if ga_workers > 1 else "serial",
+            "ga_worker_process_count_observed": len(worker_process_ids),
             "ga_score_profile_json": json.dumps(profile, sort_keys=True),
             **repeat_aware_metrics,
         }
