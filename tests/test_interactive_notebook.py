@@ -136,6 +136,9 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert "Select all plasmids" in sources["hurdler-controller-v2"]
     assert "enzyme_checkboxes" in sources["hurdler-controller-v2"]
     assert "plasmid_checkboxes" in sources["hurdler-controller-v2"]
+    assert "Advanced route filters" in sources["hurdler-controller-v2"]
+    assert 'value=100' in sources["hurdler-controller-v2"]
+    assert "max_restoration_length_bp=int(max_restoration_length_widget.value)" in sources["hurdler-controller-v2"]
     assert "widgets.GridBox" in sources["hurdler-controller-v2"]
     assert "hurdler-enzyme-selector" in sources
     assert "hurdler-plasmid-selector" in sources
@@ -176,7 +179,12 @@ def test_colab_run_all_queries_but_never_auto_confirms_rank_one(colab_runtime_na
     state = colab_runtime_namespace["state"]
     assert state["query_result"].status == "compatible_unoptimized"
     assert len(state["query_result"].protein_candidates) == 770
-    assert len(state["query_result"].vector_routes) == 3072
+    assert len(state["query_result"].vector_routes) == 1001
+    assert all(
+        row["restoration_length_bp"] <= 100
+        for row in state["query_result"].vector_routes
+    )
+    assert state["query_result"].request["max_restoration_length_bp"] == 100
     assert state["confirmed_route"] is None
     assert colab_runtime_namespace["pair_choice"].value is None
     assert colab_runtime_namespace["site_iii_choice"].value is None
@@ -300,6 +308,55 @@ def test_colab_shared_enzyme_and_plasmid_select_all_none_controls(colab_runtime_
     assert namespace["plasmid_bulk_control"].value == "all"
 
 
+def test_colab_live_support_cards_match_joint_filtered_routes(colab_runtime_namespace):
+    namespace = colab_runtime_namespace
+    result = namespace["state"]["query_result"]
+    routes = result.vector_routes
+    summary = namespace["enzyme_route_support"].value
+    assert summary == namespace["plasmid_route_support"].value
+    assert f"Supported RE pairs:</b> {len({(row['site_i_enzyme'], row['site_ii_enzyme']) for row in routes}):,}" in summary
+    assert f"Available Site III:</b> {len({enzyme for row in routes for enzyme in row['site_iii_options']}):,}" in summary
+    assert f"Supported plasmids:</b> {len({row['profile_id'] for row in routes}):,}" in summary
+    assert f"Minimum restore:</b> {min(row['restoration_length_bp'] for row in routes)} bp" in summary
+
+
+def test_colab_restore_limit_refilters_cache_and_invalidates_confirmation(
+    colab_runtime_namespace,
+):
+    namespace = colab_runtime_namespace
+    _confirm_first_colab_route(namespace)
+    universe = namespace["state"]["route_universe"]
+    assert namespace["state"]["confirmed_route"] is not None
+
+    namespace["max_restoration_length_widget"].value = 0
+    result = namespace["state"]["query_result"]
+    assert namespace["state"]["route_universe"] is universe
+    assert namespace["state"]["confirmed_route"] is None
+    assert namespace["ga_panel"].layout.display == "none"
+    assert result.request["max_restoration_length_bp"] == 0
+    assert result.vector_routes
+    assert all(row["restoration_length_bp"] == 0 for row in result.vector_routes)
+
+
+def test_colab_joint_re_pair_and_unsupported_plasmid_reports_zero(
+    colab_runtime_namespace,
+):
+    namespace = colab_runtime_namespace
+    namespace["_set_no_enzymes"]()
+    for enzyme in ("AflII", "BglII", "BbsI"):
+        namespace["enzyme_checkboxes"][enzyme].value = True
+    namespace["_set_no_plasmids"]()
+    namespace["plasmid_checkboxes"]["pET-21a(+)"].value = True
+
+    assert namespace["state"]["query_result"].status == "no_vector_route"
+    summary = namespace["enzyme_route_support"].value
+    assert summary == namespace["plasmid_route_support"].value
+    assert "Supported RE pairs:</b> 0" in summary
+    assert "Available Site III:</b> 0" in summary
+    assert "Supported plasmids:</b> 0" in summary
+    assert "Minimum restore:</b> —" in summary
+
+
 @pytest.mark.parametrize(
     ("module", "expected_status"),
     [("WWWWWW", "no_hurdler_pair_match"), ("YSPTSPS", "no_vector_route")],
@@ -348,6 +405,9 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
     assert summary["idt_audit"] == []
     assert summary["rdl_plan"]["secondary_repeat_copies"] >= 12
     assert summary["rdl_plan"]["minimum_secondary_satisfied"] is True
+    assert summary["request"]["query"]["max_restoration_length_bp"] == 100
+    manifest = json.loads((tmp_path / "batch" / "run_manifest.json").read_text())
+    assert manifest["max_restoration_length_bp"] == 100
     assert (tmp_path / "batch" / "rdl_plan.json").is_file()
     assert (tmp_path / "batch" / "secondary_fragments.csv").is_file()
     assert (tmp_path / "batch" / "idt_bulk_input.csv").is_file()

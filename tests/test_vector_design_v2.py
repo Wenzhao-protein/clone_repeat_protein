@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 
 import pytest
 
@@ -17,12 +18,14 @@ from hurdler.progress import DesignProgressEvent
 from hurdler.vector_design import (
     DESIGN_SCHEMA_VERSION_V2,
     CompatibilityQuery,
+    DesignRouteUniverse,
     DesignRequestV2,
     DesignSelection,
     _exact_split_boundary,
     _adapt_ga_parameters_from_idt,
     _idt_feedback_guidance,
     _merge_idt_feedback_guidance,
+    filter_route_universe,
     design_construct_v2,
     design_query,
 )
@@ -150,6 +153,79 @@ def _compatible_query() -> CompatibilityQuery:
         repeat_module="ACDEFGHIKLMNPQRSTVWY",
         repeat_copies=3,
     )
+
+
+def _restoration_filter_universe() -> DesignRouteUniverse:
+    candidate = {
+        "candidate_id": "candidate-1",
+        "site_i_enzyme": "SiteI",
+        "site_ii_enzyme": "SiteII",
+        "site_iii_options": ["SiteIII"],
+    }
+    route_common = {
+        "candidate_id": "candidate-1",
+        "profile_id": "plasmid-1",
+        "site_i_enzyme": "SiteI",
+        "site_ii_enzyme": "SiteII",
+        "site_iii_options": ["SiteIII"],
+    }
+    return DesignRouteUniverse(
+        confirmed_boundary={"period": 6},
+        protein_candidates=[candidate],
+        vector_routes=[
+            {
+                **route_common,
+                "scheme_id": "unmodified-101",
+                "restoration_length_bp": 101,
+                "cutter_reuse": False,
+            },
+            {
+                **route_common,
+                "scheme_id": "fallback-100",
+                "restoration_length_bp": 100,
+                "cutter_reuse": True,
+            },
+        ],
+        final_protein_sequence="ACDEFGACDEFG",
+    )
+
+
+def test_restoration_limit_is_inclusive_and_precedes_cutter_reuse_fallback():
+    query = replace(_compatible_query(), max_restoration_length_bp=100)
+    result = filter_route_universe(_restoration_filter_universe(), query)
+    assert result.status == "compatible_unoptimized"
+    assert [row["scheme_id"] for row in result.vector_routes] == ["fallback-100"]
+    assert result.request["max_restoration_length_bp"] == 100
+
+    unbounded = filter_route_universe(
+        _restoration_filter_universe(), replace(query, max_restoration_length_bp=None)
+    )
+    assert [row["scheme_id"] for row in unbounded.vector_routes] == ["unmodified-101"]
+
+
+def test_restoration_limit_zero_and_all_routes_filtered_message():
+    query = replace(_compatible_query(), max_restoration_length_bp=0)
+    result = filter_route_universe(_restoration_filter_universe(), query)
+    assert result.status == "no_vector_route"
+    assert result.vector_routes == []
+    assert "all require restoration longer than 0 bp" in result.message
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, True, "100"])
+def test_restoration_limit_rejects_negative_or_non_integer_values(value):
+    with pytest.raises(ValueError, match="non-negative integer"):
+        replace(_compatible_query(), max_restoration_length_bp=value)
+
+
+def test_compatibility_query_missing_restoration_limit_remains_unbounded():
+    payload = {
+        "schema_version": DESIGN_SCHEMA_VERSION_V2,
+        "input_mode": "split",
+        "sequence_id": "legacy_request",
+        "repeat_module": "ACDEFG",
+        "repeat_copies": 2,
+    }
+    assert CompatibilityQuery.from_dict(payload).max_restoration_length_bp is None
 
 
 def test_query_is_protein_first_and_returns_pair_to_profile_to_scheme_routes():

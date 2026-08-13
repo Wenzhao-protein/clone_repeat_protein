@@ -438,7 +438,7 @@ import os
 import shutil
 import time
 import traceback
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pandas as pd
@@ -462,8 +462,10 @@ from hurdler.vector_design import (
     CompatibilityQuery,
     DesignRequestV2,
     DesignSelection,
+    build_route_universe,
     design_construct_v2,
     design_query,
+    filter_route_universe,
     bundled_protein_index_dir,
     write_design_outputs_v2,
 )
@@ -907,6 +909,23 @@ plasmid_bulk_control = widgets.ToggleButtons(
     button_style="",
 )
 plasmid_selection_status = widgets.HTML()
+enzyme_route_support = widgets.HTML()
+plasmid_route_support = widgets.HTML()
+
+max_restoration_length_widget = widgets.IntText(
+    value=100,
+    description="Max restore (bp)",
+    layout=widgets.Layout(width="320px"),
+)
+advanced_route_filters = widgets.Accordion(children=[widgets.VBox([
+    widgets.HTML(
+        "Keep only routes whose combined left + right restoration sequence is "
+        "at most this many base pairs. The limit is inclusive."
+    ),
+    max_restoration_length_widget,
+])])
+advanced_route_filters.set_title(0, "Advanced route filters")
+advanced_route_filters.selected_index = None
 
 _selection_sync = {"enzymes": False, "plasmids": False}
 
@@ -919,6 +938,8 @@ state = {
     "design_files": None,
     "archive": None,
     "progress_events": [],
+    "route_universe": None,
+    "route_universe_fingerprint": None,
 }
 
 query_button = widgets.Button(description="Run / re-run HURDLER query", button_style="primary")
@@ -943,11 +964,15 @@ confirm_button = widgets.Button(description="Confirm RE / plasmid route", button
 route_output = widgets.Output()
 
 
-def _selected_role_enzymes(role):
+def _chosen_role_enzymes(role):
     selected = {
         name for name, checkbox in enzyme_checkboxes.items() if checkbox.value
     }
-    values = tuple(name for name in enzyme_roles[role] if name in selected)
+    return tuple(name for name in enzyme_roles[role] if name in selected)
+
+
+def _selected_role_enzymes(role):
+    values = _chosen_role_enzymes(role)
     if not values:
         raise ValueError(f"Select at least one enzyme eligible for {role.replace('_', ' ').title()}")
     return values
@@ -962,16 +987,24 @@ def _selected_plasmids():
     return selected
 
 
-def _current_query():
+def _form_query(
+    *,
+    site_i_allowlist,
+    site_ii_allowlist,
+    site_iii_allowlist,
+    plasmid_allowlist,
+    max_restoration_length_bp,
+):
     common = dict(
         schema_version=DESIGN_SCHEMA_VERSION_V2,
         sequence_id=str(sequence_id).strip() or "interactive_design",
-        site_i_allowlist=_selected_role_enzymes("site_i"),
-        site_ii_allowlist=_selected_role_enzymes("site_ii"),
-        site_iii_allowlist=_selected_role_enzymes("site_iii"),
-        plasmid_allowlist=_selected_plasmids(),
+        site_i_allowlist=site_i_allowlist,
+        site_ii_allowlist=site_ii_allowlist,
+        site_iii_allowlist=site_iii_allowlist,
+        plasmid_allowlist=plasmid_allowlist,
         allow_left_cutter_in_hurdler_pair=bool(allow_left_cutter_in_hurdler_pair),
         allow_right_cutter_in_hurdler_pair=bool(allow_right_cutter_in_hurdler_pair),
+        max_restoration_length_bp=max_restoration_length_bp,
     )
     if input_mode == "N-cap + repeat module + C-cap":
         return CompatibilityQuery(
@@ -995,9 +1028,41 @@ def _current_query():
     )
 
 
+def _current_query():
+    return _form_query(
+        site_i_allowlist=_selected_role_enzymes("site_i"),
+        site_ii_allowlist=_selected_role_enzymes("site_ii"),
+        site_iii_allowlist=_selected_role_enzymes("site_iii"),
+        plasmid_allowlist=_selected_plasmids(),
+        max_restoration_length_bp=int(max_restoration_length_widget.value),
+    )
+
+
+def _universe_query():
+    return _form_query(
+        site_i_allowlist=(),
+        site_ii_allowlist=(),
+        site_iii_allowlist=(),
+        plasmid_allowlist=(),
+        max_restoration_length_bp=None,
+    )
+
+
 def _query_fingerprint(query):
     payload = json.dumps(asdict(query), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _ensure_route_universe():
+    query = _universe_query()
+    fingerprint = _query_fingerprint(query)
+    if (
+        state.get("route_universe") is None
+        or state.get("route_universe_fingerprint") != fingerprint
+    ):
+        state["route_universe"] = build_route_universe(query, protein_index=protein_index)
+        state["route_universe_fingerprint"] = fingerprint
+    return state["route_universe"]
 
 
 def _invalidate_confirmation(message=""):
@@ -1015,8 +1080,7 @@ def _invalidate_confirmation(message=""):
 
 
 def _selection_changed(_change=None):
-    if state.get("confirmed_route") is not None:
-        _invalidate_confirmation("**Selection changed. Re-run the query and confirm a new route.**")
+    _refresh_live_support()
 
 
 def _selection_mode(boxes):
@@ -1097,6 +1161,124 @@ def _set_no_plasmids(_button=None):
     _set_selection_group("plasmids", False)
 
 
+def _reset_route_selectors():
+    pair_choice.options = [("No supported pair under the current filters", None)]
+    pair_choice.value = None
+    site_iii_choice.options = [("Choose Site I / II first", None)]
+    site_iii_choice.value = None
+    profile_choice.options = [("Choose all three RE first", None)]
+    profile_choice.value = None
+    scheme_choice.options = [("Choose a plasmid first", None)]
+    scheme_choice.value = None
+
+
+def _support_summary(routes):
+    pairs = {
+        (row["site_i_enzyme"], row["site_ii_enzyme"])
+        for row in routes
+    }
+    site_iii = {
+        enzyme
+        for row in routes
+        for enzyme in row.get("site_iii_options", ())
+    }
+    plasmids = {row["profile_id"] for row in routes}
+    minimum = min(
+        (int(row["restoration_length_bp"]) for row in routes),
+        default=None,
+    )
+    minimum_text = "—" if minimum is None else f"{minimum} bp"
+    return (
+        "<div style='border:1px solid #ddd;padding:7px;margin:5px 0'>"
+        f"<b>Supported RE pairs:</b> {len(pairs):,} &nbsp;·&nbsp; "
+        f"<b>Available Site III:</b> {len(site_iii):,} &nbsp;·&nbsp; "
+        f"<b>Supported plasmids:</b> {len(plasmids):,} &nbsp;·&nbsp; "
+        f"<b>Minimum restore:</b> {minimum_text}"
+        "</div>"
+    )
+
+
+def _set_support_summary(routes):
+    summary = _support_summary(routes)
+    enzyme_route_support.value = summary
+    plasmid_route_support.value = summary
+
+
+def _set_support_error(message):
+    summary = (
+        "<div style='border:1px solid #b31b1b;padding:7px;margin:5px 0'>"
+        f"<b>Route filter error:</b> {message}"
+        "</div>"
+    )
+    enzyme_route_support.value = summary
+    plasmid_route_support.value = summary
+
+
+def _populate_pair_choices(result):
+    if result is None or not result.vector_routes:
+        _reset_route_selectors()
+        return []
+    routes = pd.DataFrame(result.vector_routes)
+    pair_rows = routes.sort_values("rank").drop_duplicates(
+        ["site_i_enzyme", "site_ii_enzyme"]
+    )
+    pairs = [
+        ((row.site_i_enzyme, row.site_ii_enzyme), int(row.rank))
+        for row in pair_rows.itertuples(index=False)
+    ]
+    pair_choice.options = [
+        ("Select Site I / Site II explicitly", None),
+        *((f"#{rank} {pair[0]} / {pair[1]}", pair) for pair, rank in pairs),
+    ]
+    pair_choice.value = None
+    site_iii_choice.options = [("Choose Site I / II first", None)]
+    profile_choice.options = [("Choose all three RE first", None)]
+    scheme_choice.options = [("Choose a plasmid first", None)]
+    return pairs
+
+
+def _refresh_live_support(_change=None):
+    _invalidate_confirmation()
+    selected_roles = {
+        role: _chosen_role_enzymes(role)
+        for role in ("site_i", "site_ii", "site_iii")
+    }
+    selected_plasmids = tuple(
+        name for name in PLASMID_OPTIONS if plasmid_checkboxes[name].value
+    )
+    if not all(selected_roles.values()) or not selected_plasmids:
+        state["query_result"] = None
+        state["query_fingerprint"] = None
+        _populate_pair_choices(None)
+        _set_support_summary([])
+        return None
+    try:
+        query = _form_query(
+            site_i_allowlist=selected_roles["site_i"],
+            site_ii_allowlist=selected_roles["site_ii"],
+            site_iii_allowlist=selected_roles["site_iii"],
+            plasmid_allowlist=selected_plasmids,
+            max_restoration_length_bp=int(max_restoration_length_widget.value),
+        )
+        result = filter_route_universe(_ensure_route_universe(), query)
+    except Exception as exc:
+        state["query_result"] = None
+        state["query_fingerprint"] = None
+        _populate_pair_choices(None)
+        _set_support_error(f"{type(exc).__name__}: {exc}")
+        return None
+    state["query_result"] = result
+    state["query_fingerprint"] = _query_fingerprint(query)
+    _populate_pair_choices(result)
+    _set_support_summary(result.vector_routes)
+    return result
+
+
+def _route_filter_changed(change):
+    if change.get("name") == "value":
+        _refresh_live_support()
+
+
 def _routes_for_pair():
     result = state.get("query_result")
     if result is None or pair_choice.value is None:
@@ -1150,21 +1332,21 @@ def _update_schemes(_change=None):
 def _run_query(_button=None):
     with query_output:
         clear_output(wait=True)
-        _invalidate_confirmation()
-        pair_choice.options = [("Run the query first", None)]
-        site_iii_choice.options = [("Choose Site I / II first", None)]
-        profile_choice.options = [("Choose all three RE first", None)]
-        scheme_choice.options = [("Choose a plasmid first", None)]
         try:
             query = _current_query()
-            result = design_query(query)
+            result = filter_route_universe(_ensure_route_universe(), query)
         except Exception as exc:
             state["query_result"] = None
             state["query_fingerprint"] = None
+            _populate_pair_choices(None)
+            _set_support_summary([])
             display(Markdown(f"**Query input error:** `{type(exc).__name__}: {exc}`"))
             return
+        _invalidate_confirmation()
         state["query_result"] = result
         state["query_fingerprint"] = _query_fingerprint(query)
+        pairs = _populate_pair_choices(result)
+        _set_support_summary(result.vector_routes)
         display(Markdown(f"**Query status:** `{result.status}` — {result.message}"))
         if result.status == "needs_boundary_confirmation" and result.boundary_analysis:
             display(pd.DataFrame(result.boundary_analysis.get("candidates", [])))
@@ -1174,18 +1356,6 @@ def _run_query(_button=None):
             display(Markdown("No annotation-safe vector route is available."))
             return
         routes = pd.DataFrame(result.vector_routes)
-        pair_rows = (
-            routes.sort_values("rank").drop_duplicates(["site_i_enzyme", "site_ii_enzyme"])
-        )
-        pairs = [
-            ((row.site_i_enzyme, row.site_ii_enzyme), int(row.rank))
-            for row in pair_rows.itertuples(index=False)
-        ]
-        pair_choice.options = [
-            ("Select Site I / Site II explicitly", None),
-            *((f"#{rank} {pair[0]} / {pair[1]}", pair) for pair, rank in pairs),
-        ]
-        pair_choice.value = None
         display(Markdown(
             f"**{len(result.protein_candidates):,} protein candidates; "
             f"{len(pairs):,} RE pairs; {len(result.vector_routes):,} vector routes.**"
@@ -1245,6 +1415,7 @@ enzyme_bulk_control.observe(
 plasmid_bulk_control.observe(
     lambda change: _bulk_selection_changed("plasmids", change), names="value"
 )
+max_restoration_length_widget.observe(_route_filter_changed, names="value")
 _refresh_selection_group("enzymes")
 _refresh_selection_group("plasmids")
 pair_choice.observe(_update_site_iii, names="value")
@@ -1623,6 +1794,7 @@ ga_panel = widgets.VBox([
     widgets.HBox([design_button, download_button]), design_output,
 ])
 ga_panel.layout.display = "none"
+_refresh_live_support()
 '''
 
 
@@ -1635,6 +1807,7 @@ COLAB_ENZYME_SELECTOR = r'''display(widgets.VBox([
         f"Each selected enzyme is used only in legal roles.</p>"
     ),
     widgets.HBox([enzyme_bulk_control, enzyme_selection_status]),
+    enzyme_route_support,
     enzyme_checkbox_grid,
 ]))'''
 
@@ -1642,12 +1815,14 @@ COLAB_ENZYME_SELECTOR = r'''display(widgets.VBox([
 COLAB_PLASMID_SELECTOR = r'''display(widgets.VBox([
     widgets.HTML("<h2>3. Select plasmid profiles</h2>"),
     widgets.HBox([plasmid_bulk_control, plasmid_selection_status]),
+    plasmid_route_support,
     plasmid_checkbox_grid,
 ]))'''
 
 
 COLAB_QUERY_PANEL = r'''display(widgets.VBox([
     widgets.HTML("<h2>4. Query protein patterns and annotation-safe vector routes</h2>"),
+    advanced_route_filters,
     query_button, query_output,
 ]))
 _run_query()'''

@@ -106,6 +106,7 @@ class CompatibilityQuery:
     plasmid_allowlist: tuple[str, ...] = ()
     allow_left_cutter_in_hurdler_pair: bool = False
     allow_right_cutter_in_hurdler_pair: bool = False
+    max_restoration_length_bp: int | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != DESIGN_SCHEMA_VERSION_V2:
@@ -121,6 +122,13 @@ class CompatibilityQuery:
             value = getattr(self, name)
             normalized = tuple(part.strip() for part in value.split(",") if part.strip()) if isinstance(value, str) else tuple(str(part).strip() for part in value if str(part).strip())
             object.__setattr__(self, name, normalized)
+        if self.max_restoration_length_bp is not None:
+            if isinstance(self.max_restoration_length_bp, bool) or not isinstance(
+                self.max_restoration_length_bp, int
+            ):
+                raise ValueError("max_restoration_length_bp must be a non-negative integer or None")
+            if self.max_restoration_length_bp < 0:
+                raise ValueError("max_restoration_length_bp must be a non-negative integer or None")
         if self.input_mode == "split":
             if not self.repeat_module:
                 raise ValueError("split input requires repeat_module")
@@ -258,6 +266,23 @@ class DesignResultV2:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class DesignRouteUniverse:
+    """Unranked routes for one protein/boundary and cutter-reuse policy.
+
+    RE role, Site-III, plasmid, and restoration-length selections are applied
+    later by :func:`filter_route_universe`.  Keeping these cheap filters out of
+    enumeration lets interactive clients update support counts without
+    rebuilding the protein index or plasmid schemes.
+    """
+
+    boundary_analysis: dict[str, Any] | None = None
+    confirmed_boundary: dict[str, Any] | None = None
+    protein_candidates: list[dict[str, Any]] = field(default_factory=list)
+    vector_routes: list[dict[str, Any]] = field(default_factory=list)
+    final_protein_sequence: str = ""
 
 
 def bundled_protein_index_dir() -> Path:
@@ -405,6 +430,153 @@ def _scheme_route(
     }
 
 
+def _query_request_payload(query: CompatibilityQuery) -> dict[str, Any]:
+    payload = asdict(query)
+    for key in ("site_i_allowlist", "site_ii_allowlist", "site_iii_allowlist", "plasmid_allowlist"):
+        payload[key] = list(payload[key])
+    return payload
+
+
+def build_route_universe(
+    query: CompatibilityQuery,
+    *,
+    protein_index: ProteinPatternIndex | None = None,
+    protein_index_dir: str | Path | None = None,
+    plasmid_database: PlasmidReferenceDatabase | None = None,
+    plasmid_reference_path: str | Path | None = None,
+) -> DesignRouteUniverse:
+    """Enumerate all selectable routes while retaining cutter-policy constraints."""
+
+    unrestricted = replace(
+        query,
+        site_i_allowlist=(),
+        site_ii_allowlist=(),
+        site_iii_allowlist=(),
+        plasmid_allowlist=(),
+        max_restoration_length_bp=None,
+    )
+    analysis, boundary, units = _query_boundary(unrestricted)
+    if boundary is None:
+        return DesignRouteUniverse(
+            boundary_analysis=analysis,
+        )
+    index = protein_index or ProteinPatternIndex.load(protein_index_dir or bundled_protein_index_dir())
+    candidates = _protein_candidates(units, unrestricted, index)
+    database = plasmid_database or load_plasmid_reference(plasmid_reference_path)
+    routes: list[dict[str, Any]] = []
+    for candidate in candidates:
+        for scheme in database.schemes:
+            route = _scheme_route(database, scheme, candidate, unrestricted)
+            if route is not None:
+                routes.append(route)
+    target = (
+        query.n_cap + query.repeat_module * int(query.repeat_copies) + query.c_cap
+        if query.input_mode == "split"
+        else query.full_protein_sequence
+    )
+    return DesignRouteUniverse(
+        boundary_analysis=analysis,
+        confirmed_boundary=boundary.to_dict(),
+        protein_candidates=candidates,
+        vector_routes=routes,
+        final_protein_sequence=target,
+    )
+
+
+def filter_route_universe(
+    universe: DesignRouteUniverse,
+    query: CompatibilityQuery,
+) -> DesignResultV2:
+    """Apply interactive selections and rank the remaining annotation-safe routes."""
+
+    request_payload = _query_request_payload(query)
+    if universe.confirmed_boundary is None:
+        return DesignResultV2(
+            DESIGN_SCHEMA_VERSION_V2,
+            "needs_boundary_confirmation",
+            "Confirm or edit the 1-based inclusive repeat boundary and period; the full input sequence will not be homogenized.",
+            request_payload,
+            boundary_analysis=universe.boundary_analysis,
+        )
+
+    candidates: list[dict[str, Any]] = []
+    for candidate in universe.protein_candidates:
+        if not _allow(str(candidate["site_i_enzyme"]), query.site_i_allowlist):
+            continue
+        if not _allow(str(candidate["site_ii_enzyme"]), query.site_ii_allowlist):
+            continue
+        site_iii_options = [
+            value
+            for value in candidate["site_iii_options"]
+            if _allow(str(value), query.site_iii_allowlist)
+        ]
+        if not site_iii_options:
+            continue
+        selected = dict(candidate)
+        selected["site_iii_options"] = site_iii_options
+        candidates.append(selected)
+
+    if not candidates:
+        return DesignResultV2(
+            DESIGN_SCHEMA_VERSION_V2,
+            "no_hurdler_pair_match",
+            "No allowed protein-level Site-I/Site-II RE pair matches every required repeat unit.",
+            request_payload,
+            boundary_analysis=universe.boundary_analysis,
+            confirmed_boundary=universe.confirmed_boundary,
+            final_protein_sequence=universe.final_protein_sequence,
+        )
+
+    candidates_by_id = {row["candidate_id"]: row for row in candidates}
+    routes_before_restoration: list[dict[str, Any]] = []
+    for route in universe.vector_routes:
+        candidate = candidates_by_id.get(route["candidate_id"])
+        if candidate is None:
+            continue
+        if query.plasmid_allowlist and route["profile_id"] not in query.plasmid_allowlist:
+            continue
+        selected = dict(route)
+        selected["site_iii_options"] = list(candidate["site_iii_options"])
+        routes_before_restoration.append(selected)
+
+    routes = routes_before_restoration
+    if query.max_restoration_length_bp is not None:
+        routes = [
+            row
+            for row in routes
+            if int(row["restoration_length_bp"]) <= query.max_restoration_length_bp
+        ]
+
+    # Restoration filtering precedes this final fallback.  A short cutter-reuse
+    # route therefore remains eligible when every unmodified route is too long.
+    if any(not row["cutter_reuse"] for row in routes):
+        routes = [row for row in routes if not row["cutter_reuse"]]
+    routes.sort(key=lambda row: (row["cutter_reuse"], row["restoration_length_bp"], row["profile_id"], row["scheme_id"], row["candidate_id"]))
+    for rank, row in enumerate(routes, 1):
+        row["rank"] = rank
+    status = "compatible_unoptimized" if routes else "no_vector_route"
+    if routes:
+        message = "At least one protein RE pair and annotation-safe plasmid cut route is available; select a route before optimization."
+    elif query.max_restoration_length_bp is not None and routes_before_restoration:
+        message = (
+            "Routes exist, but all require restoration longer than "
+            f"{query.max_restoration_length_bp} bp."
+        )
+    else:
+        message = "Protein-level pairs exist, but none is clean on a retained annotated plasmid backbone under the selected cutter policy."
+    return DesignResultV2(
+        DESIGN_SCHEMA_VERSION_V2,
+        status,
+        message,
+        request_payload,
+        boundary_analysis=universe.boundary_analysis,
+        confirmed_boundary=universe.confirmed_boundary,
+        protein_candidates=candidates,
+        vector_routes=routes,
+        final_protein_sequence=universe.final_protein_sequence,
+    )
+
+
 def design_query(
     query: CompatibilityQuery,
     *,
@@ -413,60 +585,14 @@ def design_query(
     plasmid_database: PlasmidReferenceDatabase | None = None,
     plasmid_reference_path: str | Path | None = None,
 ) -> DesignResultV2:
-    analysis, boundary, units = _query_boundary(query)
-    request_payload = asdict(query)
-    for key in ("site_i_allowlist", "site_ii_allowlist", "site_iii_allowlist", "plasmid_allowlist"):
-        request_payload[key] = list(request_payload[key])
-    if boundary is None:
-        return DesignResultV2(
-            DESIGN_SCHEMA_VERSION_V2,
-            "needs_boundary_confirmation",
-            "Confirm or edit the 1-based inclusive repeat boundary and period; the full input sequence will not be homogenized.",
-            request_payload,
-            boundary_analysis=analysis,
-        )
-    index = protein_index or ProteinPatternIndex.load(protein_index_dir or bundled_protein_index_dir())
-    candidates = _protein_candidates(units, query, index)
-    if not candidates:
-        return DesignResultV2(
-            DESIGN_SCHEMA_VERSION_V2,
-            "no_hurdler_pair_match",
-            "No allowed protein-level Site-I/Site-II RE pair matches every required repeat unit.",
-            request_payload,
-            boundary_analysis=analysis,
-            confirmed_boundary=boundary.to_dict(),
-        )
-    database = plasmid_database or load_plasmid_reference(plasmid_reference_path)
-    routes: list[dict[str, Any]] = []
-    for candidate in candidates:
-        for scheme in database.schemes:
-            route = _scheme_route(database, scheme, candidate, query)
-            if route is not None:
-                routes.append(route)
-    # Cutter reuse is a final fallback, never co-ranked with unmodified routes.
-    if any(not row["cutter_reuse"] for row in routes):
-        routes = [row for row in routes if not row["cutter_reuse"]]
-    routes.sort(key=lambda row: (row["cutter_reuse"], row["restoration_length_bp"], row["profile_id"], row["scheme_id"], row["candidate_id"]))
-    for rank, row in enumerate(routes, 1):
-        row["rank"] = rank
-    status = "compatible_unoptimized" if routes else "no_vector_route"
-    message = (
-        "At least one protein RE pair and annotation-safe plasmid cut route is available; select a route before optimization."
-        if routes
-        else "Protein-level pairs exist, but none is clean on a retained annotated plasmid backbone under the selected cutter policy."
+    universe = build_route_universe(
+        query,
+        protein_index=protein_index,
+        protein_index_dir=protein_index_dir,
+        plasmid_database=plasmid_database,
+        plasmid_reference_path=plasmid_reference_path,
     )
-    target = query.n_cap + query.repeat_module * int(query.repeat_copies) + query.c_cap if query.input_mode == "split" else query.full_protein_sequence
-    return DesignResultV2(
-        DESIGN_SCHEMA_VERSION_V2,
-        status,
-        message,
-        request_payload,
-        boundary_analysis=analysis,
-        confirmed_boundary=boundary.to_dict(),
-        protein_candidates=candidates,
-        vector_routes=routes,
-        final_protein_sequence=target,
-    )
+    return filter_route_universe(universe, query)
 
 
 def _actual_fragments(
@@ -2302,6 +2428,9 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         "schema_version": DESIGN_SCHEMA_VERSION_V2,
         "created_at": utc_now(),
         "status": result.status,
+        "max_restoration_length_bp": result.request.get("query", {}).get(
+            "max_restoration_length_bp"
+        ),
         "protein_index_version": PROTEIN_INDEX_VERSION,
         "plasmid_reference_version": PLASMID_REFERENCE_VERSION,
         "credentials_persisted": False,
