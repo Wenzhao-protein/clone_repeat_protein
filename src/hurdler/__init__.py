@@ -18,6 +18,7 @@ from .rules import LEGACY_OPTIMIZED_V1, RuleProfile
 from .progress import DesignProgressEvent
 from .exact_dna_design import (
     EXACT_DNA_SCHEMA_VERSION,
+    IDT_GBLOCK_ONLY_PURCHASE_POLICY,
     ExactDNAQuery,
     ExactDNAResult,
     ExactDNASelection,
@@ -25,6 +26,7 @@ from .exact_dna_design import (
     confirm_exact_dna_route,
     load_exact_dna_enzyme_catalog,
     query_exact_dna,
+    write_exact_dna_minimal_outputs,
     write_exact_dna_outputs,
 )
 
@@ -44,6 +46,7 @@ __all__ = [
     "DesignResultV2",
     "DesignProgressEvent",
     "EXACT_DNA_SCHEMA_VERSION",
+    "IDT_GBLOCK_ONLY_PURCHASE_POLICY",
     "ExactDNAQuery",
     "ExactDNASelection",
     "ExactDNAResult",
@@ -57,6 +60,7 @@ __all__ = [
     "confirm_exact_dna_route",
     "confirm_best_exact_dna_route",
     "load_exact_dna_enzyme_catalog",
+    "write_exact_dna_minimal_outputs",
     "write_exact_dna_outputs",
 ]
 

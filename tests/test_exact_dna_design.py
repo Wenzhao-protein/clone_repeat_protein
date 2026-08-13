@@ -11,6 +11,7 @@ import pytest
 import pandas as pd
 from Bio import SeqIO
 
+from hurdler.constants import PLASMIDS
 from hurdler.dna_assembly import (
     enumerate_active_latent_pairs,
     load_enzyme_catalog,
@@ -19,13 +20,16 @@ from hurdler.dna_assembly import (
 from hurdler.cli import main
 from hurdler.exact_dna_design import (
     EXACT_DNA_SCHEMA_VERSION,
+    IDT_GBLOCK_ONLY_PURCHASE_POLICY,
     ExactDNAQuery,
     ExactDNASelection,
+    confirm_best_exact_dna_route,
     confirm_exact_dna_route,
     load_exact_dna_enzyme_catalog,
     parse_exact_dna_input,
     query_exact_dna,
     write_exact_dna_outputs,
+    write_exact_dna_minimal_outputs,
     _retain_annotated_route_groups,
 )
 from hurdler.exact_dna_verification import verify_exact_dna_assembly
@@ -58,6 +62,32 @@ def _rf00059_query(**overrides) -> ExactDNAQuery:
 @pytest.fixture(scope="module")
 def rf00059_result():
     return query_exact_dna(_rf00059_query())
+
+
+@pytest.fixture(scope="module")
+def rf00059_gblock_result():
+    geometries = load_exact_dna_enzyme_catalog()
+    return query_exact_dna(
+        ExactDNAQuery(
+            schema_version=EXACT_DNA_SCHEMA_VERSION,
+            input_mode="array",
+            sequence_id=EXAMPLE["example_id"],
+            repeat_unit=EXAMPLE["repeat_unit"],
+            repeat_copies=4,
+            site_i_allowlist=tuple(
+                sorted(name for name, item in geometries.items() if item.site_i_eligible)
+            ),
+            site_ii_allowlist=tuple(
+                sorted(name for name, item in geometries.items() if item.site_ii_eligible)
+            ),
+            site_iii_allowlist=tuple(
+                sorted(name for name, item in geometries.items() if item.site_iii_eligible)
+            ),
+            plasmid_allowlist=tuple(sorted(PLASMIDS)),
+            purchase_policy=IDT_GBLOCK_ONLY_PURCHASE_POLICY,
+            timeout_seconds=60,
+        )
+    )
 
 
 class FakeScorer:
@@ -99,6 +129,24 @@ class DiagnosticFailureThenPass(FakeScorer):
         if name.endswith("|whole_target_diagnostic"):
             raise RuntimeError("diagnostic-only failure")
         return super().score(name, sequence)
+
+
+class RejectUnsplitRF00059Donor(FakeScorer):
+    def score(self, name: str, sequence: str):
+        self.calls.append((name, sequence))
+        score = 200.5 if len(sequence) > 300 else 0.0
+        digest = hashlib.sha256(sequence.encode()).hexdigest()
+        return {
+            "idt_complexity_score": score,
+            "idt_score_complete": True,
+            "idt_explicit_pass": score < 10,
+            "idt_status": "pass" if score < 10 else "fail",
+            "idt_response_sha256": hashlib.sha256(("response|" + digest).encode()).hexdigest(),
+            "idt_scored_sequence_sha256": digest,
+            "idt_positive_score_names_json": "[]" if score == 0 else '["Repeat"]',
+            "idt_rule_details_json": "[]",
+            "idt_invalid_score_names_json": "[]",
+        }
 
 
 def test_exact_dna_parser_preserves_one_fasta_and_rejects_non_acgt():
@@ -407,6 +455,74 @@ def test_live_idt_strict_threshold_invalid_score_and_api_error(rf00059_result):
         write_exact_dna_outputs(boundary, rejected_dir)
         assert (Path(rejected_dir) / "idt_bulk_input.csv").is_file()
         assert not (Path(rejected_dir) / "order_ready_fragments.csv").exists()
+
+
+def test_gblock_only_route_scores_every_purchase_and_writes_two_file_package(
+    rf00059_gblock_result, tmp_path
+):
+    result = confirm_best_exact_dna_route(
+        rf00059_gblock_result,
+        ExactDNASelection(
+            rf00059_gblock_result.route_candidates[0]["route_id"], "api"
+        ),
+        idt_scorer=FakeScorer(0),
+    )
+    assert result.status == "idt_accepted_route"
+    assert result.final_insert_sequence == EXAMPLE["repeat_unit"] * 4
+    assert result.purchase_fragments
+    assert all(
+        row["product_type"] == "gblock"
+        and 125 <= row["purchase_length_bp"] <= 3000
+        and row["idt_accepted"] is True
+        for row in result.purchase_fragments
+    )
+    output = tmp_path / "minimal"
+    paths = write_exact_dna_minimal_outputs(result, output)
+    assert {path.name for path in output.iterdir()} == {
+        "cloning_steps.csv",
+        "purchase_inserts.fasta",
+    }
+    rows = pd.read_csv(output / "cloning_steps.csv")
+    assert list(rows.columns) == [
+        "step",
+        "purchase_insert",
+        "purchase_length_bp",
+        "prepare_insert_with_RE",
+        "clone_with_RE",
+        "reused_from_step",
+        "IDT_accepted",
+    ]
+    assert rows.IDT_accepted.all()
+    assert Path(paths["validation_details_zip"]).is_file()
+
+
+def test_gblock_only_retries_padding_then_fragmented_route(rf00059_gblock_result):
+    scorer = RejectUnsplitRF00059Donor()
+    result = confirm_best_exact_dna_route(
+        rf00059_gblock_result,
+        ExactDNASelection(
+            rf00059_gblock_result.route_candidates[0]["route_id"], "api"
+        ),
+        idt_scorer=scorer,
+    )
+    assert result.status == "idt_accepted_route"
+    assert len(result.cloning_steps) > 2
+    assert any(len(sequence) > 300 for _name, sequence in scorer.calls)
+    assert all(row["idt_accepted"] is True for row in result.purchase_fragments)
+    assert len(result.route_attempts) >= 17
+
+
+def test_gblock_only_rejects_capacity_below_product_minimum():
+    with pytest.raises(ValueError, match="requires max_purchase_bp"):
+        _rf00059_query(
+            purchase_policy=IDT_GBLOCK_ONLY_PURCHASE_POLICY,
+            max_purchase_bp=124,
+        )
+
+
+def test_unknown_purchase_policy_is_rejected():
+    with pytest.raises(ValueError, match="purchase_policy"):
+        _rf00059_query(purchase_policy="unknown")
 
 
 def test_example_hashes_are_self_consistent():

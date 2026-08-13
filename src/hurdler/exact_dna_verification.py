@@ -49,6 +49,7 @@ def _verify_fragment(
     expected_left_overhang: str,
     expected_right_overhang: str,
     geometries: Mapping[str, EnzymeGeometry],
+    forbidden_selected_enzymes: Sequence[str] = (),
 ) -> list[str]:
     errors: list[str] = []
     core = str(fragment.get("core_sequence", ""))
@@ -81,6 +82,53 @@ def _verify_fragment(
                 errors.append(f"{side} adapter lacks a supported Site-III enzyme")
             elif not _occurrences(adapter, geometry.recognition_site, circular=False):
                 errors.append(f"{side} adapter lacks the declared {enzyme} recognition site")
+        if fragment.get("padding_variant") is not None:
+            if not 125 <= len(purchase) <= 3000:
+                errors.append("gBlock-only purchase is outside the 125-3000 bp range")
+            core_start = len(left_adapter)
+            core_end = core_start + len(core)
+            left_geometry = geometries.get(str(fragment.get("left_adapter_enzyme", "")))
+            right_geometry = geometries.get(str(fragment.get("right_adapter_enzyme", "")))
+            if left_geometry is not None:
+                left_site = purchase.find(left_geometry.recognition_site)
+                if left_site < 0:
+                    errors.append("left Site-III recognition site is absent from the purchase")
+                else:
+                    left_cuts = (
+                        left_site + int(left_geometry.top_cut_offset),
+                        left_site + int(left_geometry.bottom_cut_offset),
+                    )
+                    if max(left_cuts) != core_start:
+                        errors.append("left Site-III physical cuts do not release the declared core")
+                    if purchase[min(left_cuts) : max(left_cuts)] != expected_left_overhang:
+                        errors.append("left Site-III digestion does not expose the declared overhang")
+            if right_geometry is not None:
+                right_site_motif = reverse_complement(right_geometry.recognition_site)
+                right_site = purchase.find(right_site_motif, core_end)
+                if right_site < 0:
+                    errors.append("right Site-III recognition site is absent from the purchase")
+                else:
+                    right_cuts = (
+                        right_site
+                        + len(right_geometry.recognition_site)
+                        - int(right_geometry.bottom_cut_offset),
+                        right_site
+                        + len(right_geometry.recognition_site)
+                        - int(right_geometry.top_cut_offset),
+                    )
+                    if min(right_cuts) != core_end:
+                        errors.append("right Site-III physical cuts do not release the declared core")
+                    observed = purchase[min(right_cuts) : max(right_cuts)]
+                    if reverse_complement(observed) != expected_right_overhang:
+                        errors.append("right Site-III digestion does not expose the declared overhang")
+            for enzyme in forbidden_selected_enzymes:
+                geometry = geometries.get(str(enzyme))
+                if geometry and _occurrences(
+                    purchase, geometry.recognition_site, circular=False
+                ):
+                    errors.append(
+                        f"purchase contains an extra selected HURDLER site for {enzyme}"
+                    )
     return errors
 
 
@@ -207,6 +255,13 @@ def verify_exact_dna_assembly(
     )
     if scheme is None or scheme.left_cutter is None or scheme.right_cutter is None:
         return {"passed": False, "errors": ["selected vector cut scheme is unavailable"], "steps": []}
+    selected_hurdler_enzymes = sorted(
+        {
+            str(pair[f"{role}_enzyme"])
+            for pair in route["pairs"]
+            for role in ("site_i", "site_ii")
+        }
+    )
     profile = database.profile(str(route["profile_id"]))
     reference = database.reference(profile.reference_id)
     oriented = (
@@ -249,6 +304,7 @@ def verify_exact_dna_assembly(
             expected_left_overhang=left_vector_overhang,
             expected_right_overhang=right_vector_overhang,
             geometries=geometries,
+            forbidden_selected_enzymes=selected_hurdler_enzymes,
         )
     )
 
@@ -330,6 +386,7 @@ def verify_exact_dna_assembly(
                     expected_left_overhang=expected_left,
                     expected_right_overhang=expected_right,
                     geometries=geometries,
+                    forbidden_selected_enzymes=selected_hurdler_enzymes,
                 )
             )
             step_number += 1

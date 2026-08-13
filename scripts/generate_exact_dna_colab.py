@@ -61,16 +61,19 @@ def main() -> int:
             Design an exact arbitrary DNA insert or a regulatory-element array through
             active/one-base-latent restriction sites. The final insert is never altered.
 
-            Fill the visible forms, then choose **Runtime → Run all**. The default run is
-            offline and performs no IDT request. After the route table appears, confirm one
-            route and optionally choose Live IDT or Bulk Input export.
+            Choose **Runtime → Run all**. Immediately after installation, Colab asks you
+            to upload one temporary `idt.env`; its login material is authenticated in
+            memory and then discarded. A short-lived bearer token remains in memory only
+            until scoring finishes. The workflow automatically searches complete routes and
+            exports only a route for which every actual 125–3000 bp purchase gBlock passes
+            live IDT complexity scoring.
 
             The default is a four-copy array of the 108-bp Rfam RF00059 TPP riboswitch
             element. Every eligible active/one-base-latent RE, every maintained
             Site-III adapter enzyme, and all eight plasmid profiles start selected.
-            The array is a derived
-            cloning example, not a claim that four copies occur naturally. The final
-            route is deliberately left unselected for manual confirmation.
+            The array is a derived cloning example, not a claim that four copies occur
+            naturally. All eligible enzymes and plasmids start selected, and the first
+            completely verified, IDT-accepted purchase plan is used automatically.
             """
         ),
         code(
@@ -82,8 +85,23 @@ def main() -> int:
             import importlib, os, shutil, subprocess, sys
             from pathlib import Path
 
-            checkout = Path("/content/clone_repeat_protein") if Path("/content").is_dir() else Path.cwd()
-            hosted_checkout = checkout != Path.cwd()
+            try:
+                import google.colab  # noqa: F401
+                in_colab = True
+            except ModuleNotFoundError:
+                in_colab = False
+            if in_colab:
+                checkout = Path("/content/clone_repeat_protein")
+            else:
+                checkout = next(
+                    (
+                        candidate
+                        for candidate in (Path.cwd(), *Path.cwd().parents)
+                        if (candidate / "pyproject.toml").is_file()
+                    ),
+                    Path.cwd(),
+                )
+            hosted_checkout = in_colab
             if force_fresh_clone and checkout.exists() and hosted_checkout:
                 shutil.rmtree(checkout)
             if not (checkout / "pyproject.toml").is_file():
@@ -94,11 +112,6 @@ def main() -> int:
                 subprocess.run(["git", "-C", str(checkout), "clean", "-fd"], check=True)
             if str(checkout / "src") not in sys.path:
                 sys.path.insert(0, str(checkout / "src"))
-            try:
-                import google.colab  # noqa: F401
-                in_colab = True
-            except ModuleNotFoundError:
-                in_colab = False
             if in_colab:
                 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", f"{checkout}[notebooks]"], check=True)
             # A repeated Run all in one runtime must not reuse modules imported
@@ -120,6 +133,67 @@ def main() -> int:
             tags=["colab-native-form", "bootstrap"],
         ),
         code(
+            """
+            #@markdown **Required before sequence search.** `idt.env` may contain either `IDT_ACCESS_TOKEN=...` or all four OAuth password-grant fields. The file is parsed in memory, removed immediately, and never placed in an output archive.
+            local_idt_env = "~/.config/hurdler/idt.env" #@param {type:"string"}
+
+            from hurdler.idt import (
+                clear_idt_secret_environment,
+                configure_idt_credentials_from_bytes,
+                get_access_token,
+                load_idt_credentials,
+                screen_gblock_sequences,
+                summarize_complexity_response,
+            )
+
+            uploaded_name = ""
+            credential_payload = b""
+            try:
+                if in_colab:
+                    from google.colab import files
+                    uploaded = files.upload()
+                    if len(uploaded) != 1:
+                        raise RuntimeError("Upload exactly one idt.env credential file")
+                    uploaded_name, credential_payload = next(iter(uploaded.items()))
+                    if not str(uploaded_name).lower().endswith(".env"):
+                        raise ValueError("The credential upload must be an .env file")
+                    if len(credential_payload) > 64 * 1024:
+                        raise ValueError("The credential upload exceeds 64 KiB")
+                    configure_idt_credentials_from_bytes(bytes(credential_payload))
+                else:
+                    load_idt_credentials(Path(local_idt_env).expanduser())
+                idt_access_token = get_access_token()
+                preflight_sequence = "ACGT" * 31 + "A"
+                preflight_response = screen_gblock_sequences(
+                    [{"Name": "hurdler_connectivity_preflight", "Sequence": preflight_sequence}],
+                    access_token=idt_access_token,
+                )
+                preflight = summarize_complexity_response(
+                    preflight_response, sequence_index=0
+                )
+                if preflight.get("idt_score_complete") is not True:
+                    raise RuntimeError("IDT returned an incomplete complexity-score structure")
+                credential_ready = True
+                print(
+                    "IDT authentication and complexity API preflight passed; "
+                    "the uploaded credential file and login fields were discarded."
+                )
+            finally:
+                clear_idt_secret_environment()
+                credential_payload = b""
+                if uploaded_name:
+                    uploaded_path = Path(uploaded_name)
+                    if uploaded_path.is_file():
+                        uploaded_path.unlink()
+                if "uploaded" in globals():
+                    uploaded.clear()
+                    del uploaded
+            """,
+            cell_id="exact-dna-idt-upload",
+            title="1. Upload and verify IDT API credentials",
+            tags=["colab-native-form", "credentials"],
+        ),
+        code(
             f'''
             #@markdown **Array mode is the default. Only the selected mode is read.**
             input_mode = "Repeat unit × copies" #@param ["Repeat unit × copies", "Complete exact DNA / FASTA"]
@@ -132,7 +206,7 @@ def main() -> int:
             #@markdown The workflow strips case/whitespace only. U and ambiguity codes are rejected rather than silently converted.
             ''',
             cell_id="exact-dna-input-form",
-            title="1. Exact DNA or repeat-array input",
+            title="2. Exact DNA or repeat-array input",
             tags=["parameters", "colab-native-form"],
         ),
         code(
@@ -150,18 +224,7 @@ def main() -> int:
             auto_download_results_zip = True #@param {type:"boolean"}
             """,
             cell_id="exact-dna-search-form",
-            title="2. Search and annotation-aware cutter policy",
-            tags=["parameters", "colab-native-form"],
-        ),
-        code(
-            """
-            #@markdown Choose IDT behavior before the molecular query. No mode ever submits an order or changes the exact target DNA.
-            idt_validation_choice = "No API — export IDT Bulk Input" #@param ["No API — export IDT Bulk Input", "Live IDT API — require every purchase fragment to score <10"]
-            idt_credential_source = "Colab Secrets" #@param ["Colab Secrets", "Temporary idt.env upload"]
-            #@markdown Live API tries alternate breakpoints/routes within the confirmed RE/plasmid/cut-scheme selection. If none pass, the output automatically contains IDT Bulk Input files.
-            """,
-            cell_id="exact-dna-idt-policy",
-            title="3. Choose IDT validation policy",
+            title="3. Search and annotation-aware cutter policy",
             tags=["parameters", "colab-native-form"],
         ),
         code(
@@ -176,15 +239,14 @@ def main() -> int:
 
             from hurdler.constants import PLASMIDS
             from hurdler.exact_dna_design import (
-                EXACT_DNA_SCHEMA_VERSION, ExactDNAQuery, ExactDNASelection,
+                EXACT_DNA_SCHEMA_VERSION, IDT_GBLOCK_ONLY_PURCHASE_POLICY,
+                ExactDNAQuery, ExactDNASelection,
                 confirm_best_exact_dna_route, confirm_exact_dna_route,
                 load_exact_dna_enzyme_catalog,
-                query_exact_dna, write_exact_dna_outputs,
+                query_exact_dna, write_exact_dna_minimal_outputs,
             )
             from hurdler.idt import (
                 IDTComplexityScorer, clear_idt_secret_environment,
-                configure_idt_credentials_from_bytes,
-                configure_idt_credentials_from_values,
             )
             geometries = load_exact_dna_enzyme_catalog()
             site_i_names = sorted(name for name, item in geometries.items() if item.site_i_eligible)
@@ -264,6 +326,7 @@ def main() -> int:
                     plasmid_allowlist=chosen_plasmids,
                     allow_left_cutter_in_hurdler_pair=bool(allow_left_cutter_fallback),
                     allow_right_cutter_in_hurdler_pair=bool(allow_right_cutter_fallback),
+                    purchase_policy=IDT_GBLOCK_ONLY_PURCHASE_POLICY,
                     max_purchase_bp=int(max_purchase_bp),
                     max_states=int(max_search_states if advanced else 10000),
                     timeout_seconds=int(search_timeout_seconds if advanced else 600),
@@ -379,30 +442,7 @@ def main() -> int:
                             f"latent hits: **{sum(row['state']=='latent' for row in query_result.restriction_hits)}** · "
                             f"routes: **{len(query_result.route_candidates)}** · elapsed: **{time.monotonic()-started:.1f}s**"
                         ))
-                        if query_result.restriction_hits:
-                            hit_columns = [
-                                "canonical_enzyme", "state", "orientation", "start", "end",
-                                "observed", "site", "mismatch_position", "target_base", "active_base",
-                            ]
-                            display(Markdown("**Active and one-base latent sites in the exact target**"))
-                            display(pd.DataFrame(query_result.restriction_hits)[hit_columns])
-                        if query_result.pair_candidates:
-                            display(pd.DataFrame(query_result.pair_candidates))
                         if query_result.route_candidates:
-                            table = pd.DataFrame(query_result.route_candidates).drop(columns=["seed", "pairs", "silencing_decisions"], errors="ignore")
-                            rows_per_page = 25
-                            page_count = max(1, (len(table) + rows_per_page - 1) // rows_per_page)
-                            route_page = widgets.BoundedIntText(value=1, min=1, max=page_count, description="Route page")
-                            route_page_output = widgets.Output()
-                            def render_route_page(_change=None):
-                                with route_page_output:
-                                    clear_output(wait=True)
-                                    first = (int(route_page.value) - 1) * rows_per_page
-                                    display(table.iloc[first:first + rows_per_page])
-                                    display(Markdown(f"Page **{route_page.value}/{page_count}** · all **{len(table)}** grouped routes remain selectable below."))
-                            route_page.observe(render_route_page, names="value")
-                            display(route_page, route_page_output)
-                            render_route_page()
                             pairs = sorted({
                                 (item["site_i_enzyme"], item["site_ii_enzyme"])
                                 for row in query_result.route_candidates for item in row["pairs"]
@@ -437,13 +477,7 @@ def main() -> int:
                         display(Markdown(
                             f"**Confirmed:** `{confirmed_route_id}` · "
                             f"{route['profile_id']} · {route['cut_scheme']}. "
-                            "The validation/export panel below is now enabled."
-                        ))
-                        display(Markdown("**Verified active/latent transitions**"))
-                        display(pd.DataFrame(preview.latent_transitions))
-                        display(Markdown("**Exact purchase topology (IDT not called)**"))
-                        display(pd.DataFrame(preview.purchase_fragments).drop(
-                            columns=["purchase_sequence", "secondary_purchase_sequence", "primer_forward_5to3", "primer_reverse_5to3"], errors="ignore"
+                            "Live IDT validation is ready."
                         ))
                         if "validate_button" in globals():
                             validate_button.disabled = False
@@ -485,9 +519,6 @@ def main() -> int:
         ),
         code(
             """
-            validation_mode_value = "api" if idt_validation_choice.startswith("Live IDT") else "batch"
-            credential_source_value = "secrets" if idt_credential_source == "Colab Secrets" else "upload"
-            credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False, description="Upload temporary idt.env")
             default_output_directory = (
                 "/content/exact_dna_hurdler_design"
                 if in_colab else
@@ -495,55 +526,21 @@ def main() -> int:
             )
             output_directory = widgets.Text(value=default_output_directory, description="Output", layout=widgets.Layout(width="98%"))
             validate_button = widgets.Button(
-                description="Validate / export", button_style="primary",
+                description="Find IDT-accepted route", button_style="primary",
                 disabled=not bool(confirmed_route_id),
             )
             download_button = widgets.Button(description="Download ZIP", icon="download", disabled=True)
-            audit_download_button = widgets.Button(description="Download technical audit ZIP", icon="download", disabled=True)
+            validation_download_button = widgets.Button(description="Optional validation details", icon="download", disabled=True)
             validation_progress = widgets.HTML("Confirm a route above first.")
             validation_output = widgets.Output()
             output_zip = None
-            audit_zip = None
-
-            def secret_value(reader, name):
-                try:
-                    return str(reader.get(name) or "").strip()
-                except Exception:
-                    return ""
-
-            def configure_secrets():
-                from google.colab import userdata
-                token = secret_value(userdata, "IDT_ACCESS_TOKEN")
-                if token:
-                    return configure_idt_credentials_from_values({"IDT_ACCESS_TOKEN": token}, auth_method="access_token")
-                values = {name: secret_value(userdata, name) for name in ("IDT_CLIENT_ID", "IDT_CLIENT_SECRET", "IDT_USERNAME", "IDT_PASSWORD")}
-                return configure_idt_credentials_from_values(values, auth_method="password")
-
-            def uploaded_bytes():
-                value = credential_upload.value
-                if not value:
-                    raise RuntimeError("Upload an external idt.env file or use Colab Secrets")
-                item = next(iter(value.values())) if isinstance(value, dict) else value[0]
-                return bytes(item["content"] if isinstance(item, dict) else item.content)
-
-            def clear_upload_control():
-                global credential_upload
-                credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False, description="Upload temporary idt.env")
-                credential_row.children = (credential_upload,)
-
-            def configure_credentials():
-                if credential_source_value == "secrets":
-                    return configure_secrets()
-                try:
-                    return configure_idt_credentials_from_bytes(uploaded_bytes())
-                finally:
-                    clear_upload_control()
+            validation_zip = None
 
             def validation_event(event):
                 validation_progress.value = f"<b>{event.stage}</b> · {event.status} · {event.message}"
 
             def run_validation(_button=None):
-                global output_zip, audit_zip
+                global output_zip, validation_zip, idt_access_token
                 validate_button.disabled = True
                 download_button.disabled = True
                 with validation_output:
@@ -552,42 +549,52 @@ def main() -> int:
                         query = current_query()
                         if query_result is None or fingerprint(query) != query_fingerprint or not confirmed_route_id:
                             raise RuntimeError("The route is missing or stale; re-run and confirm the query")
+                        if not credential_ready or not idt_access_token:
+                            raise RuntimeError("Re-run the credential-upload cell before IDT validation")
                         destination = Path(output_directory.value).expanduser()
                         if destination.exists():
                             shutil.rmtree(destination)
                         destination.mkdir(parents=True)
-                        scorer = None
                         with tempfile.TemporaryDirectory(prefix="hurdler-idt-audit-") as temporary:
-                            if validation_mode_value == "api":
-                                configure_credentials()
-                                scorer = IDTComplexityScorer(Path(temporary) / "raw.jsonl")
-                            selected = ExactDNASelection(
-                                confirmed_route_id, validation_mode_value,
-                                plasmid_profile=str(plasmid_dropdown.value),
-                                cut_scheme_id=str(scheme_dropdown.value),
-                                site_i_enzyme=str(pair_dropdown.value[0]),
-                                site_ii_enzyme=str(pair_dropdown.value[1]),
+                            scorer = IDTComplexityScorer(Path(temporary) / "raw.jsonl")
+                            scorer.access_token = idt_access_token
+                            selected = (
+                                ExactDNASelection(confirmed_route_id, "api")
+                                if route_confirmation_mode == "Automatically use top-ranked route"
+                                else ExactDNASelection(
+                                    confirmed_route_id, "api",
+                                    plasmid_profile=str(plasmid_dropdown.value),
+                                    cut_scheme_id=str(scheme_dropdown.value),
+                                    site_i_enzyme=str(pair_dropdown.value[0]),
+                                    site_ii_enzyme=str(pair_dropdown.value[1]),
+                                )
                             )
-                            confirmer = confirm_best_exact_dna_route if validation_mode_value == "api" else confirm_exact_dna_route
-                            result = confirmer(
+                            result = confirm_best_exact_dna_route(
                                 query_result, selected, idt_scorer=scorer, progress_callback=validation_event
                             )
-                        files = write_exact_dna_outputs(result, destination)
-                        audit_zip = Path(files.pop("technical_audit_zip"))
+                        if result.status != "idt_accepted_route":
+                            failed = [
+                                str(row.get("source_fragment_id", row.get("fragment_id", "fragment")))
+                                for row in result.purchase_fragments
+                                if row.get("idt_accepted") is not True
+                            ]
+                            raise RuntimeError(
+                                f"{result.status}: no fully purchasable route; failed inserts: "
+                                + ", ".join(dict.fromkeys(failed))
+                            )
+                        generated = write_exact_dna_minimal_outputs(result, destination)
+                        validation_zip = Path(generated["validation_details_zip"])
                         output_zip = Path(shutil.make_archive(str(destination.resolve()), "zip", root_dir=destination.resolve()))
                         download_button.disabled = False
-                        audit_download_button.disabled = not audit_zip.is_file()
-                        display(Markdown(f"**Result:** `{result.status}` — {result.message}"))
-                        display(Markdown(f"**Cloning steps:** {len(result.cloning_steps)}"))
-                        display(pd.DataFrame(result.cloning_steps))
-                        display(Markdown(
-                            f"Generated **{len(files)}** user-facing files. Technical hashes and route audit are in a separate optional ZIP. No order was submitted."
-                        ))
+                        validation_download_button.disabled = not validation_zip.is_file()
+                        validation_progress.value = "<b>completed</b> · every purchase insert passed live IDT scoring"
+                        display(pd.read_csv(destination / "cloning_steps.csv"))
                     except Exception as exc:
                         validation_progress.value = f"<b>failed</b> · {type(exc).__name__}"
-                        display(Markdown(f"**Validation/export failed safely:** `{type(exc).__name__}: {exc}`"))
+                        display(Markdown(f"**No purchasable cloning plan:** `{type(exc).__name__}: {exc}`"))
                     finally:
                         clear_idt_secret_environment()
+                        idt_access_token = ""
                         validate_button.disabled = not bool(confirmed_route_id)
 
             def download_zip(_button=None):
@@ -596,33 +603,28 @@ def main() -> int:
                 from google.colab import files
                 files.download(str(output_zip))
 
-            def download_audit_zip(_button=None):
-                if audit_zip is None or not audit_zip.is_file():
+            def download_validation_zip(_button=None):
+                if validation_zip is None or not validation_zip.is_file():
                     raise FileNotFoundError("Run validation/export first")
                 from google.colab import files
-                files.download(str(audit_zip))
+                files.download(str(validation_zip))
 
             validate_button.on_click(run_validation)
             download_button.on_click(download_zip)
-            audit_download_button.on_click(download_audit_zip)
-            credential_row = widgets.HBox([credential_upload])
+            validation_download_button.on_click(download_validation_zip)
             display(widgets.VBox([
-                widgets.HTML("<b>IDT is score-only. It never optimizes DNA and never submits an order.</b>"),
-                widgets.HTML(f"Policy selected above: <b>{idt_validation_choice}</b>"),
-                credential_row if validation_mode_value == "api" and credential_source_value == "upload" else widgets.HTML("Credentials will be read only when Live API validation starts."),
+                widgets.HTML("<b>Only a plan whose every purchase gBlock passes live IDT scoring is exported. No order is submitted.</b>"),
                 output_directory, validation_progress,
-                widgets.HBox([validate_button, download_button]), audit_download_button, validation_output,
+                widgets.HBox([validate_button, download_button]), validation_download_button, validation_output,
             ]))
 
-            # Default Run all produces the complete offline Bulk package. Live
-            # API mode likewise runs automatically after credentials are read.
             if route_confirmation_mode == "Automatically use top-ranked route" and confirmed_route_id:
                 run_validation()
                 if auto_download_results_zip and in_colab and output_zip is not None:
                     download_zip()
             """,
             cell_id="exact-dna-idt-export",
-            title="7. Independent validation, IDT scoring, and export",
+            title="7. Live IDT validation and two-file cloning export",
         ),
     ]
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

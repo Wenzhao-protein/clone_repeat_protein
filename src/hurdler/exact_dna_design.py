@@ -7,12 +7,14 @@ donor-derived bases, but every complete route ends with the exact target DNA.
 
 from __future__ import annotations
 
+import copy
 import csv
 import hashlib
 import heapq
 import io
 import json
 import math
+import random
 import tempfile
 import time
 import zipfile
@@ -25,7 +27,9 @@ from Bio import SeqIO
 
 from .constants import PLASMIDS
 from .dna_assembly import (
+    DEFAULT_GBLOCK_MIN_BP,
     DEFAULT_GBLOCK_MAX_BP,
+    IDT_FRIENDLY_CLAMP,
     DEFAULT_OLIGO_MAX_BP,
     DEFAULT_OLIGO_MIN_BP,
     PRIMER_PAIR_CORE_THRESHOLD_BP,
@@ -59,10 +63,18 @@ EXACT_DNA_SCHEMA_VERSION = "exact-dna-hurdler-designer-v1"
 EXACT_DNA_INPUT_MODES = ("array", "exact")
 EXACT_DNA_VALIDATION_MODES = ("none", "api", "batch")
 EXACT_DNA_PAIR_POLICY = "fixed_then_variable"
+LEGACY_MIXED_PURCHASE_POLICY = "legacy-mixed-v1"
+IDT_GBLOCK_ONLY_PURCHASE_POLICY = "idt-gblock-only-v1"
+EXACT_DNA_PURCHASE_POLICIES = (
+    LEGACY_MIXED_PURCHASE_POLICY,
+    IDT_GBLOCK_ONLY_PURCHASE_POLICY,
+)
 DEFAULT_MAX_STATES = 10_000
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_PATHS_PER_STATE = 3
 DEFAULT_MAX_COMPLETE_ROUTES = 25
+DEFAULT_MAX_IDT_PURCHASE_ATTEMPTS = 100
+DEFAULT_MAX_GBLOCK_PADDING_VARIANTS = 16
 
 
 class ComplexityScorer(Protocol):
@@ -151,6 +163,7 @@ class ExactDNAQuery:
     allow_left_cutter_in_hurdler_pair: bool = False
     allow_right_cutter_in_hurdler_pair: bool = False
     pair_policy: str = EXACT_DNA_PAIR_POLICY
+    purchase_policy: str = LEGACY_MIXED_PURCHASE_POLICY
     max_purchase_bp: int = DEFAULT_GBLOCK_MAX_BP
     max_states: int = DEFAULT_MAX_STATES
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
@@ -164,6 +177,10 @@ class ExactDNAQuery:
             raise ValueError(f"input_mode must be one of {EXACT_DNA_INPUT_MODES}")
         if self.pair_policy != EXACT_DNA_PAIR_POLICY:
             raise ValueError(f"pair_policy must be {EXACT_DNA_PAIR_POLICY!r}")
+        if self.purchase_policy not in EXACT_DNA_PURCHASE_POLICIES:
+            raise ValueError(
+                f"purchase_policy must be one of {EXACT_DNA_PURCHASE_POLICIES}"
+            )
         for name in (
             "site_i_allowlist",
             "site_ii_allowlist",
@@ -173,6 +190,14 @@ class ExactDNAQuery:
             object.__setattr__(self, name, _normalize_allowlist(getattr(self, name)))
         if not DEFAULT_OLIGO_MIN_BP <= int(self.max_purchase_bp) <= DEFAULT_GBLOCK_MAX_BP:
             raise ValueError("max_purchase_bp must be between 20 and 3000")
+        if (
+            self.purchase_policy == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+            and int(self.max_purchase_bp) < DEFAULT_GBLOCK_MIN_BP
+        ):
+            raise ValueError(
+                f"{IDT_GBLOCK_ONLY_PURCHASE_POLICY} requires max_purchase_bp "
+                f">= {DEFAULT_GBLOCK_MIN_BP}"
+            )
         if int(self.max_states) < 1 or int(self.timeout_seconds) < 1:
             raise ValueError("Search state and timeout limits must be positive")
         if int(self.paths_per_state) < 1 or int(self.max_complete_routes) < 1:
@@ -469,6 +494,11 @@ def _enumerate_molecular_edges(
             int(edge["replacement_start"]),
             int(edge["replacement_end"]),
             str(edge["direction"]),
+            (
+                int(edge["step_count"])
+                if query.purchase_policy == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+                else 0
+            ),
         )
         deduplicated.setdefault(key, edge)
     truncated = any(len(item["routes"]) >= route_limit for item in planned)
@@ -494,6 +524,7 @@ def _retain_paths_per_pair(
     paths: Sequence[Mapping[str, Any]],
     *,
     paths_per_pair: int,
+    preserve_fragmentation: bool = False,
 ) -> list[dict[str, Any]]:
     """Retain representative paths without letting one RE pair crowd out others."""
     grouped: dict[tuple[str, ...], list[dict[str, Any]]] = {}
@@ -502,6 +533,27 @@ def _retain_paths_per_pair(
         values = grouped.setdefault(key, [])
         if len(values) < paths_per_pair:
             values.append(dict(path))
+    if preserve_fragmentation:
+        for key, candidates in {
+            signature: [dict(path) for path in paths if _path_pair_signature(path) == signature]
+            for signature in {_path_pair_signature(path) for path in paths}
+        }.items():
+            most_fragmented = max(
+                candidates,
+                key=lambda path: sum(
+                    int(edge.get("step_count", 0)) for edge in path["edges"]
+                ),
+            )
+            values = grouped.setdefault(key, [])
+            if all(
+                [edge["edge_id"] for edge in value["edges"]]
+                != [edge["edge_id"] for edge in most_fragmented["edges"]]
+                for value in values
+            ):
+                if len(values) >= paths_per_pair:
+                    values[-1] = most_fragmented
+                else:
+                    values.append(most_fragmented)
     return [
         path
         for key in sorted(grouped)
@@ -583,7 +635,22 @@ def _array_paths(
                 new_path = {"seed": path["seed"], "edges": [*path["edges"], edge]}
                 key = (result_copies, pair if fixed_pair else "variable")
                 values = [*state_paths.get(key, []), new_path]
-                state_paths[key] = sorted(values, key=_path_rank)[: int(query.paths_per_state)]
+                ranked = sorted(values, key=_path_rank)
+                if (
+                    query.purchase_policy == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+                    and len(ranked) > int(query.paths_per_state)
+                ):
+                    most_fragmented = max(
+                        ranked,
+                        key=lambda item: sum(
+                            int(candidate.get("step_count", 0))
+                            for candidate in item["edges"]
+                        ),
+                    )
+                    ranked = ranked[: max(0, int(query.paths_per_state) - 1)]
+                    if most_fragmented not in ranked:
+                        ranked.append(most_fragmented)
+                state_paths[key] = ranked[: int(query.paths_per_state)]
     complete = [
         path for (copies, _pair), values in state_paths.items()
         if copies == target_copies for path in values if path["edges"]
@@ -591,6 +658,9 @@ def _array_paths(
     retained_complete = _retain_paths_per_pair(
         complete,
         paths_per_pair=int(query.paths_per_state),
+        preserve_fragmentation=(
+            query.purchase_policy == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+        ),
     )
     return retained_complete, {
         "complete": not truncated,
@@ -680,6 +750,9 @@ def _arbitrary_paths(
     return _retain_paths_per_pair(
         complete,
         paths_per_pair=int(query.paths_per_state),
+        preserve_fragmentation=(
+            query.purchase_policy == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+        ),
     ), {
         "complete": not truncated and not heap,
         "reason": "route_found" if complete else "exhausted",
@@ -998,6 +1071,19 @@ def query_exact_dna(
         annotated,
         routes_per_group=int(query.max_complete_routes),
     )
+    annotated.sort(
+        key=lambda route: (
+            route["pair_mode"] != "fixed",
+            bool(route["cutter_reuse"]),
+            int(route["hurdler_step_count"]),
+            int(route["unique_purchase_count"]),
+            int(route["total_purchase_bp"]),
+            int(route["restoration_length_bp"]),
+            str(route["profile_id"]),
+            str(route["scheme_id"]),
+            str(route["route_id"]),
+        )
+    )
     target_hits = fixed_summary.get("target_hits", [])
     pair_candidates: dict[tuple[str, str], dict[str, Any]] = {}
     for route in annotated:
@@ -1089,11 +1175,207 @@ def _circular_slice(sequence: str, start: int, end: int) -> str:
     return sequence[start:end] if start < end else sequence[start:] + sequence[:end]
 
 
+def _linear_motif_occurrences(sequence: str, motif: str) -> int:
+    """Count a recognition site on either strand without double counting palindromes."""
+    motifs = {str(motif).upper(), reverse_complement(str(motif).upper())}
+    return sum(
+        sum(
+            1
+            for start in range(0, max(0, len(sequence) - len(oriented) + 1))
+            if sequence.startswith(oriented, start)
+        )
+        for oriented in motifs
+    )
+
+
+def _gblock_site_iii_flank(
+    geometry: EnzymeGeometry,
+    *,
+    left: bool,
+    overhang_sequence: str,
+    spacer_seed: int,
+) -> str:
+    """Build an inward-facing Type-IIS flank whose digestion releases the core.
+
+    The generic assembly helper also supports historical outward-facing donor
+    layouts.  gBlock-only purchases use this stricter geometry so the
+    independent verifier can derive the released core directly from physical
+    cut coordinates.
+    """
+    overhang = str(overhang_sequence).upper()
+    if len(overhang) != geometry.overhang_length:
+        raise ValueError(
+            f"{geometry.enzyme} requires a {geometry.overhang_length}-nt overhang"
+        )
+    spacer_length = max(
+        0,
+        min(int(geometry.top_cut_offset), int(geometry.bottom_cut_offset))
+        - len(geometry.recognition_site),
+    )
+    rng = random.Random(int(spacer_seed))
+    spacer = "".join(rng.choice("ACGT") for _ in range(spacer_length))
+    if left:
+        return IDT_FRIENDLY_CLAMP + geometry.recognition_site + spacer + overhang
+    return (
+        reverse_complement(overhang)
+        + reverse_complement(spacer)
+        + reverse_complement(geometry.recognition_site)
+        + IDT_FRIENDLY_CLAMP
+    )
+
+
+def _select_gblock_site_iii(
+    geometries: Mapping[str, EnzymeGeometry],
+    *,
+    overhang_length: int,
+    core_sequence: str,
+    allowed: set[str],
+) -> list[EnzymeGeometry]:
+    candidates = [
+        geometry
+        for name, geometry in geometries.items()
+        if geometry.site_iii_eligible
+        and geometry.is_type_iis
+        and geometry.overhang_length == int(overhang_length)
+        and (not allowed or name in allowed)
+        and _linear_motif_occurrences(core_sequence, geometry.recognition_site) == 0
+    ]
+    return sorted(
+        candidates,
+        key=lambda item: (
+            not item.methylation_compatible,
+            len(item.recognition_site),
+            item.canonical_enzyme,
+            item.enzyme,
+        ),
+    )
+
+
+def _deterministic_padding(length: int, *, seed: int) -> str:
+    """Return reproducible, balanced disposable sequence outside both cuts."""
+    rng = random.Random(int(seed))
+    output: list[str] = []
+    while len(output) < int(length):
+        base = rng.choice("ACGT")
+        if len(output) >= 3 and len(set(output[-3:] + [base])) == 1:
+            continue
+        output.append(base)
+    return "".join(output)
+
+
+def _build_gblock_purchase(
+    *,
+    fragment_id: str,
+    core_sequence: str,
+    left_overhang: str,
+    right_overhang: str,
+    geometries: Mapping[str, EnzymeGeometry],
+    allowed_site_iii: Sequence[str],
+    forbidden_selected_enzymes: Sequence[str],
+    max_purchase_bp: int,
+    padding_variant: int,
+) -> dict[str, Any]:
+    allowed = set(allowed_site_iii)
+    left_options = _select_gblock_site_iii(
+        geometries,
+        overhang_length=len(left_overhang),
+        core_sequence=core_sequence,
+        allowed=allowed,
+    )
+    right_options = _select_gblock_site_iii(
+        geometries,
+        overhang_length=len(right_overhang),
+        core_sequence=core_sequence,
+        allowed=allowed,
+    )
+    if not left_options or not right_options:
+        raise ValueError("No selected Site-III enzyme can prepare the gBlock ends")
+    variant = int(padding_variant)
+    left_geometry = left_options[variant % len(left_options)]
+    right_geometry = right_options[(variant // max(1, len(left_options))) % len(right_options)]
+    seed = int(_sha(f"{fragment_id}|{variant}")[:16], 16)
+    left_base = _gblock_site_iii_flank(
+        left_geometry,
+        left=True,
+        overhang_sequence=left_overhang,
+        spacer_seed=seed,
+    )
+    right_base = _gblock_site_iii_flank(
+        right_geometry,
+        left=False,
+        overhang_sequence=right_overhang,
+        spacer_seed=seed ^ 0xA5A5A5A5,
+    )
+    minimum_padding = max(
+        0,
+        DEFAULT_GBLOCK_MIN_BP - len(left_base) - len(core_sequence) - len(right_base),
+    )
+    left_padding_length = minimum_padding // 2
+    right_padding_length = minimum_padding - left_padding_length
+    left_padding = _deterministic_padding(left_padding_length, seed=seed ^ 0x13579BDF)
+    right_padding = _deterministic_padding(right_padding_length, seed=seed ^ 0x2468ACE0)
+    left_adapter = left_padding + left_base
+    right_adapter = right_base + right_padding
+    purchase = left_adapter + core_sequence + right_adapter
+    if not DEFAULT_GBLOCK_MIN_BP <= len(purchase) <= int(max_purchase_bp):
+        raise ValueError("The padded purchase is outside the configured gBlock length range")
+    forbidden = {
+        name: geometries[name]
+        for name in forbidden_selected_enzymes
+        if name in geometries
+    }
+    if any(
+        _linear_motif_occurrences(purchase, geometry.recognition_site)
+        for geometry in forbidden.values()
+    ):
+        raise ValueError("The padded purchase contains an extra selected HURDLER RE site")
+    intended_counts: dict[str, int] = {}
+    for geometry in (left_geometry, right_geometry):
+        intended_counts[geometry.enzyme] = intended_counts.get(geometry.enzyme, 0) + 1
+    for enzyme, expected in intended_counts.items():
+        observed = _linear_motif_occurrences(
+            purchase, geometries[enzyme].recognition_site
+        )
+        if observed != expected:
+            raise ValueError(
+                f"The padded purchase contains {observed} {enzyme} sites; expected {expected}"
+            )
+    purchase_sha = _sha(purchase)
+    return {
+        "fragment_id": str(fragment_id),
+        "core_sequence": core_sequence,
+        "core_length_bp": len(core_sequence),
+        "purchase_sequence": purchase,
+        "secondary_purchase_sequence": "",
+        "primer_forward_5to3": "",
+        "primer_reverse_5to3": "",
+        "purchase_sequence_count": 1,
+        "purchase_length_bp": len(purchase),
+        "purchase_sha256": purchase_sha,
+        "product_type": "gblock",
+        "left_adapter_enzyme": left_geometry.enzyme,
+        "right_adapter_enzyme": right_geometry.enzyme,
+        "left_adapter_sequence": left_adapter,
+        "right_adapter_sequence": right_adapter,
+        "digest_fragment_sequence": left_overhang + core_sequence + right_overhang,
+        "left_digest_overhang": left_overhang,
+        "right_digest_overhang": right_overhang,
+        "padding_variant": variant,
+        "disposable_padding_length_bp": minimum_padding,
+        "idt_policy": IDT_SCORE_POLICY,
+        "idt_status": "not_run",
+        "idt_score": None,
+        "idt_response_sha256": "",
+    }
+
+
 def _primary_purchase_row(
     route: Mapping[str, Any],
     query: Mapping[str, Any],
     database: PlasmidReferenceDatabase,
     geometries: Mapping[str, EnzymeGeometry],
+    *,
+    padding_variant: int = 0,
 ) -> dict[str, Any]:
     """Design the actual vector-ready primary purchase molecule."""
     scheme = next(item for item in database.schemes if item.scheme_id == route["scheme_id"])
@@ -1121,6 +1403,40 @@ def _primary_purchase_row(
         + str(route["seed"]["seed_sequence"])
         + scheme.right_restoration_sequence
     )
+    if query.get("purchase_policy") == IDT_GBLOCK_ONLY_PURCHASE_POLICY:
+        forbidden = sorted(
+            {
+                str(pair[f"{role}_enzyme"])
+                for pair in route["pairs"]
+                for role in ("site_i", "site_ii")
+            }
+        )
+        row = _build_gblock_purchase(
+            fragment_id="primary_seed",
+            core_sequence=core,
+            left_overhang=left_overhang,
+            right_overhang=right_overhang,
+            geometries=geometries,
+            allowed_site_iii=query.get("site_iii_allowlist", []),
+            forbidden_selected_enzymes=forbidden,
+            max_purchase_bp=int(query["max_purchase_bp"]),
+            padding_variant=int(padding_variant),
+        )
+        row.update(
+            {
+                "fragment_id": "primary_" + row["purchase_sha256"][:16],
+                "source_fragment_id": "primary_seed",
+                "stage": "primary_seed",
+                "transition_index": 0,
+                "target_start": 0,
+                "target_end": len(core),
+                "vector_left_cutter": scheme.left_cutter.canonical_enzyme,
+                "vector_right_cutter": scheme.right_cutter.canonical_enzyme,
+                "restoration_length_bp": len(scheme.left_restoration_sequence)
+                + len(scheme.right_restoration_sequence),
+            }
+        )
+        return row
     if len(core) < PRIMER_PAIR_CORE_THRESHOLD_BP:
         forward = left_overhang + core
         reverse = right_overhang + reverse_complement(core)
@@ -1204,15 +1520,65 @@ def _purchase_rows(
     query: Mapping[str, Any],
     database: PlasmidReferenceDatabase,
     geometries: Mapping[str, EnzymeGeometry],
+    *,
+    padding_variants: Mapping[tuple[Any, ...], int] | None = None,
 ) -> list[dict[str, Any]]:
+    variants = dict(padding_variants or {})
     rows: list[dict[str, Any]] = []
-    rows.append(_primary_purchase_row(route, query, database, geometries))
+    rows.append(
+        _primary_purchase_row(
+            route,
+            query,
+            database,
+            geometries,
+            padding_variant=int(variants.get((0, "primary_seed", 0, 0), 0)),
+        )
+    )
+    forbidden = sorted(
+        {
+            str(pair[f"{role}_enzyme"])
+            for pair in route["pairs"]
+            for role in ("site_i", "site_ii")
+        }
+    )
     for transition_index, edge in enumerate(route["edges"], start=1):
+        converted: list[dict[str, Any]] = []
         for fragment in edge["fragments"]:
-            row = dict(fragment)
+            source_id = str(fragment.get("fragment_id", "fragment"))
+            key = (
+                transition_index,
+                source_id,
+                int(fragment.get("target_start", 0)),
+                int(fragment.get("target_end", 0)),
+            )
+            if query.get("purchase_policy") == IDT_GBLOCK_ONLY_PURCHASE_POLICY:
+                row = _build_gblock_purchase(
+                    fragment_id=source_id,
+                    core_sequence=str(fragment["core_sequence"]),
+                    left_overhang=str(fragment["left_digest_overhang"]),
+                    right_overhang=str(fragment["right_digest_overhang"]),
+                    geometries=geometries,
+                    allowed_site_iii=query.get("site_iii_allowlist", []),
+                    forbidden_selected_enzymes=forbidden,
+                    max_purchase_bp=int(query["max_purchase_bp"]),
+                    padding_variant=int(variants.get(key, 0)),
+                )
+                row.update(
+                    {
+                        "source_fragment_id": source_id,
+                        "fragment_id": "gblock_" + row["purchase_sha256"][:16],
+                        "target_start": int(fragment["target_start"]),
+                        "target_end": int(fragment["target_end"]),
+                    }
+                )
+            else:
+                row = dict(fragment)
             row["stage"] = "hurdler_donor"
             row["transition_index"] = transition_index
             rows.append(row)
+            converted.append(row)
+        if query.get("purchase_policy") == IDT_GBLOCK_ONLY_PURCHASE_POLICY:
+            edge["fragments"] = converted
     return rows
 
 
@@ -1346,6 +1712,7 @@ def confirm_exact_dna_route(
     plasmid_database: PlasmidReferenceDatabase | None = None,
     plasmid_reference_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
+    padding_variants: Mapping[tuple[Any, ...], int] | None = None,
 ) -> ExactDNAResult:
     """Confirm one route, optionally score its exact purchase sequences."""
     if query_result.status != "hurdler_compatible_molecular":
@@ -1353,7 +1720,7 @@ def confirm_exact_dna_route(
     bodies = getattr(query_result, "_route_bodies", {})
     if selection.route_id not in bodies:
         raise ValueError("Selected route is absent or belongs to a stale query")
-    route = bodies[selection.route_id]
+    route = copy.deepcopy(bodies[selection.route_id])
     expected_values = {
         "plasmid_profile": (selection.plasmid_profile, route["profile_id"]),
         "cut_scheme_id": (selection.cut_scheme_id, route["scheme_id"]),
@@ -1396,7 +1763,11 @@ def confirm_exact_dna_route(
     geometries = load_exact_dna_enzyme_catalog()
     try:
         result.purchase_fragments = _purchase_rows(
-            route, query_result.query, database, geometries
+            route,
+            query_result.query,
+            database,
+            geometries,
+            padding_variants=padding_variants,
         )
         verification = verify_exact_dna_assembly(
             query=query_result.query,
@@ -1507,7 +1878,24 @@ def confirm_exact_dna_route(
         message="Scoring the exact whole target and selected purchase sequences",
     )
     try:
-        if PRIMER_PAIR_CORE_THRESHOLD_BP <= len(query_result.target_sequence) <= DEFAULT_GBLOCK_MAX_BP:
+        gblock_only = (
+            query_result.query.get("purchase_policy")
+            == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+        )
+        if gblock_only and not all(
+            str(fragment.get("product_type")) == "gblock"
+            and DEFAULT_GBLOCK_MIN_BP
+            <= int(fragment.get("purchase_length_bp", 0))
+            <= int(query_result.query["max_purchase_bp"])
+            for fragment in result.purchase_fragments
+        ):
+            raise ValueError("idt_score_error: every purchase must be a 125-3000 bp gBlock")
+        if (
+            not gblock_only
+            and PRIMER_PAIR_CORE_THRESHOLD_BP
+            <= len(query_result.target_sequence)
+            <= DEFAULT_GBLOCK_MAX_BP
+        ):
             try:
                 whole = _score_one_purchase(
                     idt_scorer,
@@ -1531,7 +1919,7 @@ def confirm_exact_dna_route(
                     "diagnostic_only": True,
                     "status": "diagnostic_score_error",
                 }
-        elif len(query_result.target_sequence) > DEFAULT_GBLOCK_MAX_BP:
+        elif not gblock_only and len(query_result.target_sequence) > DEFAULT_GBLOCK_MAX_BP:
             result.whole_target_idt = {
                 "diagnostic_only": True,
                 "status": "not_scored_target_over_3000bp",
@@ -1542,7 +1930,10 @@ def confirm_exact_dna_route(
         unscored_purchase_count = 0
         for ordinal, fragment in enumerate(result.purchase_fragments, start=1):
             product = str(fragment.get("product_type", ""))
-            if product in {"annealed_sticky_end_primer_pair", "duplexed_seed_oligo_pair"}:
+            if (
+                not gblock_only
+                and product in {"annealed_sticky_end_primer_pair", "duplexed_seed_oligo_pair"}
+            ):
                 fragment.update(
                     {
                         "idt_status": "unscored_primer_pair",
@@ -1580,6 +1971,7 @@ def confirm_exact_dna_route(
             result.idt_audit.append(
                 {
                     "fragment_id": fragment.get("fragment_id", f"purchase_{ordinal}"),
+                    "source_fragment_id": fragment.get("source_fragment_id", ""),
                     "length_bp": len(sequence),
                     "dna_sha256": sequence_sha,
                     "score": scored["idt_complexity_score"],
@@ -1634,6 +2026,8 @@ def confirm_best_exact_dna_route(
     plasmid_database: PlasmidReferenceDatabase | None = None,
     plasmid_reference_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
+    max_complete_purchase_attempts: int = DEFAULT_MAX_IDT_PURCHASE_ATTEMPTS,
+    max_padding_variants: int = DEFAULT_MAX_GBLOCK_PADDING_VARIANTS,
 ) -> ExactDNAResult:
     """Try alternate exact routes after IDT rejection without changing the target.
 
@@ -1663,57 +2057,117 @@ def confirm_best_exact_dna_route(
             )
         )
     ]
-    candidates.sort(key=lambda row: row["route_id"] != selection.route_id)
+    candidates.sort(
+        key=lambda row: (
+            row["route_id"] != selection.route_id,
+            (
+                -int(row.get("hurdler_step_count", 0))
+                if row["route_id"] != selection.route_id
+                and query_result.query.get("purchase_policy")
+                == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+                else int(row.get("hurdler_step_count", 0))
+            ),
+            str(row["route_id"]),
+        )
+    )
     if not candidates:
         raise ValueError("No current route matches the confirmed RE/plasmid selection")
     attempts: list[dict[str, Any]] = []
     last: ExactDNAResult | None = None
-    for ordinal, route in enumerate(candidates, start=1):
-        emit_progress(
-            progress_callback,
-            stage="idt_route_selection",
-            status="attempt_started",
-            message=f"Trying exact molecular route {ordinal}/{len(candidates)}",
-            details={"route_id": route["route_id"]},
-        )
-        attempt = confirm_exact_dna_route(
-            query_result,
-            ExactDNASelection(
-                route_id=str(route["route_id"]),
-                validation_mode="api",
-                plasmid_profile=str(route["profile_id"]),
-                cut_scheme_id=str(route["scheme_id"]),
-                site_i_enzyme=pair[0],
-                site_ii_enzyme=pair[1],
-            ),
-            idt_scorer=idt_scorer,
-            plasmid_database=plasmid_database,
-            plasmid_reference_path=plasmid_reference_path,
-            progress_callback=progress_callback,
-        )
-        failed_fragments = [
-            str(row.get("fragment_id", ""))
-            for row in attempt.purchase_fragments
-            if row.get("idt_accepted") is not True
-        ]
-        attempts.append(
-            {
-                "attempt": ordinal,
-                "route_id": route["route_id"],
-                "status": attempt.status,
-                "failed_fragment_ids": failed_fragments,
-                "termination_reason": attempt.termination_reason,
-            }
-        )
-        attempt.route_attempts = list(attempts)
-        last = attempt
-        if attempt.status == "idt_accepted_route":
-            return attempt
-        if attempt.status in {"idt_api_error", "idt_score_error"}:
+    attempt_ordinal = 0
+    for route_ordinal, route in enumerate(candidates, start=1):
+        padding_variants: dict[tuple[Any, ...], int] = {}
+        for local_variant in range(max(1, int(max_padding_variants))):
+            if attempt_ordinal >= int(max_complete_purchase_attempts):
+                break
+            attempt_ordinal += 1
+            emit_progress(
+                progress_callback,
+                stage="idt_route_selection",
+                status="attempt_started",
+                message=(
+                    f"Trying purchase plan {attempt_ordinal}/{max_complete_purchase_attempts} "
+                    f"(route {route_ordinal}/{len(candidates)}, padding {local_variant + 1})"
+                ),
+                details={
+                    "route_id": route["route_id"],
+                    "padding_variant": local_variant,
+                },
+            )
+            attempt = confirm_exact_dna_route(
+                query_result,
+                ExactDNASelection(
+                    route_id=str(route["route_id"]),
+                    validation_mode="api",
+                    plasmid_profile=str(route["profile_id"]),
+                    cut_scheme_id=str(route["scheme_id"]),
+                    site_i_enzyme=pair[0],
+                    site_ii_enzyme=pair[1],
+                ),
+                idt_scorer=idt_scorer,
+                plasmid_database=plasmid_database,
+                plasmid_reference_path=plasmid_reference_path,
+                progress_callback=progress_callback,
+                padding_variants=padding_variants,
+            )
+            failed_rows = [
+                row
+                for row in attempt.purchase_fragments
+                if row.get("idt_accepted") is not True
+            ]
+            failed_fragments = [
+                str(row.get("source_fragment_id") or row.get("fragment_id", ""))
+                for row in failed_rows
+            ]
+            attempts.append(
+                {
+                    "attempt": attempt_ordinal,
+                    "route_id": route["route_id"],
+                    "padding_variant": local_variant,
+                    "status": attempt.status,
+                    "failed_fragment_ids": failed_fragments,
+                    "termination_reason": attempt.termination_reason,
+                }
+            )
+            attempt.route_attempts = list(attempts)
+            last = attempt
+            if attempt.status == "idt_accepted_route":
+                return attempt
+            if attempt.status in {"idt_api_error", "idt_score_error"}:
+                return attempt
+            if (
+                query_result.query.get("purchase_policy")
+                != IDT_GBLOCK_ONLY_PURCHASE_POLICY
+            ):
+                break
+            if failed_rows:
+                for row in failed_rows:
+                    key = (
+                        int(row.get("transition_index", 0)),
+                        str(row.get("source_fragment_id") or "primary_seed"),
+                        int(row.get("target_start", 0)),
+                        int(row.get("target_end", 0)),
+                    )
+                    padding_variants[key] = local_variant + 1
+            else:
+                # Adapter/padding construction or independent verification can
+                # fail before IDT rows exist; advance every fragment together.
+                padding_variants[(0, "primary_seed", 0, 0)] = local_variant + 1
+        if attempt_ordinal >= int(max_complete_purchase_attempts):
             break
     assert last is not None
     last.route_attempts = attempts
-    last.message += " Bulk Input files will be exported for manual validation."
+    if (
+        query_result.query.get("purchase_policy")
+        == IDT_GBLOCK_ONLY_PURCHASE_POLICY
+    ):
+        last.message = (
+            "No complete molecular route produced an independently verified set "
+            "of live-IDT-accepted gBlocks within the purchase-plan budget."
+        )
+        last.termination_reason = "all_gblock_purchase_plans_exhausted"
+    else:
+        last.message += " Bulk Input files will be exported for manual validation."
     return last
 
 
@@ -1942,3 +2396,107 @@ def write_exact_dna_outputs(result: ExactDNAResult, output_dir: str | Path) -> d
                 archive.write(path, path.name)
     paths["technical_audit_zip"] = str(audit_zip)
     return paths
+
+
+def _minimal_cloning_package_rows(
+    result: ExactDNAResult,
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    if result.status != "idt_accepted_route":
+        raise ValueError("Minimal purchase output requires a fully IDT-accepted route")
+    fragments = {
+        str(row.get("fragment_id", "")): row for row in result.purchase_fragments
+    }
+    sequence_names: dict[str, str] = {}
+    first_step_by_sequence: dict[str, int] = {}
+    records: list[tuple[str, str]] = []
+    rows: list[dict[str, Any]] = []
+    for step in sorted(result.cloning_steps, key=lambda row: int(row["step"])):
+        ids = [
+            value
+            for value in str(step.get("purchase_fragment_ids", "")).split(";")
+            if value
+        ]
+        if len(ids) != 1 or ids[0] not in fragments:
+            raise ValueError("Each physical cloning step must reference one purchase gBlock")
+        fragment = fragments[ids[0]]
+        sequence = str(fragment.get("purchase_sequence", ""))
+        if (
+            str(fragment.get("product_type")) != "gblock"
+            or not DEFAULT_GBLOCK_MIN_BP <= len(sequence) <= DEFAULT_GBLOCK_MAX_BP
+            or fragment.get("idt_accepted") is not True
+        ):
+            raise ValueError("Every exported insert must be a live-IDT-accepted 125-3000 bp gBlock")
+        if sequence not in sequence_names:
+            name = f"purchase_insert_{len(sequence_names) + 1:02d}"
+            sequence_names[sequence] = name
+            first_step_by_sequence[sequence] = int(step["step"])
+            records.append((name, sequence))
+        name = sequence_names[sequence]
+        first_step = first_step_by_sequence[sequence]
+        prepare = "/".join(
+            value
+            for value in (
+                str(fragment.get("left_adapter_enzyme", "")),
+                str(fragment.get("right_adapter_enzyme", "")),
+            )
+            if value and value != "not_required"
+        )
+        rows.append(
+            {
+                "step": int(step["step"]),
+                "purchase_insert": name,
+                "purchase_length_bp": len(sequence),
+                "prepare_insert_with_RE": prepare,
+                "clone_with_RE": str(step.get("restriction_enzymes", "")),
+                "reused_from_step": "" if first_step == int(step["step"]) else first_step,
+                "IDT_accepted": True,
+            }
+        )
+    return rows, records
+
+
+def write_exact_dna_minimal_outputs(
+    result: ExactDNAResult,
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """Write the two-file user package plus an optional validation archive."""
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    if any(destination.iterdir()):
+        raise ValueError("Minimal output directory must be empty")
+    rows, records = _minimal_cloning_package_rows(result)
+    steps = destination / "cloning_steps.csv"
+    columns = [
+        "step",
+        "purchase_insert",
+        "purchase_length_bp",
+        "prepare_insert_with_RE",
+        "clone_with_RE",
+        "reused_from_step",
+        "IDT_accepted",
+    ]
+    with steps.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+    fasta = destination / "purchase_inserts.fasta"
+    fasta.write_text("".join(f">{name}\n{sequence}\n" for name, sequence in records))
+
+    validation_zip = destination.parent / f"{destination.name}_validation_details.zip"
+    with tempfile.TemporaryDirectory(prefix="hurdler_exact_validation_") as temporary:
+        details = Path(temporary) / "validation_details"
+        full_paths = write_exact_dna_outputs(result, details)
+        technical = Path(full_paths.get("technical_audit_zip", ""))
+        with zipfile.ZipFile(
+            validation_zip, "w", compression=zipfile.ZIP_DEFLATED
+        ) as archive:
+            for path in sorted(details.rglob("*")):
+                if path.is_file():
+                    archive.write(path, path.relative_to(details))
+            if technical.is_file():
+                archive.write(technical, technical.name)
+    return {
+        "cloning_steps_csv": str(steps),
+        "purchase_inserts_fasta": str(fasta),
+        "validation_details_zip": str(validation_zip),
+    }
