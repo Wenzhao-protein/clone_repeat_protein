@@ -78,7 +78,7 @@ def test_notebook_source_is_output_free_and_has_no_widget_state():
     assert "/home/wendai/.config/hurdler/idt.env" not in text
 
 
-def test_colab_cells_are_named_hidden_forms():
+def test_colab_cells_are_named_and_only_bootstrap_is_a_hidden_form():
     payload = _colab_payload()
     ids = []
     for cell in payload["cells"]:
@@ -88,7 +88,8 @@ def test_colab_cells_are_named_hidden_forms():
         ids.append(cell_id)
         if cell["cell_type"] != "code":
             continue
-        assert cell["metadata"]["cellView"] == "form"
+        expected_view = "form" if cell_id == "hurdler-initialize" else "both"
+        assert cell["metadata"]["cellView"] == expected_view
         assert cell["metadata"]["colab"] == {}
         assert "".join(cell["source"]).startswith("#@title ")
         assert cell.get("outputs", []) == []
@@ -134,13 +135,13 @@ def test_colab_has_separate_tutorial_steps_with_viewer_after_ga():
         cell["metadata"]["id"]: "".join(cell["source"])
         for cell in _colab_payload()["cells"]
     }
-    assert sources["hurdler-step-1-setup"].endswith("display(setup_module)")
-    assert sources["hurdler-step-2-protein"].endswith("display(protein_module)")
-    assert sources["hurdler-step-3-query"].endswith("display(route_filter_module)")
-    assert sources["hurdler-step-4-route"].endswith("display(route_selection_module)")
-    assert sources["hurdler-step-5-ga"].endswith("display(ga_module)")
-    assert sources["hurdler-step-6-viewer"].endswith("display(viewer_module)")
-    assert sources["hurdler-step-7-results"].endswith("display(result_module)")
+    assert "display(setup_module)" in sources["hurdler-step-1-setup"]
+    assert "display(protein_module)" in sources["hurdler-step-2-protein"]
+    assert "display(route_filter_module)" in sources["hurdler-step-3-query"]
+    assert "display(route_selection_module)" in sources["hurdler-step-4-route"]
+    assert "display(ga_module)" in sources["hurdler-step-5-ga"]
+    assert "display(viewer_module)" in sources["hurdler-step-6-viewer"]
+    assert "display(result_module)" in sources["hurdler-step-7-results"]
     controller = _colab_runtime_sources()[2]
     assert "Select all RE" in controller
     assert "Select none" in controller
@@ -175,6 +176,7 @@ def test_colab_has_separate_tutorial_steps_with_viewer_after_ga():
     assert "credential_upload.value = ()" not in controller
     assert "_clear_credential_upload()" in controller
     imports = _colab_runtime_sources()[1]
+    assert "colab_output.enable_custom_widget_manager()" in imports
     assert "write_secondary_checkpoint" in imports
     assert "timestamped_results_archive" in imports
     assert "create_external_ga_bundle" in imports
@@ -828,6 +830,17 @@ def test_notebook_headless_mock_executes_clean_kernel(
         for cell in executed.cells
         for output in cell.get("outputs", [])
     )
+    if notebook_path == COLAB_NOTEBOOK:
+        tutorial_cells = [
+            cell for cell in executed.cells
+            if str(cell.get("id", "")).startswith("hurdler-step-")
+        ]
+        assert len(tutorial_cells) == 7
+        for cell in tutorial_cells:
+            assert any(
+                "application/vnd.jupyter.widget-view+json" in output.get("data", {})
+                for output in cell.get("outputs", [])
+            ), f"{cell['id']} did not render an interactive widget"
     assert (tmp_path / "design" / "optimized_construct.fasta").stat().st_size > 0
     assert (tmp_path / "design" / "idt_bulk_input.csv").stat().st_size > 0
     assert (tmp_path / "design" / "idt_bulk_input.tsv").stat().st_size > 0

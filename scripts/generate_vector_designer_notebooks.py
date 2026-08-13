@@ -528,6 +528,18 @@ from hurdler.vector_design import (
     write_design_outputs_v2,
 )
 
+COLAB_WIDGET_MANAGER_ENABLED = False
+try:
+    # Colab does not render ipywidgets created by a background/application
+    # bootstrap reliably until its custom widget manager is explicitly enabled.
+    # Keep this in the initialization cell, before any tutorial module is shown.
+    from google.colab import output as colab_output
+    colab_output.enable_custom_widget_manager()
+    COLAB_WIDGET_MANAGER_ENABLED = True
+except ImportError:
+    # A regular Jupyter kernel uses its native widget manager.
+    pass
+
 try:
     from google.colab import data_table
     data_table.enable_dataframe_formatter()
@@ -3516,13 +3528,41 @@ None
 
 
 COLAB_TUTORIAL_STEPS = (
-    ("hurdler-step-1-setup", "1. Storage and IDT setup", "display(setup_module)"),
-    ("hurdler-step-2-protein", "2. Protein sequence and repeat definition", "display(protein_module)"),
-    ("hurdler-step-3-query", "3. Enzyme/plasmid filters and HURDLER query", "display(route_filter_module)"),
-    ("hurdler-step-4-route", "4. Route selection and confirmation", "display(route_selection_module)"),
-    ("hurdler-step-5-ga", "5. GA optimization and execution", "display(ga_module)"),
-    ("hurdler-step-6-viewer", "6. Interactive plasmid and insert viewer", "display(viewer_module)"),
-    ("hurdler-step-7-results", "7. Results and downloads", "display(result_module)"),
+    (
+        "hurdler-step-1-setup",
+        "1. Storage and IDT setup",
+        "display(setup_module)\nNone",
+    ),
+    (
+        "hurdler-step-2-protein",
+        "2. Protein sequence and repeat definition",
+        "display(protein_module)\nNone",
+    ),
+    (
+        "hurdler-step-3-query",
+        "3. Enzyme/plasmid filters and HURDLER query",
+        "display(route_filter_module)\nNone",
+    ),
+    (
+        "hurdler-step-4-route",
+        "4. Route selection and confirmation",
+        "display(route_selection_module)\nNone",
+    ),
+    (
+        "hurdler-step-5-ga",
+        "5. GA optimization and execution",
+        "display(ga_module)\nNone",
+    ),
+    (
+        "hurdler-step-6-viewer",
+        "6. Interactive plasmid and insert viewer",
+        "display(viewer_module)\nNone",
+    ),
+    (
+        "hurdler-step-7-results",
+        "7. Results and downloads",
+        "display(result_module)\nNone",
+    ),
 )
 
 
@@ -3583,16 +3623,21 @@ def _code_cell(
     cell_id: str,
     title: str,
     tags: list[str] | None = None,
+    form_view: bool = False,
 ):
     if colab:
-        source = f"#@title {title}\n" + source
+        display_mode = ' { display-mode: "form" }' if form_view else ""
+        source = f"#@title {title}{display_mode}\n" + source
     cell = nbf.v4.new_code_cell(source)
     cell["id"] = cell_id
     cell.metadata["id"] = cell_id
     if tags:
         cell.metadata["tags"] = tags
     if colab:
-        cell.metadata["cellView"] = "form"
+        # Keep the large bootstrap hidden, but let each tiny display cell use the
+        # normal Colab execution surface.  Empty parameter forms can otherwise be
+        # mistaken for a code-snippet launcher and show no widget output.
+        cell.metadata["cellView"] = "form" if form_view else "both"
         cell.metadata["colab"] = {}
     return cell
 
@@ -3616,7 +3661,8 @@ def notebook(*, colab: bool = False):
                 application_source,
                 colab=True,
                 cell_id="hurdler-initialize",
-                title='Initialize HURDLER tutorial { display-mode: "form" }',
+                title="Initialize HURDLER tutorial",
+                form_view=True,
             )
         )
         for cell_id, title, source in COLAB_TUTORIAL_STEPS:
