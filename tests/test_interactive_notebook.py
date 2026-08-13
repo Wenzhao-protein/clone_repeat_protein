@@ -119,6 +119,7 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
         "hurdler-step-5-ga",
         "hurdler-step-6-viewer",
         "hurdler-step-7-results",
+        "hurdler-reconnect-interface",
     ]
     assert "widgets.Password(" in COLAB_NOTEBOOK.read_text()
     assert "Create Credentials" in controller
@@ -148,6 +149,9 @@ def test_colab_has_separate_tutorial_steps_with_viewer_after_ga():
     assert "display(ga_module)" in sources["hurdler-step-5-ga"]
     assert "display(viewer_module)" in sources["hurdler-step-6-viewer"]
     assert "display(result_module)" in sources["hurdler-step-7-results"]
+    assert "display(reconnect_module)" in sources["hurdler-reconnect-interface"]
+    assert "_install_colab_ui_bridge()" in sources["hurdler-step-5-ga"]
+    assert "_install_colab_ui_bridge()" in sources["hurdler-reconnect-interface"]
     controller = _colab_runtime_sources()[2]
     assert "Select all RE" in controller
     assert "Select none" in controller
@@ -203,6 +207,10 @@ def test_colab_has_separate_tutorial_steps_with_viewer_after_ga():
     assert 'status="fragment_scored"' not in controller
     assert "_ui_event_pump" in controller
     assert "_enqueue_ui_event" in controller
+    assert 'register_callback("hurdler.ui_drain"' in controller
+    assert "google.colab.kernel.invokeFunction('hurdler.ui_drain'" in controller
+    assert "ui_bridge_output" in controller
+    assert "reconnect_tabs" in controller
     assert "call_soon_threadsafe" in controller
     assert "tutorial_app" not in controller
 
@@ -871,6 +879,38 @@ assert state["run_active"] is False
     )
 
 
+def test_colab_frontend_callback_bridge_drains_worker_events(colab_runtime_namespace):
+    namespace = colab_runtime_namespace
+
+    class FakeColabOutput:
+        def __init__(self):
+            self.callbacks = {}
+
+        def register_callback(self, name, callback):
+            self.callbacks[name] = callback
+
+    bridge = FakeColabOutput()
+    namespace["COLAB_WIDGET_MANAGER_ENABLED"] = True
+    namespace["colab_output"] = bridge
+    assert namespace["_install_colab_ui_bridge"]() is True
+    assert "hurdler.ui_drain" in bridge.callbacks
+    assert namespace["state"]["ui_bridge_installed"] is True
+
+    namespace["state"]["run_id"] = 17
+    namespace["state"]["run_active"] = True
+    event = namespace["DesignProgressEvent"](
+        stage="ga", status="fitness_running", fragment_kind="bridge_test",
+        candidate_index=1, candidate_total=4, elapsed_seconds=0.1,
+    )
+    namespace["state"]["progress_queue"].put(("progress", 17, event))
+    result = bridge.callbacks["hurdler.ui_drain"]()
+    assert result.data["handled"] == 1
+    assert result.data["run_id"] == 17
+    assert namespace["candidate_progress"].value == 1
+    assert "fitness_running" in namespace["stage_html"].value
+    assert namespace["state"]["ui_bridge_poll_count"] == 1
+
+
 def test_readme_notebook_links_resolve():
     assert NOTEBOOK.is_file()
     assert COLAB_NOTEBOOK.is_file()
@@ -954,6 +994,14 @@ def test_notebook_headless_mock_executes_clean_kernel(
                 "application/vnd.jupyter.widget-view+json" in output.get("data", {})
                 for output in cell.get("outputs", [])
             ), f"{cell['id']} did not render an interactive widget"
+        reconnect_cell = next(
+            cell for cell in executed.cells
+            if cell.get("id") == "hurdler-reconnect-interface"
+        )
+        assert any(
+            "application/vnd.jupyter.widget-view+json" in output.get("data", {})
+            for output in reconnect_cell.get("outputs", [])
+        )
     assert (tmp_path / "design" / "optimized_construct.fasta").stat().st_size > 0
     assert (tmp_path / "design" / "idt_bulk_input.csv").stat().st_size > 0
     assert (tmp_path / "design" / "idt_bulk_input.tsv").stat().st_size > 0

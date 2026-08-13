@@ -38,6 +38,12 @@ and exports an auditable molecular record for every step. It **does not place an
 order**. Run the notebook once with **Runtime → Run all**, then work through the
 numbered panels from top to bottom.
 
+Colab does not persist trusted third-party widget views when a GitHub notebook
+page is refreshed. If the runtime is still connected, run the final
+**Reconnect interface after a browser refresh** cell once: it remounts all seven
+panels as tabs and reconnects the GA progress bridge without restarting the GA.
+If the runtime itself was replaced, use **Runtime → Run all** instead.
+
 Here **RDL** means the repeat-directional-ligation cycle: one optimized
 secondary donor can be digested and inserted repeatedly at the growing array
 boundary while Site II is re-silenced after ligation.
@@ -493,7 +499,7 @@ import ipywidgets as widgets
 from Bio import SeqIO
 from dna_features_viewer import BiopythonTranslator, CircularGraphicRecord
 from IPython import get_ipython
-from IPython.display import Javascript, Markdown, clear_output, display
+from IPython.display import JSON, Javascript, Markdown, clear_output, display
 import matplotlib.pyplot as plt
 
 from hurdler.design import parse_protein_input
@@ -1173,6 +1179,9 @@ state = {
     "ui_io_loop": None,
     "ui_schedule_lock": threading.Lock(),
     "ui_drain_pending": False,
+    "ui_bridge_installed": False,
+    "ui_bridge_poll_count": 0,
+    "last_ui_render_monotonic": None,
     "checkpoint_thread": None,
     "visible_log_lines": [],
     "idt_score_events": [],
@@ -2171,6 +2180,9 @@ export_bundle_button = widgets.Button(
 )
 download_button = widgets.Button(description="Download results ZIP", icon="download", disabled=True)
 external_bundle_output = widgets.Output()
+ui_bridge_output = widgets.Output(
+    layout=widgets.Layout(height="1px", min_height="1px", overflow="hidden")
+)
 
 
 def _generation_schedule():
@@ -2259,6 +2271,7 @@ def _progress_line(event):
 
 
 def _render_progress(event: DesignProgressEvent):
+    state["last_ui_render_monotonic"] = time.monotonic()
     stage_html.value = (
         "<div style='border:2px solid #4b2e83;background:#f4f0fa;color:#111827;border-radius:8px;padding:10px'>"
         f"<b>Status:</b> {html.escape(event.stage)} · {html.escape(event.status)}</div>"
@@ -2330,6 +2343,50 @@ def _drain_ui_events(max_items=100):
         elif kind == "stage_html":
             stage_html.value = str(payload)
     return handled
+
+
+def _colab_ui_drain_callback():
+    """Drain GA events on Colab's main kernel thread via a trusted JS call."""
+    state["ui_bridge_poll_count"] = int(state.get("ui_bridge_poll_count", 0)) + 1
+    handled = _drain_ui_events(max_items=250)
+    return JSON({
+        "handled": int(handled),
+        "run_id": int(state.get("run_id", 0)),
+        "run_active": bool(state.get("run_active")),
+        "terminal_status": state.get("run_terminal_status"),
+    })
+
+
+def _install_colab_ui_bridge():
+    """Install a browser-driven progress pump that survives Colab loop variants."""
+    if not COLAB_WIDGET_MANAGER_ENABLED or "colab_output" not in globals():
+        state["ui_bridge_installed"] = False
+        return False
+    colab_output.register_callback("hurdler.ui_drain", _colab_ui_drain_callback)
+    with ui_bridge_output:
+        clear_output(wait=True)
+        display(Javascript(r"""
+(() => {
+  if (window.__hurdlerUiDrainTimer) {
+    clearInterval(window.__hurdlerUiDrainTimer);
+  }
+  window.__hurdlerUiDrainBusy = false;
+  window.__hurdlerUiDrainTimer = setInterval(async () => {
+    if (window.__hurdlerUiDrainBusy) return;
+    window.__hurdlerUiDrainBusy = true;
+    try {
+      await google.colab.kernel.invokeFunction('hurdler.ui_drain', [], {});
+    } catch (_error) {
+      // A page refresh invalidates trusted output callbacks. Running the
+      // reconnect cell registers a fresh callback in the new browser session.
+    } finally {
+      window.__hurdlerUiDrainBusy = false;
+    }
+  }, 250);
+})();
+"""))
+    state["ui_bridge_installed"] = True
+    return True
 
 
 def _capture_ui_dispatcher():
@@ -3177,6 +3234,7 @@ def _run_design(_button=None):
     state["run_terminal_status"] = "running"
     state["run_started_monotonic"] = time.monotonic()
     state["last_progress_monotonic"] = state["run_started_monotonic"]
+    state["last_ui_render_monotonic"] = state["run_started_monotonic"]
     generation_progress.value = 0
     candidate_progress.value = 0
     stage_html.value = (
@@ -3221,6 +3279,7 @@ def _run_design(_button=None):
         control = DesignRunControl()
         state["run_control"] = control
         _set_run_active(True)
+        bridge_installed = _install_colab_ui_bridge()
         worker = threading.Thread(
             target=_run_design_worker,
             args=(request, query, output_directory, control, run_id),
@@ -3231,6 +3290,11 @@ def _run_design(_button=None):
         _start_ui_event_pump(run_id)
         worker.start()
         state["visible_log_lines"].append(f"worker_started run_id={run_id} thread={worker.name}")
+        state["visible_log_lines"].append(
+            "ui_progress_bridge=" + (
+                "colab_frontend_250ms" if bridge_installed else "kernel_event_loop"
+            )
+        )
         attempt_log_html.value = (
             "<pre style='color:#111827;background:#ffffff'>"
             + html.escape("\n".join(state["visible_log_lines"]))
@@ -3628,6 +3692,7 @@ ga_panel = widgets.VBox([
     ),
     colab_execution_panel,
     external_execution_panel,
+    ui_bridge_output,
     widgets.HTML("<h3 style='color:#3b1f69'>Live GA / IDT log</h3>"),
     stage_html, generation_progress, candidate_progress, current_html, attempt_log_html,
     widgets.HTML("<h3 style='color:#3b1f69'>IDT score trajectory</h3>"),
@@ -3700,6 +3765,29 @@ result_module = widgets.VBox([
     widgets.HTML("<h2>7. Results and downloads</h2>"),
     results_panel,
 ])
+reconnect_tabs = widgets.Tab(children=(
+    setup_module,
+    protein_module,
+    route_filter_module,
+    route_selection_module,
+    ga_module,
+    viewer_module,
+    result_module,
+))
+for _tab_index, _tab_title in enumerate((
+    "1 Setup", "2 Protein", "3 Query", "4 Route", "5 GA", "6 Viewer", "7 Results",
+)):
+    reconnect_tabs.set_title(_tab_index, _tab_title)
+reconnect_module = widgets.VBox([
+    widgets.HTML(
+        "<div style='border:2px solid #4b2e83;background:#f4f0fa;color:#111827;"
+        "border-radius:8px;padding:12px'><b>Interface reconnected to the current kernel.</b> "
+        "Use these tabs after a browser refresh. Existing non-secret selections, GA state and queued "
+        "progress are reused when the runtime is still connected; IDT credentials are never restored "
+        "from notebook or disk.</div>"
+    ),
+    reconnect_tabs,
+])
 None
 '''
 
@@ -3728,7 +3816,7 @@ COLAB_TUTORIAL_STEPS = (
     (
         "hurdler-step-5-ga",
         "5. GA optimization and execution",
-        "display(ga_module)\nNone",
+        "display(ga_module)\n_install_colab_ui_bridge()\nNone",
     ),
     (
         "hurdler-step-6-viewer",
@@ -3740,6 +3828,13 @@ COLAB_TUTORIAL_STEPS = (
         "7. Results and downloads",
         "display(result_module)\nNone",
     ),
+)
+
+
+COLAB_RECONNECT_STEP = (
+    "hurdler-reconnect-interface",
+    "Reconnect interface after a browser refresh",
+    "display(reconnect_module)\n_install_colab_ui_bridge()\nNone",
 )
 
 
@@ -3852,6 +3947,16 @@ def notebook(*, colab: bool = False):
                     form_view=True,
                 )
             )
+        reconnect_id, reconnect_title, reconnect_source = COLAB_RECONNECT_STEP
+        cells.append(
+            _code_cell(
+                reconnect_source,
+                colab=True,
+                cell_id=reconnect_id,
+                title=reconnect_title,
+                form_view=True,
+            )
+        )
     else:
         cells.extend([
             _code_cell(
