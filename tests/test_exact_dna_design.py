@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 import pandas as pd
+from Bio import SeqIO
 
 from hurdler.dna_assembly import (
     enumerate_active_latent_pairs,
@@ -23,7 +26,10 @@ from hurdler.exact_dna_design import (
     parse_exact_dna_input,
     query_exact_dna,
     write_exact_dna_outputs,
+    _retain_annotated_route_groups,
 )
+from hurdler.exact_dna_verification import verify_exact_dna_assembly
+from hurdler.plasmid_reference import load_plasmid_reference
 from hurdler.paths import ProjectPaths
 
 
@@ -121,6 +127,31 @@ def test_exact_catalog_combines_broad_re_roles_with_type_iis_adapters():
     assert geometries["ApaI"].site_i_eligible
     assert geometries["ApaI"].site_ii_eligible
     assert any(item.is_type_iis and item.site_iii_eligible for item in geometries.values())
+
+
+def test_route_group_retention_does_not_let_one_pair_hide_other_pairs():
+    routes = []
+    for pair_index in range(4):
+        for rank in range(30 if pair_index == 0 else 1):
+            routes.append(
+                {
+                    "route_id": f"r{pair_index}_{rank}",
+                    "profile_id": "pUC18",
+                    "scheme_id": "pUC18:inside/inside",
+                    "pair_mode": "fixed",
+                    "pairs": [
+                        {
+                            "site_i_enzyme": f"I{pair_index}",
+                            "site_ii_enzyme": f"II{pair_index}",
+                        }
+                    ],
+                }
+            )
+    retained = _retain_annotated_route_groups(routes, routes_per_group=1)
+    assert len(retained) == 4
+    assert {row["pairs"][0]["site_i_enzyme"] for row in retained} == {
+        "I0", "I1", "I2", "I3"
+    }
 
 
 def test_active_latent_enumeration_excludes_active_active_and_two_mismatches():
@@ -265,14 +296,47 @@ def test_batch_mode_makes_no_idt_call_and_exports_exact_files(rf00059_result, tm
     )
     assert confirmed.status == "bulk_export_unvalidated"
     files = write_exact_dna_outputs(confirmed, tmp_path)
-    assert Path(files["target_fasta"]).read_text().splitlines()[-1] == confirmed.target_sequence
+    assert Path(files["final_insert_fasta"]).read_text().splitlines()[-1] == confirmed.target_sequence
     assert (tmp_path / "idt_bulk_input.csv").is_file()
     bulk = pd.read_csv(tmp_path / "idt_bulk_input.csv")
     assert bulk.Sequence.is_unique
     assert not (tmp_path / "idt_raw_audit.jsonl").exists()
-    manifest = json.loads((tmp_path / "run_manifest.json").read_text())
-    assert manifest["credentials_persisted"] is False
-    assert manifest["ordering_performed"] is False
+    assert not (tmp_path / "run_manifest.json").exists()
+    assert Path(files["technical_audit_zip"]).is_file()
+    assert (tmp_path / "cloning_summary.csv").is_file()
+    assert len(confirmed.cloning_steps) == 7
+    assert (tmp_path / "step00_plasmid.gb").is_file()
+    assert (tmp_path / "step01_insert.gb").is_file()
+    assert (tmp_path / "step07_plasmid.gb").is_file()
+    for path in sorted(tmp_path.glob("step*.gb")):
+        record = SeqIO.read(path, "genbank")
+        assert len(record) > 0
+        assert record.features
+        assert all(
+            "hash" not in key.lower() and "sha" not in key.lower()
+            for feature in record.features
+            for key in feature.qualifiers
+        )
+
+
+def test_independent_verifier_rejects_a_tampered_purchase(rf00059_result):
+    route_id = rf00059_result.route_candidates[0]["route_id"]
+    confirmed = confirm_exact_dna_route(
+        rf00059_result, ExactDNASelection(route_id, "batch")
+    )
+    route = rf00059_result._route_bodies[route_id]
+    primary = copy.deepcopy(confirmed.purchase_fragments[0])
+    primary["purchase_sequence"] = "A" + primary["purchase_sequence"][1:]
+    verification = verify_exact_dna_assembly(
+        query=confirmed.query,
+        target_sequence=confirmed.target_sequence,
+        route=route,
+        primary_fragment=primary,
+        database=load_plasmid_reference(),
+        geometries=load_exact_dna_enzyme_catalog(),
+    )
+    assert verification["passed"] is False
+    assert any("purchased block" in error for error in verification["errors"])
 
 
 def test_live_idt_strict_threshold_invalid_score_and_api_error(rf00059_result):
@@ -334,6 +398,16 @@ def test_live_idt_strict_threshold_invalid_score_and_api_error(rf00059_result):
     assert diagnostic_failure.status == "idt_accepted_route"
     assert diagnostic_failure.whole_target_idt["status"] == "diagnostic_api_error"
 
+    with tempfile.TemporaryDirectory() as accepted_dir:
+        accepted_files = write_exact_dna_outputs(accepted, accepted_dir)
+        assert (Path(accepted_dir) / "order_ready_fragments.csv").is_file()
+        assert not (Path(accepted_dir) / "idt_bulk_input.csv").exists()
+        assert Path(accepted_files["technical_audit_zip"]).is_file()
+    with tempfile.TemporaryDirectory() as rejected_dir:
+        write_exact_dna_outputs(boundary, rejected_dir)
+        assert (Path(rejected_dir) / "idt_bulk_input.csv").is_file()
+        assert not (Path(rejected_dir) / "order_ready_fragments.csv").exists()
+
 
 def test_example_hashes_are_self_consistent():
     unit = EXAMPLE["repeat_unit"]
@@ -369,8 +443,8 @@ def test_exact_dna_cli_confirms_batch_route_without_http(rf00059_result, tmp_pat
             str(output),
         ]
     ) == 0
-    summary = json.loads((output / "exact_dna_design_summary.json").read_text())
+    summary = pd.read_csv(output / "cloning_summary.csv").iloc[0]
     assert summary["status"] == "bulk_export_unvalidated"
-    assert summary["final_insert_sequence"] == query.target_sequence
+    assert int(summary["target_length_bp"]) == len(query.target_sequence)
     assert (output / "idt_bulk_input.csv").is_file()
     assert not (output / "idt_raw_audit.jsonl").exists()

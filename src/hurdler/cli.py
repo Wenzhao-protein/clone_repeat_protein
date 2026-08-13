@@ -33,6 +33,7 @@ from .complete_route import (
 from .exact_dna_design import (
     ExactDNAQuery,
     ExactDNASelection,
+    confirm_best_exact_dna_route,
     confirm_exact_dna_route,
     query_exact_dna,
     write_exact_dna_outputs,
@@ -1133,7 +1134,12 @@ def main(argv: list[str] | None = None) -> int:
                                 include_path_in_status=False,
                             )
                             scorer = IDTComplexityScorer(Path(temporary) / "raw.jsonl")
-                        result = confirm_exact_dna_route(
+                        confirmer = (
+                            confirm_best_exact_dna_route
+                            if selection.validation_mode == "api"
+                            else confirm_exact_dna_route
+                        )
+                        result = confirmer(
                             result,
                             selection,
                             idt_scorer=scorer,

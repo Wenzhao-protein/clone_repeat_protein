@@ -21,6 +21,7 @@ from .exact_dna_design import (
     ExactDNAQuery,
     ExactDNAResult,
     ExactDNASelection,
+    confirm_best_exact_dna_route,
     confirm_exact_dna_route,
     load_exact_dna_enzyme_catalog,
     query_exact_dna,
@@ -54,6 +55,7 @@ __all__ = [
     "design_construct_v2",
     "query_exact_dna",
     "confirm_exact_dna_route",
+    "confirm_best_exact_dna_route",
     "load_exact_dna_enzyme_catalog",
     "write_exact_dna_outputs",
 ]

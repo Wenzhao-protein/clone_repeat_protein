@@ -13,7 +13,9 @@ import heapq
 import io
 import json
 import math
+import tempfile
 import time
+import zipfile
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
@@ -30,12 +32,15 @@ from .dna_assembly import (
     EnzymeGeometry,
     TargetRecord,
     _product_type,
+    _select_type_iis,
+    _type_iis_flank,
     enumerate_active_latent_pairs,
     load_enzyme_catalog,
     plan_target,
     reverse_complement,
     scan_re_sites,
 )
+from .exact_dna_verification import verify_exact_dna_assembly
 from .idt import IDT_SCORE_POLICY
 from .io import sha256_file, utc_now, write_json_atomic
 from .paths import ProjectPaths
@@ -141,6 +146,7 @@ class ExactDNAQuery:
     repeat_copies: int = 4
     site_i_allowlist: tuple[str, ...] = ()
     site_ii_allowlist: tuple[str, ...] = ()
+    site_iii_allowlist: tuple[str, ...] = ()
     plasmid_allowlist: tuple[str, ...] = ()
     allow_left_cutter_in_hurdler_pair: bool = False
     allow_right_cutter_in_hurdler_pair: bool = False
@@ -158,7 +164,12 @@ class ExactDNAQuery:
             raise ValueError(f"input_mode must be one of {EXACT_DNA_INPUT_MODES}")
         if self.pair_policy != EXACT_DNA_PAIR_POLICY:
             raise ValueError(f"pair_policy must be {EXACT_DNA_PAIR_POLICY!r}")
-        for name in ("site_i_allowlist", "site_ii_allowlist", "plasmid_allowlist"):
+        for name in (
+            "site_i_allowlist",
+            "site_ii_allowlist",
+            "site_iii_allowlist",
+            "plasmid_allowlist",
+        ):
             object.__setattr__(self, name, _normalize_allowlist(getattr(self, name)))
         if not DEFAULT_OLIGO_MIN_BP <= int(self.max_purchase_bp) <= DEFAULT_GBLOCK_MAX_BP:
             raise ValueError("max_purchase_bp must be between 20 and 3000")
@@ -244,9 +255,11 @@ class ExactDNAResult:
     restoration_segments: list[dict[str, Any]] = field(default_factory=list)
     cloning_steps: list[dict[str, Any]] = field(default_factory=list)
     idt_audit: list[dict[str, Any]] = field(default_factory=list)
+    route_attempts: list[dict[str, Any]] = field(default_factory=list)
     whole_target_idt: dict[str, Any] = field(default_factory=dict)
     final_insert_sequence: str = ""
     final_plasmid: dict[str, Any] | None = None
+    independent_verification: dict[str, Any] = field(default_factory=dict)
     search_summary: dict[str, Any] = field(default_factory=dict)
     termination_reason: str = ""
 
@@ -256,7 +269,12 @@ class ExactDNAResult:
 
 def _query_payload(query: ExactDNAQuery) -> dict[str, Any]:
     payload = asdict(query)
-    for key in ("site_i_allowlist", "site_ii_allowlist", "plasmid_allowlist"):
+    for key in (
+        "site_i_allowlist",
+        "site_ii_allowlist",
+        "site_iii_allowlist",
+        "plasmid_allowlist",
+    ):
         payload[key] = list(payload[key])
     return payload
 
@@ -328,6 +346,7 @@ def _enumerate_molecular_edges(
     state_id = "state_" + _sha(sequence)[:16]
     allowed_i = set(query.site_i_allowlist)
     allowed_ii = set(query.site_ii_allowlist)
+    allowed_iii = set(query.site_iii_allowlist)
     scan_geometries = {
         name: geometry
         for name, geometry in geometries.items()
@@ -336,6 +355,9 @@ def _enumerate_molecular_edges(
         )
         or (
             geometry.site_ii_eligible and (not allowed_ii or name in allowed_ii)
+        )
+        or (
+            geometry.site_iii_eligible and (not allowed_iii or name in allowed_iii)
         )
     }
     hits = scan_re_sites(state_id, sequence, scan_geometries)
@@ -464,6 +486,29 @@ def _path_rank(path: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _path_pair_signature(path: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(sorted({_pair_key(edge) for edge in path["edges"]}))
+
+
+def _retain_paths_per_pair(
+    paths: Sequence[Mapping[str, Any]],
+    *,
+    paths_per_pair: int,
+) -> list[dict[str, Any]]:
+    """Retain representative paths without letting one RE pair crowd out others."""
+    grouped: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    for path in sorted(paths, key=_path_rank):
+        key = _path_pair_signature(path)
+        values = grouped.setdefault(key, [])
+        if len(values) < paths_per_pair:
+            values.append(dict(path))
+    return [
+        path
+        for key in sorted(grouped)
+        for path in grouped[key]
+    ]
+
+
 def _array_paths(
     query: ExactDNAQuery,
     geometries: dict[str, EnzymeGeometry],
@@ -543,7 +588,11 @@ def _array_paths(
         path for (copies, _pair), values in state_paths.items()
         if copies == target_copies for path in values if path["edges"]
     ]
-    return sorted(complete, key=_path_rank)[: int(query.max_complete_routes)], {
+    retained_complete = _retain_paths_per_pair(
+        complete,
+        paths_per_pair=int(query.paths_per_state),
+    )
+    return retained_complete, {
         "complete": not truncated,
         "reason": "route_found" if complete else "exhausted",
         "states_explored": states_explored,
@@ -571,7 +620,8 @@ def _arbitrary_paths(
     states_explored = 0
     target_hits: list[dict[str, Any]] = []
     truncated = False
-    while heap and len(complete) < int(query.max_complete_routes):
+    complete_per_pair: dict[tuple[str, ...], int] = {}
+    while heap:
         if time.monotonic() >= deadline or states_explored >= int(query.max_states):
             return sorted(complete, key=_path_rank), {
                 "complete": False,
@@ -589,7 +639,11 @@ def _arbitrary_paths(
         if reverse_edges:
             seed = _seed_evidence(sequence)
             if seed is not None:
-                complete.append({"seed": seed, "edges": list(reversed(reverse_edges))})
+                candidate = {"seed": seed, "edges": list(reversed(reverse_edges))}
+                signature = _path_pair_signature(candidate)
+                if complete_per_pair.get(signature, 0) < int(query.paths_per_state):
+                    complete.append(candidate)
+                    complete_per_pair[signature] = complete_per_pair.get(signature, 0) + 1
                 continue
         state_sha = _sha(sequence)
         if state_sha not in edge_cache:
@@ -623,7 +677,10 @@ def _arbitrary_paths(
             message=f"Explored exact precursor state {states_explored}",
             details={"state_length_bp": len(sequence), "edge_count": len(edges)},
         )
-    return sorted(complete, key=_path_rank), {
+    return _retain_paths_per_pair(
+        complete,
+        paths_per_pair=int(query.paths_per_state),
+    ), {
         "complete": not truncated and not heap,
         "reason": "route_found" if complete else "exhausted",
         "states_explored": states_explored,
@@ -826,6 +883,32 @@ def _public_route(route: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in route.items() if key != "edges"}
 
 
+def _retain_annotated_route_groups(
+    routes: Sequence[Mapping[str, Any]],
+    *,
+    routes_per_group: int,
+) -> list[dict[str, Any]]:
+    """Keep each discovered RE-pair/plasmid/cut-scheme group visible."""
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for route in routes:
+        pair_signature = tuple(
+            sorted(
+                (str(pair["site_i_enzyme"]), str(pair["site_ii_enzyme"]))
+                for pair in route["pairs"]
+            )
+        )
+        key = (
+            pair_signature,
+            str(route["profile_id"]),
+            str(route["scheme_id"]),
+            str(route["pair_mode"]),
+        )
+        values = grouped.setdefault(key, [])
+        if len(values) < routes_per_group:
+            values.append(dict(route))
+    return [route for key in sorted(grouped, key=str) for route in grouped[key]]
+
+
 def query_exact_dna(
     query: ExactDNAQuery,
     *,
@@ -847,8 +930,18 @@ def query_exact_dna(
     _GEOMETRY_CONTEXT = geometries
     unknown_i = sorted(set(query.site_i_allowlist) - set(geometries))
     unknown_ii = sorted(set(query.site_ii_allowlist) - set(geometries))
-    if unknown_i or unknown_ii:
-        raise ValueError("Unknown restriction enzymes: " + ", ".join(unknown_i + unknown_ii))
+    unknown_iii = sorted(set(query.site_iii_allowlist) - set(geometries))
+    invalid_iii = sorted(
+        name for name in query.site_iii_allowlist
+        if name in geometries and not geometries[name].site_iii_eligible
+    )
+    if unknown_i or unknown_ii or unknown_iii:
+        raise ValueError(
+            "Unknown restriction enzymes: "
+            + ", ".join(unknown_i + unknown_ii + unknown_iii)
+        )
+    if invalid_iii:
+        raise ValueError("Enzymes are not eligible for Site III: " + ", ".join(invalid_iii))
     unknown_plasmids = sorted(set(query.plasmid_allowlist) - set(PLASMIDS))
     if unknown_plasmids:
         raise ValueError("Unknown plasmid profiles: " + ", ".join(unknown_plasmids))
@@ -901,7 +994,10 @@ def query_exact_dna(
             str(route["route_id"]),
         )
     )
-    annotated = annotated[: int(query.max_complete_routes)]
+    annotated = _retain_annotated_route_groups(
+        annotated,
+        routes_per_group=int(query.max_complete_routes),
+    )
     target_hits = fixed_summary.get("target_hits", [])
     pair_candidates: dict[tuple[str, str], dict[str, Any]] = {}
     for route in annotated:
@@ -984,11 +1080,133 @@ def query_exact_dna(
     return result
 
 
-def _purchase_rows(route: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _circular_slice(sequence: str, start: int, end: int) -> str:
+    length = len(sequence)
+    start %= length
+    end %= length
+    if start == end:
+        return sequence
+    return sequence[start:end] if start < end else sequence[start:] + sequence[:end]
+
+
+def _primary_purchase_row(
+    route: Mapping[str, Any],
+    query: Mapping[str, Any],
+    database: PlasmidReferenceDatabase,
+    geometries: Mapping[str, EnzymeGeometry],
+) -> dict[str, Any]:
+    """Design the actual vector-ready primary purchase molecule."""
+    scheme = next(item for item in database.schemes if item.scheme_id == route["scheme_id"])
+    if scheme.left_cutter is None or scheme.right_cutter is None:
+        raise ValueError("Selected cut scheme has no vector cutters")
+    profile = database.profile(str(route["profile_id"]))
+    reference = database.reference(profile.reference_id)
+    oriented = (
+        reference.sequence
+        if profile.expression_strand == 1
+        else reverse_complement(reference.sequence)
+    )
+    left_overhang = _circular_slice(
+        oriented,
+        min(scheme.left_cutter.top_cut_oriented, scheme.left_cutter.bottom_cut_oriented),
+        max(scheme.left_cutter.top_cut_oriented, scheme.left_cutter.bottom_cut_oriented),
+    )
+    right_overhang = _circular_slice(
+        oriented,
+        min(scheme.right_cutter.top_cut_oriented, scheme.right_cutter.bottom_cut_oriented),
+        max(scheme.right_cutter.top_cut_oriented, scheme.right_cutter.bottom_cut_oriented),
+    )
+    core = (
+        scheme.left_restoration_sequence
+        + str(route["seed"]["seed_sequence"])
+        + scheme.right_restoration_sequence
+    )
+    if len(core) < PRIMER_PAIR_CORE_THRESHOLD_BP:
+        forward = left_overhang + core
+        reverse = right_overhang + reverse_complement(core)
+        product_type = "annealed_sticky_end_primer_pair"
+        purchase = forward
+        secondary = reverse
+        left_adapter = right_adapter = ""
+        left_adapter_enzyme = right_adapter_enzyme = "not_required"
+        fragment_hash_input = f"{product_type}|{forward}|{reverse}"
+    else:
+        selected_geometries = {
+            name: geometry
+            for name, geometry in geometries.items()
+            if not query.get("site_iii_allowlist")
+            or name in set(query.get("site_iii_allowlist", []))
+            or not geometry.site_iii_eligible
+        }
+        left_geometry = _select_type_iis(
+            int(scheme.left_cutter.overhang_length), core, selected_geometries
+        )
+        right_geometry = _select_type_iis(
+            int(scheme.right_cutter.overhang_length), core, selected_geometries
+        )
+        if left_geometry is None or right_geometry is None:
+            raise ValueError("No selected Site-III enzyme can prepare the primary insert ends")
+        left_adapter = _type_iis_flank(
+            left_geometry, left=True, overhang_sequence=left_overhang
+        )
+        right_adapter = _type_iis_flank(
+            right_geometry, left=False, overhang_sequence=right_overhang
+        )
+        purchase = left_adapter + core + right_adapter
+        if len(purchase) > int(query["max_purchase_bp"]):
+            raise ValueError("The vector-ready primary fragment exceeds max_purchase_bp")
+        product_type = _product_type(len(purchase))
+        if product_type is None:
+            raise ValueError("The vector-ready primary fragment has no supported purchase format")
+        secondary = ""
+        forward = reverse = ""
+        left_adapter_enzyme = left_geometry.enzyme
+        right_adapter_enzyme = right_geometry.enzyme
+        fragment_hash_input = f"{product_type}|{purchase}"
+    digest = left_overhang + core + right_overhang
+    purchase_sha = _sha(fragment_hash_input)
+    return {
+        "fragment_id": "primary_" + purchase_sha[:16],
+        "stage": "primary_seed",
+        "transition_index": 0,
+        "target_start": 0,
+        "target_end": len(core),
+        "core_sequence": core,
+        "core_length_bp": len(core),
+        "purchase_sequence": purchase,
+        "secondary_purchase_sequence": secondary,
+        "primer_forward_5to3": forward,
+        "primer_reverse_5to3": reverse,
+        "purchase_sequence_count": 2 if secondary else 1,
+        "purchase_length_bp": len(purchase) + len(secondary),
+        "purchase_sha256": purchase_sha,
+        "product_type": product_type,
+        "left_adapter_enzyme": left_adapter_enzyme,
+        "right_adapter_enzyme": right_adapter_enzyme,
+        "left_adapter_sequence": left_adapter,
+        "right_adapter_sequence": right_adapter,
+        "digest_fragment_sequence": digest,
+        "left_digest_overhang": left_overhang,
+        "right_digest_overhang": right_overhang,
+        "vector_left_cutter": scheme.left_cutter.canonical_enzyme,
+        "vector_right_cutter": scheme.right_cutter.canonical_enzyme,
+        "restoration_length_bp": len(scheme.left_restoration_sequence)
+        + len(scheme.right_restoration_sequence),
+        "idt_policy": IDT_SCORE_POLICY,
+        "idt_status": "not_applicable_primer_pair_under_90bp" if secondary else "not_run",
+        "idt_score": None,
+        "idt_response_sha256": "",
+    }
+
+
+def _purchase_rows(
+    route: Mapping[str, Any],
+    query: Mapping[str, Any],
+    database: PlasmidReferenceDatabase,
+    geometries: Mapping[str, EnzymeGeometry],
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    seed = dict(route["seed"])
-    seed.update({"fragment_id": "seed", "stage": "seed", "transition_index": 0})
-    rows.append(seed)
+    rows.append(_primary_purchase_row(route, query, database, geometries))
     for transition_index, edge in enumerate(route["edges"], start=1):
         for fragment in edge["fragments"]:
             row = dict(fragment)
@@ -1162,7 +1380,6 @@ def confirm_exact_dna_route(
         for edge in route["edges"]
     ]
     result.latent_transitions = _latent_transition_rows(route["edges"])
-    result.purchase_fragments = _purchase_rows(route)
     result.restoration_segments = [
         {
             "side": "left",
@@ -1175,28 +1392,99 @@ def confirm_exact_dna_route(
             "length_bp": len(route["right_restoration_sequence"]),
         },
     ]
+    database = plasmid_database or load_plasmid_reference(plasmid_reference_path)
+    geometries = load_exact_dna_enzyme_catalog()
+    try:
+        result.purchase_fragments = _purchase_rows(
+            route, query_result.query, database, geometries
+        )
+        verification = verify_exact_dna_assembly(
+            query=query_result.query,
+            target_sequence=query_result.target_sequence,
+            route=route,
+            primary_fragment=result.purchase_fragments[0],
+            database=database,
+            geometries=geometries,
+        )
+    except Exception as exc:
+        result.status = "independent_assembly_validation_failed"
+        result.message = f"Independent assembly validation failed: {exc}"
+        result.termination_reason = "independent_verifier_exception"
+        result.independent_verification = {
+            "passed": False,
+            "verifier": "independent-circular-digest-ligation-v1",
+            "errors": [str(exc)],
+        }
+        return result
+    result.independent_verification = {
+        "passed": bool(verification["passed"]),
+        "verifier": verification["verifier"],
+        "errors": list(verification["errors"]),
+        "cloning_step_count": len(verification["steps"]),
+        "protected_features_preserved": bool(
+            verification["protected_features_preserved"]
+        ),
+        "selected_pair_excess_sites": dict(
+            verification["selected_pair_excess_sites"]
+        ),
+    }
+    if not verification["passed"]:
+        result.status = "independent_assembly_validation_failed"
+        result.message = (
+            "The route planner found a candidate, but the independent digest/ligation "
+            "verifier rejected it: " + "; ".join(verification["errors"])
+        )
+        result.termination_reason = "independent_verifier_disagreement"
+        return result
+    setattr(result, "_assembly_bundle", verification)
     result.cloning_steps = [
         {
-            "step": 1,
-            "stage": "seed_installation",
-            "action": f"Open {route['profile_id']} with {route['left_cutter']}/{route['right_cutter']} and install the exact seed plus required restoration segments.",
-        },
-        *[
-            {
-                "step": index + 1,
-                "stage": "hurdler_growth",
-                "action": (
-                    f"Add the exact donor interval with {edge['site_i_enzyme']}/"
-                    f"{edge['site_ii_enzyme']}; transient latent activation is restored in the final product."
-                ),
-                "edge_id": edge["edge_id"],
-            }
-            for index, edge in enumerate(route["edges"], start=1)
-        ],
+            "step": int(step["step"]),
+            "stage": str(step["stage"]),
+            "input_plasmid": str(step["input_plasmid"]),
+            "insert": f"step{int(step['step']):02d}_insert.gb",
+            "purchase_fragment_ids": ";".join(step["purchase_fragment_ids"]),
+            "restriction_enzymes": "/".join(step["enzymes"]),
+            "site_iii_enzymes": "/".join(step.get("site_iii_enzymes", [])),
+            "insert_core_length_bp": len(str(step["insert_core_sequence"])),
+            "result_insert_length_bp": len(str(step["result_insert_sequence"])),
+            "output_plasmid": str(step["output_plasmid"]),
+            "insert_reused": False,
+        }
+        for step in verification["steps"]
     ]
-    database = plasmid_database or load_plasmid_reference(plasmid_reference_path)
-    result.final_insert_sequence = query_result.target_sequence
-    result.final_plasmid = _simulate_final_plasmid(route, query_result.target_sequence, database)
+    fragment_use_counts: dict[str, int] = {}
+    for step in result.cloning_steps:
+        fragment_id = str(step["purchase_fragment_ids"])
+        fragment_use_counts[fragment_id] = fragment_use_counts.get(fragment_id, 0) + 1
+    seen_fragments: set[str] = set()
+    for step in result.cloning_steps:
+        fragment_id = str(step["purchase_fragment_ids"])
+        step["insert_reused"] = (
+            fragment_use_counts[fragment_id] > 1 and fragment_id in seen_fragments
+        )
+        seen_fragments.add(fragment_id)
+    result.final_insert_sequence = str(verification["final_insert_sequence"])
+    insert_start = len(str(verification["retained_backbone_sequence"])) + len(
+        route["left_restoration_sequence"]
+    )
+    result.final_plasmid = {
+        "profile_id": route["profile_id"],
+        "reference_id": route["reference_id"],
+        "scheme_id": route["scheme_id"],
+        "final_plasmid_sequence": verification["final_plasmid_sequence"],
+        "final_plasmid_length_bp": len(verification["final_plasmid_sequence"]),
+        "final_plasmid_sha256": _sha(verification["final_plasmid_sequence"]),
+        "circular": True,
+        "insert_start_0based": insert_start,
+        "insert_end_0based_exclusive": insert_start + len(query_result.target_sequence),
+        "insert_sequence_sha256": _sha(query_result.target_sequence),
+        "insert_exact": True,
+        "restoration_exact": True,
+        "protected_feature_sequences_preserved": True,
+        "selected_pair_excess_sites": verification["selected_pair_excess_sites"],
+        "independently_verified": True,
+    }
     if selection.validation_mode == "none":
         result.status = "hurdler_compatible_molecular"
         result.message = "The selected exact route is confirmed molecularly; IDT was not called."
@@ -1338,6 +1626,97 @@ def confirm_exact_dna_route(
     return result
 
 
+def confirm_best_exact_dna_route(
+    query_result: ExactDNAResult,
+    selection: ExactDNASelection,
+    *,
+    idt_scorer: ComplexityScorer | None = None,
+    plasmid_database: PlasmidReferenceDatabase | None = None,
+    plasmid_reference_path: str | Path | None = None,
+    progress_callback: ProgressCallback | None = None,
+) -> ExactDNAResult:
+    """Try alternate exact routes after IDT rejection without changing the target.
+
+    Alternatives remain within the user's confirmed RE-pair, plasmid profile,
+    and vector cut scheme. Authentication and malformed-score failures are
+    systemic, so they stop the retry loop immediately.
+    """
+    if selection.validation_mode != "api":
+        return confirm_exact_dna_route(
+            query_result,
+            selection,
+            idt_scorer=idt_scorer,
+            plasmid_database=plasmid_database,
+            plasmid_reference_path=plasmid_reference_path,
+            progress_callback=progress_callback,
+        )
+    pair = (selection.site_i_enzyme, selection.site_ii_enzyme)
+    candidates = [
+        row for row in query_result.route_candidates
+        if (not selection.plasmid_profile or row["profile_id"] == selection.plasmid_profile)
+        and (not selection.cut_scheme_id or row["scheme_id"] == selection.cut_scheme_id)
+        and (
+            not all(pair)
+            or any(
+                (item["site_i_enzyme"], item["site_ii_enzyme"]) == pair
+                for item in row["pairs"]
+            )
+        )
+    ]
+    candidates.sort(key=lambda row: row["route_id"] != selection.route_id)
+    if not candidates:
+        raise ValueError("No current route matches the confirmed RE/plasmid selection")
+    attempts: list[dict[str, Any]] = []
+    last: ExactDNAResult | None = None
+    for ordinal, route in enumerate(candidates, start=1):
+        emit_progress(
+            progress_callback,
+            stage="idt_route_selection",
+            status="attempt_started",
+            message=f"Trying exact molecular route {ordinal}/{len(candidates)}",
+            details={"route_id": route["route_id"]},
+        )
+        attempt = confirm_exact_dna_route(
+            query_result,
+            ExactDNASelection(
+                route_id=str(route["route_id"]),
+                validation_mode="api",
+                plasmid_profile=str(route["profile_id"]),
+                cut_scheme_id=str(route["scheme_id"]),
+                site_i_enzyme=pair[0],
+                site_ii_enzyme=pair[1],
+            ),
+            idt_scorer=idt_scorer,
+            plasmid_database=plasmid_database,
+            plasmid_reference_path=plasmid_reference_path,
+            progress_callback=progress_callback,
+        )
+        failed_fragments = [
+            str(row.get("fragment_id", ""))
+            for row in attempt.purchase_fragments
+            if row.get("idt_accepted") is not True
+        ]
+        attempts.append(
+            {
+                "attempt": ordinal,
+                "route_id": route["route_id"],
+                "status": attempt.status,
+                "failed_fragment_ids": failed_fragments,
+                "termination_reason": attempt.termination_reason,
+            }
+        )
+        attempt.route_attempts = list(attempts)
+        last = attempt
+        if attempt.status == "idt_accepted_route":
+            return attempt
+        if attempt.status in {"idt_api_error", "idt_score_error"}:
+            break
+    assert last is not None
+    last.route_attempts = attempts
+    last.message += " Bulk Input files will be exported for manual validation."
+    return last
+
+
 def _write_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     columns = sorted({key for row in rows for key in row})
     with path.open("w", newline="") as handle:
@@ -1381,33 +1760,108 @@ def _bulk_records(fragments: Sequence[Mapping[str, Any]]) -> list[tuple[str, str
     return records
 
 
+def _user_purchase_rows(
+    result: ExactDNAResult,
+) -> list[dict[str, Any]]:
+    step_usage: dict[str, list[int]] = {}
+    for step in result.cloning_steps:
+        for fragment_id in str(step.get("purchase_fragment_ids", "")).split(";"):
+            if fragment_id:
+                step_usage.setdefault(fragment_id, []).append(int(step["step"]))
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, fragment in enumerate(result.purchase_fragments, start=1):
+        fragment_id = str(fragment.get("fragment_id", f"purchase_{index}"))
+        product = str(fragment.get("product_type", ""))
+        candidates = (
+            [
+                (fragment_id + "_forward", str(fragment.get("purchase_sequence", ""))),
+                (fragment_id + "_reverse", str(fragment.get("secondary_purchase_sequence", ""))),
+            ]
+            if product in {"duplexed_seed_oligo_pair", "annealed_sticky_end_primer_pair"}
+            else [(fragment_id, str(fragment.get("purchase_sequence", "")))]
+        )
+        for name, sequence in candidates:
+            if not sequence or sequence in seen:
+                continue
+            seen.add(sequence)
+            rows.append(
+                {
+                    "Name": name,
+                    "Sequence": sequence,
+                    "Length_bp": len(sequence),
+                    "Product_type": product,
+                    "Used_in_cloning_steps": ";".join(
+                        str(value) for value in sorted(set(step_usage.get(fragment_id, [])))
+                    ),
+                    "IDT_status": fragment.get("idt_status", "not_run"),
+                    "IDT_score": fragment.get("idt_score", ""),
+                }
+            )
+    return rows
+
+
 def write_exact_dna_outputs(result: ExactDNAResult, output_dir: str | Path) -> dict[str, str]:
+    """Write a concise cloning package plus a separate technical audit ZIP."""
+    from .exact_dna_artifacts import write_exact_dna_genbanks
+
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
     paths: dict[str, str] = {}
-    summary = destination / "exact_dna_design_summary.json"
-    write_json_atomic(result.to_dict(), summary)
-    paths["summary"] = str(summary)
-    for filename, rows in (
-        ("restriction_hits.csv", result.restriction_hits),
-        ("pair_candidates.csv", result.pair_candidates),
-        ("route_candidates.csv", result.route_candidates),
-        ("transitions.csv", result.transitions),
-        ("latent_transitions.csv", result.latent_transitions),
-        ("purchase_fragments.csv", result.purchase_fragments),
-        ("restoration_segments.csv", result.restoration_segments),
-        ("cloning_steps.csv", result.cloning_steps),
-    ):
-        path = destination / filename
-        _write_rows(path, rows)
-        paths[filename] = str(path)
-    target = destination / "exact_target.fasta"
-    target.write_text(f">{result.query['sequence_id']} exact_target\n{result.target_sequence}\n")
-    paths["target_fasta"] = str(target)
-    if result.seed:
-        seed = destination / "exact_seed.fasta"
-        seed.write_text(f">{result.query['sequence_id']}_seed\n{result.seed['seed_sequence']}\n")
-        paths["seed_fasta"] = str(seed)
+    route = result.selected_route or {}
+    pair_text = ";".join(
+        f"{row['site_i_enzyme']}/{row['site_ii_enzyme']}"
+        for row in route.get("pairs", [])
+    )
+    summary_row = {
+        "sequence_id": result.query["sequence_id"],
+        "status": result.status,
+        "message": result.message,
+        "target_length_bp": result.target_length_bp,
+        "cloning_step_count": len(result.cloning_steps),
+        "unique_purchase_sequence_count": len(_bulk_records(result.purchase_fragments)),
+        "plasmid_profile": route.get("profile_id", ""),
+        "cut_scheme": route.get("cut_scheme", ""),
+        "restriction_enzyme_pairs": pair_text,
+        "independent_assembly_verification": (
+            "passed" if result.independent_verification.get("passed") else "not_passed"
+        ),
+        "idt_decision": (
+            "all_purchase_fragments_accepted"
+            if result.status == "idt_accepted_route"
+            else "manual_bulk_validation_required"
+        ),
+        "order_submitted": False,
+    }
+    summary_csv = destination / "cloning_summary.csv"
+    _write_rows(summary_csv, [summary_row])
+    paths["cloning_summary.csv"] = str(summary_csv)
+    summary_md = destination / "cloning_summary.md"
+    summary_md.write_text(
+        "# Exact-DNA HURDLER cloning summary\n\n"
+        f"- Status: `{result.status}`\n"
+        f"- Cloning steps: **{len(result.cloning_steps)}**\n"
+        f"- Plasmid: **{route.get('profile_id', 'not selected')}**\n"
+        f"- RE pair(s): **{pair_text or 'not selected'}**\n"
+        f"- IDT: **{summary_row['idt_decision']}**\n\n"
+        "No order was submitted. Follow `cloning_steps.csv` in numeric order.\n"
+    )
+    paths["cloning_summary.md"] = str(summary_md)
+    steps_path = destination / "cloning_steps.csv"
+    _write_rows(steps_path, result.cloning_steps)
+    paths["cloning_steps.csv"] = str(steps_path)
+
+    purchase_rows = _user_purchase_rows(result)
+    purchase_csv = destination / "purchase_fragments.csv"
+    _write_rows(purchase_csv, purchase_rows)
+    paths["purchase_fragments.csv"] = str(purchase_csv)
+    purchase_fasta = destination / "purchase_fragments.fasta"
+    purchase_fasta.write_text(
+        "".join(f">{row['Name']}\n{row['Sequence']}\n" for row in purchase_rows)
+    )
+    paths["purchase_fragments.fasta"] = str(purchase_fasta)
+
+    paths.update(write_exact_dna_genbanks(result, destination, include_manifest=False))
     if result.final_insert_sequence:
         final_insert = destination / "final_exact_insert.fasta"
         final_insert.write_text(
@@ -1421,49 +1875,70 @@ def write_exact_dna_outputs(result: ExactDNAResult, output_dir: str | Path) -> d
             f"{result.final_plasmid['final_plasmid_sequence']}\n"
         )
         paths["final_plasmid_fasta"] = str(plasmid)
-    records = _bulk_records(result.purchase_fragments)
-    if records:
-        for filename, delimiter in (("idt_bulk_input.csv", ","), ("idt_bulk_input.tsv", "\t")):
+    records = [(str(row["Name"]), str(row["Sequence"])) for row in purchase_rows]
+    if records and result.status == "idt_accepted_route":
+        order_csv = destination / "order_ready_fragments.csv"
+        _write_rows(order_csv, purchase_rows)
+        paths["order_ready_fragments.csv"] = str(order_csv)
+        order_fasta = destination / "order_ready_fragments.fasta"
+        order_fasta.write_text(
+            "".join(f">{name}\n{sequence}\n" for name, sequence in records)
+        )
+        paths["order_ready_fragments.fasta"] = str(order_fasta)
+    elif records:
+        for filename, delimiter in (
+            ("idt_bulk_input.csv", ","),
+            ("idt_bulk_input.tsv", "\t"),
+        ):
             path = destination / filename
             with path.open("w", newline="") as handle:
                 writer = csv.writer(handle, delimiter=delimiter)
                 writer.writerow(["Name", "Sequence"])
                 writer.writerows(records)
             paths[filename] = str(path)
-        fasta = destination / "purchase_fragments.fasta"
+        fasta = destination / "idt_bulk_input.fasta"
         fasta.write_text("".join(f">{name}\n{sequence}\n" for name, sequence in records))
-        paths["purchase_fasta"] = str(fasta)
-    audit = destination / "idt_audit.jsonl"
-    audit.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in result.idt_audit))
-    paths["idt_audit"] = str(audit)
-    plan = destination / "cloning_plan.md"
-    plan.write_text(
-        "# Exact-DNA HURDLER cloning plan\n\n"
-        f"Status: `{result.status}`\n\n"
-        + "\n".join(
-            f"{row['step']}. **{row['stage']}** — {row['action']}"
-            for row in result.cloning_steps
+        paths["idt_bulk_input.fasta"] = str(fasta)
+
+    audit_zip = destination.parent / f"{destination.name}_technical_audit.zip"
+    with tempfile.TemporaryDirectory(prefix="hurdler_exact_audit_") as temporary:
+        audit_root = Path(temporary)
+        write_json_atomic(result.to_dict(), audit_root / "exact_dna_design_summary.json")
+        for filename, rows in (
+            ("restriction_hits.csv", result.restriction_hits),
+            ("pair_candidates.csv", result.pair_candidates),
+            ("route_candidates.csv", result.route_candidates),
+            ("transitions.csv", result.transitions),
+            ("latent_transitions.csv", result.latent_transitions),
+            ("restoration_segments.csv", result.restoration_segments),
+            ("route_attempts.csv", result.route_attempts),
+        ):
+            _write_rows(audit_root / filename, rows)
+        (audit_root / "idt_audit.jsonl").write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in result.idt_audit)
         )
-        + "\n\nThis is a sequence design only and does not place an order.\n"
-    )
-    paths["cloning_plan"] = str(plan)
-    manifest = destination / "run_manifest.json"
-    write_json_atomic(
-        {
-            "schema_version": EXACT_DNA_SCHEMA_VERSION,
-            "created_at": utc_now(),
-            "status": result.status,
-            "target_sequence_sha256": result.target_sequence_sha256,
-            "plasmid_reference_version": PLASMID_REFERENCE_VERSION,
-            "idt_policy": IDT_SCORE_POLICY,
-            "credentials_persisted": False,
-            "ordering_performed": False,
-            "files": {
-                key: {"path": Path(value).name, "sha256": sha256_file(value)}
-                for key, value in paths.items()
+        bundle = getattr(result, "_assembly_bundle", None)
+        if bundle:
+            write_json_atomic(bundle, audit_root / "independent_assembly_verification.json")
+        write_json_atomic(
+            {
+                "schema_version": EXACT_DNA_SCHEMA_VERSION,
+                "created_at": utc_now(),
+                "status": result.status,
+                "target_sequence_sha256": result.target_sequence_sha256,
+                "plasmid_reference_version": PLASMID_REFERENCE_VERSION,
+                "idt_policy": IDT_SCORE_POLICY,
+                "credentials_persisted": False,
+                "ordering_performed": False,
+                "main_files": {
+                    key: {"path": Path(value).name, "sha256": sha256_file(value)}
+                    for key, value in paths.items()
+                },
             },
-        },
-        manifest,
-    )
-    paths["manifest"] = str(manifest)
+            audit_root / "run_manifest.json",
+        )
+        with zipfile.ZipFile(audit_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(audit_root.iterdir()):
+                archive.write(path, path.name)
+    paths["technical_audit_zip"] = str(audit_zip)
     return paths

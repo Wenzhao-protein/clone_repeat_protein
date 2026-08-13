@@ -51,7 +51,6 @@ def main() -> int:
                 "name": "python3",
             },
             "language_info": {"name": "python", "version": "3.11"},
-            "colab": {"provenance": [], "toc_visible": True},
         }
     )
     book.cells = [
@@ -67,7 +66,9 @@ def main() -> int:
             route and optionally choose Live IDT or Bulk Input export.
 
             The default is a four-copy array of the 108-bp Rfam RF00059 TPP riboswitch
-            element with the golden AflII/ApaI enzyme filter. The array is a derived
+            element. Every eligible active/one-base-latent RE, every maintained
+            Site-III adapter enzyme, and all eight plasmid profiles start selected.
+            The array is a derived
             cloning example, not a claim that four copies occur naturally. The final
             route is deliberately left unselected for manual confirmation.
             """
@@ -137,12 +138,23 @@ def main() -> int:
             max_search_states = 10000 #@param {type:"integer"}
             search_timeout_seconds = 600 #@param {type:"integer"}
             paths_per_state = 3 #@param {type:"integer"}
-            maximum_complete_routes = 25 #@param {type:"integer"}
+            maximum_complete_routes_per_group = 25 #@param {type:"integer"}
             allow_left_cutter_fallback = False #@param {type:"boolean"}
             allow_right_cutter_fallback = False #@param {type:"boolean"}
             """,
             cell_id="exact-dna-search-form",
             title="2. Search and annotation-aware cutter policy",
+            tags=["parameters", "colab-native-form"],
+        ),
+        code(
+            """
+            #@markdown Choose IDT behavior before the molecular query. No mode ever submits an order or changes the exact target DNA.
+            idt_validation_choice = "No API — export IDT Bulk Input" #@param ["No API — export IDT Bulk Input", "Live IDT API — require every purchase fragment to score <10"]
+            idt_credential_source = "Colab Secrets" #@param ["Colab Secrets", "Temporary idt.env upload"]
+            #@markdown Live API tries alternate breakpoints/routes within the confirmed RE/plasmid/cut-scheme selection. If none pass, the output automatically contains IDT Bulk Input files.
+            """,
+            cell_id="exact-dna-idt-policy",
+            title="3. Choose IDT validation policy",
             tags=["parameters", "colab-native-form"],
         ),
         code(
@@ -158,7 +170,8 @@ def main() -> int:
             from hurdler.constants import PLASMIDS
             from hurdler.exact_dna_design import (
                 EXACT_DNA_SCHEMA_VERSION, ExactDNAQuery, ExactDNASelection,
-                confirm_exact_dna_route, load_exact_dna_enzyme_catalog,
+                confirm_best_exact_dna_route, confirm_exact_dna_route,
+                load_exact_dna_enzyme_catalog,
                 query_exact_dna, write_exact_dna_outputs,
             )
             from hurdler.idt import (
@@ -169,10 +182,11 @@ def main() -> int:
             geometries = load_exact_dna_enzyme_catalog()
             site_i_names = sorted(name for name, item in geometries.items() if item.site_i_eligible)
             site_ii_names = sorted(name for name, item in geometries.items() if item.site_ii_eligible)
-            print(f"Loaded {len(site_i_names)} Site-I and {len(site_ii_names)} Site-II enzyme choices.")
+            site_iii_names = sorted(name for name, item in geometries.items() if item.site_iii_eligible)
+            print(f"Loaded {len(site_i_names)} Site-I, {len(site_ii_names)} Site-II, and {len(site_iii_names)} Site-III enzyme choices.")
             """,
             cell_id="exact-dna-engine",
-            title="3. Load exact-DNA engine",
+            title="4. Load exact-DNA engine",
         ),
         code(
             """
@@ -189,15 +203,17 @@ def main() -> int:
                 )
                 return boxes, widgets.VBox([widgets.HTML(f"<b>{heading}</b>"), widgets.HBox([select_all, select_none]), grid])
 
-            site_i_boxes, site_i_panel = checkbox_panel(site_i_names, "Site I enzymes", {"AflII"})
-            site_ii_boxes, site_ii_panel = checkbox_panel(site_ii_names, "Site II enzymes", {"ApaI"})
+            site_i_boxes, site_i_panel = checkbox_panel(site_i_names, "Site I enzymes — all selected")
+            site_ii_boxes, site_ii_panel = checkbox_panel(site_ii_names, "Site II enzymes — all selected")
+            site_iii_boxes, site_iii_panel = checkbox_panel(site_iii_names, "Site III adapter enzymes — all selected")
             plasmid_boxes, plasmid_panel = checkbox_panel(list(PLASMIDS), "Plasmid profiles")
-            display(widgets.HTML("Default RF00059 golden filter: Site I AflII / Site II ApaI. Use Select all to broaden the search."))
+            display(widgets.HTML("All eligible active/latent enzymes, all Site-III adapters, and all plasmid profiles are selected by default."))
             display(widgets.HBox([site_i_panel, site_ii_panel], layout=widgets.Layout(align_items="flex-start")))
+            display(site_iii_panel)
             display(plasmid_panel)
             """,
             cell_id="exact-dna-re-plasmid-selection",
-            title="4. Select individual RE enzymes and plasmids",
+            title="5. Select individual RE enzymes and plasmids",
         ),
         code(
             """
@@ -220,9 +236,12 @@ def main() -> int:
                 return tuple(name for name, box in boxes.items() if box.value)
 
             def current_query():
-                chosen_i, chosen_ii, chosen_plasmids = selected(site_i_boxes), selected(site_ii_boxes), selected(plasmid_boxes)
-                if not chosen_i or not chosen_ii or not chosen_plasmids:
-                    raise ValueError("Select at least one Site-I enzyme, Site-II enzyme, and plasmid profile")
+                chosen_i = selected(site_i_boxes)
+                chosen_ii = selected(site_ii_boxes)
+                chosen_iii = selected(site_iii_boxes)
+                chosen_plasmids = selected(plasmid_boxes)
+                if not chosen_i or not chosen_ii or not chosen_iii or not chosen_plasmids:
+                    raise ValueError("Select at least one Site-I, Site-II, Site-III enzyme, and plasmid profile")
                 advanced = bool(use_advanced_search_settings)
                 return ExactDNAQuery(
                     schema_version=EXACT_DNA_SCHEMA_VERSION,
@@ -234,6 +253,7 @@ def main() -> int:
                     exact_dna=complete_exact_dna_or_fasta,
                     site_i_allowlist=chosen_i,
                     site_ii_allowlist=chosen_ii,
+                    site_iii_allowlist=chosen_iii,
                     plasmid_allowlist=chosen_plasmids,
                     allow_left_cutter_in_hurdler_pair=bool(allow_left_cutter_fallback),
                     allow_right_cutter_in_hurdler_pair=bool(allow_right_cutter_fallback),
@@ -241,7 +261,7 @@ def main() -> int:
                     max_states=int(max_search_states if advanced else 10000),
                     timeout_seconds=int(search_timeout_seconds if advanced else 600),
                     paths_per_state=int(paths_per_state if advanced else 3),
-                    max_complete_routes=int(maximum_complete_routes if advanced else 25),
+                    max_complete_routes=int(maximum_complete_routes_per_group if advanced else 25),
                 )
 
             def fingerprint(query):
@@ -308,6 +328,8 @@ def main() -> int:
             plasmid_dropdown.observe(refresh_schemes, names="value")
             scheme_dropdown.observe(refresh_routes, names="value")
             route_dropdown.observe(route_changed, names="value")
+            for selector_box in [*site_i_boxes.values(), *site_ii_boxes.values(), *site_iii_boxes.values(), *plasmid_boxes.values()]:
+                selector_box.observe(lambda _change: invalidate_confirmation(), names="value")
 
             def on_progress(event):
                 global search_event_count
@@ -361,7 +383,19 @@ def main() -> int:
                             display(pd.DataFrame(query_result.pair_candidates))
                         if query_result.route_candidates:
                             table = pd.DataFrame(query_result.route_candidates).drop(columns=["seed", "pairs", "silencing_decisions"], errors="ignore")
-                            display(table)
+                            rows_per_page = 25
+                            page_count = max(1, (len(table) + rows_per_page - 1) // rows_per_page)
+                            route_page = widgets.BoundedIntText(value=1, min=1, max=page_count, description="Route page")
+                            route_page_output = widgets.Output()
+                            def render_route_page(_change=None):
+                                with route_page_output:
+                                    clear_output(wait=True)
+                                    first = (int(route_page.value) - 1) * rows_per_page
+                                    display(table.iloc[first:first + rows_per_page])
+                                    display(Markdown(f"Page **{route_page.value}/{page_count}** · all **{len(table)}** grouped routes remain selectable below."))
+                            route_page.observe(render_route_page, names="value")
+                            display(route_page, route_page_output)
+                            render_route_page()
                             pairs = sorted({
                                 (item["site_i_enzyme"], item["site_ii_enzyme"])
                                 for row in query_result.route_candidates for item in row["pairs"]
@@ -425,18 +459,12 @@ def main() -> int:
             run_query()
             """,
             cell_id="exact-dna-query-and-confirm",
-            title="5. Search, inspect, and confirm an exact route",
+            title="6. Search, inspect, and confirm an exact route",
         ),
         code(
             """
-            validation_mode = widgets.Dropdown(
-                options=[("Compatibility only — no HTTP", "none"), ("IDT Bulk Input — no HTTP", "batch"), ("Live IDT API", "api")],
-                value="none", description="Validation", layout=widgets.Layout(width="420px")
-            )
-            credential_source = widgets.Dropdown(
-                options=[("Colab Secrets", "secrets"), ("Temporary idt.env upload", "upload")],
-                value="secrets", description="Credentials", layout=widgets.Layout(width="420px")
-            )
+            validation_mode_value = "api" if idt_validation_choice.startswith("Live IDT") else "batch"
+            credential_source_value = "secrets" if idt_credential_source == "Colab Secrets" else "upload"
             credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False, description="Upload temporary idt.env")
             output_directory = widgets.Text(value="/content/exact_dna_hurdler_design", description="Output", layout=widgets.Layout(width="98%"))
             validate_button = widgets.Button(
@@ -444,9 +472,11 @@ def main() -> int:
                 disabled=not bool(confirmed_route_id),
             )
             download_button = widgets.Button(description="Download ZIP", icon="download", disabled=True)
+            audit_download_button = widgets.Button(description="Download technical audit ZIP", icon="download", disabled=True)
             validation_progress = widgets.HTML("Confirm a route above first.")
             validation_output = widgets.Output()
             output_zip = None
+            audit_zip = None
 
             def secret_value(reader, name):
                 try:
@@ -475,7 +505,7 @@ def main() -> int:
                 credential_row.children = (credential_upload,)
 
             def configure_credentials():
-                if credential_source.value == "secrets":
+                if credential_source_value == "secrets":
                     return configure_secrets()
                 try:
                     return configure_idt_credentials_from_bytes(uploaded_bytes())
@@ -486,7 +516,7 @@ def main() -> int:
                 validation_progress.value = f"<b>{event.stage}</b> · {event.status} · {event.message}"
 
             def run_validation(_button=None):
-                global output_zip
+                global output_zip, audit_zip
                 validate_button.disabled = True
                 download_button.disabled = True
                 with validation_output:
@@ -501,29 +531,31 @@ def main() -> int:
                         destination.mkdir(parents=True)
                         scorer = None
                         with tempfile.TemporaryDirectory(prefix="hurdler-idt-audit-") as temporary:
-                            if validation_mode.value == "api":
+                            if validation_mode_value == "api":
                                 configure_credentials()
                                 scorer = IDTComplexityScorer(Path(temporary) / "raw.jsonl")
                             selected = ExactDNASelection(
-                                confirmed_route_id, validation_mode.value,
+                                confirmed_route_id, validation_mode_value,
                                 plasmid_profile=str(plasmid_dropdown.value),
                                 cut_scheme_id=str(scheme_dropdown.value),
                                 site_i_enzyme=str(pair_dropdown.value[0]),
                                 site_ii_enzyme=str(pair_dropdown.value[1]),
                             )
-                            result = confirm_exact_dna_route(
+                            confirmer = confirm_best_exact_dna_route if validation_mode_value == "api" else confirm_exact_dna_route
+                            result = confirmer(
                                 query_result, selected, idt_scorer=scorer, progress_callback=validation_event
                             )
                         files = write_exact_dna_outputs(result, destination)
+                        audit_zip = Path(files.pop("technical_audit_zip"))
                         output_zip = Path(shutil.make_archive(str(destination.resolve()), "zip", root_dir=destination.resolve()))
                         download_button.disabled = False
+                        audit_download_button.disabled = not audit_zip.is_file()
                         display(Markdown(f"**Result:** `{result.status}` — {result.message}"))
-                        if result.latent_transitions:
-                            display(Markdown("**Latent-site transition audit**"))
-                            display(pd.DataFrame(result.latent_transitions))
-                        if result.purchase_fragments:
-                            display(pd.DataFrame(result.purchase_fragments).drop(columns=["purchase_sequence", "secondary_purchase_sequence", "primer_forward_5to3", "primer_reverse_5to3"], errors="ignore"))
-                        display(Markdown(f"Generated **{len(files)}** files. No order was submitted."))
+                        display(Markdown(f"**Cloning steps:** {len(result.cloning_steps)}"))
+                        display(pd.DataFrame(result.cloning_steps))
+                        display(Markdown(
+                            f"Generated **{len(files)}** user-facing files. Technical hashes and route audit are in a separate optional ZIP. No order was submitted."
+                        ))
                     except Exception as exc:
                         validation_progress.value = f"<b>failed</b> · {type(exc).__name__}"
                         display(Markdown(f"**Validation/export failed safely:** `{type(exc).__name__}: {exc}`"))
@@ -537,17 +569,26 @@ def main() -> int:
                 from google.colab import files
                 files.download(str(output_zip))
 
+            def download_audit_zip(_button=None):
+                if audit_zip is None or not audit_zip.is_file():
+                    raise FileNotFoundError("Run validation/export first")
+                from google.colab import files
+                files.download(str(audit_zip))
+
             validate_button.on_click(run_validation)
             download_button.on_click(download_zip)
+            audit_download_button.on_click(download_audit_zip)
             credential_row = widgets.HBox([credential_upload])
             display(widgets.VBox([
                 widgets.HTML("<b>IDT is score-only. It never optimizes DNA and never submits an order.</b>"),
-                validation_mode, credential_source, credential_row, output_directory,
-                validation_progress, widgets.HBox([validate_button, download_button]), validation_output,
+                widgets.HTML(f"Policy selected above: <b>{idt_validation_choice}</b>"),
+                credential_row if validation_mode_value == "api" and credential_source_value == "upload" else widgets.HTML("Credentials will be read only when Live API validation starts."),
+                output_directory, validation_progress,
+                widgets.HBox([validate_button, download_button]), audit_download_button, validation_output,
             ]))
             """,
             cell_id="exact-dna-idt-export",
-            title="6. Optional IDT scoring, Bulk files, and export",
+            title="7. Independent validation, IDT scoring, and export",
         ),
     ]
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

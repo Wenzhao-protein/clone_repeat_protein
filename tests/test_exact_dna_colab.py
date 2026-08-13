@@ -16,6 +16,7 @@ def _payload():
 def test_exact_dna_colab_is_output_free_hidden_and_stably_named():
     payload = _payload()
     assert payload["nbformat"] == 4
+    assert "colab" not in payload.get("metadata", {})
     assert "widgets" not in payload.get("metadata", {})
     identifiers = []
     for cell in payload["cells"]:
@@ -56,12 +57,17 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
         "max_purchase_bp",
         "max_search_states",
         "search_timeout_seconds",
+        "maximum_complete_routes_per_group",
     }
     selector = sources["exact-dna-re-plasmid-selection"]
     assert "Select all" in selector and "Select none" in selector
     assert "site_i_boxes" in selector and "site_ii_boxes" in selector
+    assert "site_iii_boxes" in selector
     assert "plasmid_boxes" in selector
-    assert '"AflII"' in selector and '"ApaI"' in selector
+    assert 'checkbox_panel(site_i_names, "Site I enzymes — all selected")' in selector
+    assert 'checkbox_panel(site_ii_names, "Site II enzymes — all selected")' in selector
+    assert 'checkbox_panel(site_iii_names, "Site III adapter enzymes — all selected")' in selector
+    assert '{"AflII"}' not in selector and '{"ApaI"}' not in selector
     query = sources["exact-dna-query-and-confirm"]
     assert "run_query()" in query
     assert "Confirm selected route" in query
@@ -70,12 +76,14 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
     assert "scheme_dropdown" in query and "route_dropdown" in query
     assert "Verified active/latent transitions" in query
     export = sources["exact-dna-idt-export"]
-    assert 'value="none"' in export
-    assert "Bulk Input" in export and "Live IDT API" in export
+    policy = sources["exact-dna-idt-policy"]
+    assert "No API — export IDT Bulk Input" in policy and "Live IDT API" in policy
+    assert "confirm_best_exact_dna_route" in export
     assert "tempfile.TemporaryDirectory" in export
     assert 'destination / "idt_raw_audit.jsonl"' not in export
     assert "clear_idt_secret_environment()" in export
     assert "files.download" in export
+    assert "technical audit ZIP" in export
     assert "IDT_CLIENT_SECRET=" not in text
     assert "IDT_PASSWORD=" not in text
 
