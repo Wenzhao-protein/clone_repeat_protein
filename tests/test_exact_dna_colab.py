@@ -58,6 +58,8 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
         "max_search_states",
         "search_timeout_seconds",
         "maximum_complete_routes_per_group",
+        "route_confirmation_mode",
+        "auto_download_results_zip",
     }
     selector = sources["exact-dna-re-plasmid-selection"]
     assert "Select all" in selector and "Select none" in selector
@@ -75,6 +77,8 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
     assert "pair_dropdown" in query and "plasmid_dropdown" in query
     assert "scheme_dropdown" in query and "route_dropdown" in query
     assert "Verified active/latent transitions" in query
+    assert "select_and_confirm_top_route" in query
+    assert 'route_confirmation_mode == "Automatically use top-ranked route"' in query
     export = sources["exact-dna-idt-export"]
     policy = sources["exact-dna-idt-policy"]
     assert "No API — export IDT Bulk Input" in policy and "Live IDT API" in policy
@@ -84,6 +88,8 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
     assert "clear_idt_secret_environment()" in export
     assert "files.download" in export
     assert "technical audit ZIP" in export
+    assert "run_validation()" in export
+    assert "auto_download_results_zip" in export
     assert "IDT_CLIENT_SECRET=" not in text
     assert "IDT_PASSWORD=" not in text
 
@@ -94,6 +100,9 @@ def test_exact_dna_colab_generator_is_the_single_source_of_truth():
     assert "RF00059" in generator
     assert "cellView" in generator
     assert "source_hidden" in generator
+    assert "force_fresh_clone = True" in generator
+    assert '"checkout", "--force", "-B", repository_ref, "FETCH_HEAD"' in generator
+    assert 'module_name.startswith("hurdler.")' in generator
 
 
 def test_readme_links_exact_dna_colab_and_notebook_index():

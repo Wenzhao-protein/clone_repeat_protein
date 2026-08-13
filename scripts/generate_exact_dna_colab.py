@@ -77,21 +77,21 @@ def main() -> int:
             """
             repository_url = "https://github.com/Wenzhao-protein/clone_repeat_protein.git" #@param {type:"string"}
             repository_ref = "agent/vector-aware-designer-v2" #@param {type:"string"}
-            force_fresh_clone = False #@param {type:"boolean"}
+            force_fresh_clone = True #@param {type:"boolean"}
 
             import importlib, os, shutil, subprocess, sys
             from pathlib import Path
 
             checkout = Path("/content/clone_repeat_protein") if Path("/content").is_dir() else Path.cwd()
-            if (checkout / "pyproject.toml").is_file() and not force_fresh_clone:
-                pass
-            elif checkout.exists() and checkout != Path.cwd():
+            hosted_checkout = checkout != Path.cwd()
+            if force_fresh_clone and checkout.exists() and hosted_checkout:
                 shutil.rmtree(checkout)
             if not (checkout / "pyproject.toml").is_file():
                 subprocess.run(["git", "clone", "--depth", "1", "--branch", repository_ref, repository_url, str(checkout)], check=True)
-            elif checkout != Path.cwd():
+            elif hosted_checkout:
                 subprocess.run(["git", "-C", str(checkout), "fetch", "origin", repository_ref, "--depth", "1"], check=True)
-                subprocess.run(["git", "-C", str(checkout), "checkout", repository_ref], check=True)
+                subprocess.run(["git", "-C", str(checkout), "checkout", "--force", "-B", repository_ref, "FETCH_HEAD"], check=True)
+                subprocess.run(["git", "-C", str(checkout), "clean", "-fd"], check=True)
             if str(checkout / "src") not in sys.path:
                 sys.path.insert(0, str(checkout / "src"))
             try:
@@ -101,6 +101,11 @@ def main() -> int:
                 in_colab = False
             if in_colab:
                 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", f"{checkout}[notebooks]"], check=True)
+            # A repeated Run all in one runtime must not reuse modules imported
+            # from an older checkout that has just been replaced above.
+            for module_name in list(sys.modules):
+                if module_name == "hurdler" or module_name.startswith("hurdler."):
+                    del sys.modules[module_name]
             importlib.invalidate_caches()
             try:
                 import hurdler
@@ -141,6 +146,8 @@ def main() -> int:
             maximum_complete_routes_per_group = 25 #@param {type:"integer"}
             allow_left_cutter_fallback = False #@param {type:"boolean"}
             allow_right_cutter_fallback = False #@param {type:"boolean"}
+            route_confirmation_mode = "Automatically use top-ranked route" #@param ["Automatically use top-ranked route", "Select route manually after query"]
+            auto_download_results_zip = True #@param {type:"boolean"}
             """,
             cell_id="exact-dna-search-form",
             title="2. Search and annotation-aware cutter policy",
@@ -455,8 +462,23 @@ def main() -> int:
                 confirm_button, confirmation_output,
             ]))
 
-            # Runtime → Run all performs the offline default query. Route confirmation remains manual.
+            def select_and_confirm_top_route():
+                if query_result is None or not query_result.route_candidates:
+                    return False
+                top = query_result.route_candidates[0]
+                pair = top["pairs"][0]
+                pair_dropdown.value = (pair["site_i_enzyme"], pair["site_ii_enzyme"])
+                plasmid_dropdown.value = top["profile_id"]
+                scheme_dropdown.value = top["scheme_id"]
+                route_dropdown.value = top["route_id"]
+                confirm_route()
+                return bool(confirmed_route_id)
+
+            # Default Runtime → Run all completes query and route confirmation.
+            # Manual mode preserves the cascading selectors for expert review.
             run_query()
+            if route_confirmation_mode == "Automatically use top-ranked route":
+                select_and_confirm_top_route()
             """,
             cell_id="exact-dna-query-and-confirm",
             title="6. Search, inspect, and confirm an exact route",
@@ -466,7 +488,12 @@ def main() -> int:
             validation_mode_value = "api" if idt_validation_choice.startswith("Live IDT") else "batch"
             credential_source_value = "secrets" if idt_credential_source == "Colab Secrets" else "upload"
             credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False, description="Upload temporary idt.env")
-            output_directory = widgets.Text(value="/content/exact_dna_hurdler_design", description="Output", layout=widgets.Layout(width="98%"))
+            default_output_directory = (
+                "/content/exact_dna_hurdler_design"
+                if in_colab else
+                str(Path(tempfile.gettempdir()) / "exact_dna_hurdler_design")
+            )
+            output_directory = widgets.Text(value=default_output_directory, description="Output", layout=widgets.Layout(width="98%"))
             validate_button = widgets.Button(
                 description="Validate / export", button_style="primary",
                 disabled=not bool(confirmed_route_id),
@@ -586,6 +613,13 @@ def main() -> int:
                 output_directory, validation_progress,
                 widgets.HBox([validate_button, download_button]), audit_download_button, validation_output,
             ]))
+
+            # Default Run all produces the complete offline Bulk package. Live
+            # API mode likewise runs automatically after credentials are read.
+            if route_confirmation_mode == "Automatically use top-ranked route" and confirmed_route_id:
+                run_validation()
+                if auto_download_results_zip and in_colab and output_zip is not None:
+                    download_zip()
             """,
             cell_id="exact-dna-idt-export",
             title="7. Independent validation, IDT scoring, and export",
