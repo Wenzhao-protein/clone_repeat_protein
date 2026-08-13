@@ -4,6 +4,7 @@ import hashlib
 import json
 import copy
 import tempfile
+import zipfile
 from dataclasses import asdict
 from pathlib import Path
 
@@ -114,8 +115,19 @@ class FakeScorer:
             "idt_response_sha256": hashlib.sha256(("response|" + digest).encode()).hexdigest(),
             "idt_scored_sequence_sha256": digest,
             "idt_positive_score_names_json": "[]" if self.score_value == 0 else '["Repeat"]',
-            "idt_rule_details_json": "[]",
+            "idt_rule_scores_json": json.dumps({"Repeat": self.score_value}),
+            "idt_rule_details_json": json.dumps(
+                [
+                    {
+                        "name": "Repeat",
+                        "score": self.score_value,
+                        "is_violated": self.score_value > 0,
+                        "display_text": "Repeated sequence complexity",
+                    }
+                ]
+            ),
             "idt_invalid_score_names_json": "[]",
+            "idt_cache_hit": False,
         }
 
 
@@ -144,8 +156,19 @@ class RejectUnsplitRF00059Donor(FakeScorer):
             "idt_response_sha256": hashlib.sha256(("response|" + digest).encode()).hexdigest(),
             "idt_scored_sequence_sha256": digest,
             "idt_positive_score_names_json": "[]" if score == 0 else '["Repeat"]',
-            "idt_rule_details_json": "[]",
+            "idt_rule_scores_json": json.dumps({"Repeat": score}),
+            "idt_rule_details_json": json.dumps(
+                [
+                    {
+                        "name": "Repeat",
+                        "score": score,
+                        "is_violated": score > 0,
+                        "display_text": "Repeated sequence complexity",
+                    }
+                ]
+            ),
             "idt_invalid_score_names_json": "[]",
+            "idt_cache_hit": False,
         }
 
 
@@ -460,12 +483,14 @@ def test_live_idt_strict_threshold_invalid_score_and_api_error(rf00059_result):
 def test_gblock_only_route_scores_every_purchase_and_writes_two_file_package(
     rf00059_gblock_result, tmp_path
 ):
+    events = []
     result = confirm_best_exact_dna_route(
         rf00059_gblock_result,
         ExactDNASelection(
             rf00059_gblock_result.route_candidates[0]["route_id"], "api"
         ),
         idt_scorer=FakeScorer(0),
+        progress_callback=events.append,
     )
     assert result.status == "idt_accepted_route"
     assert result.final_insert_sequence == EXAMPLE["repeat_unit"] * 4
@@ -490,13 +515,39 @@ def test_gblock_only_route_scores_every_purchase_and_writes_two_file_package(
         "prepare_insert_with_RE",
         "clone_with_RE",
         "reused_from_step",
+        "IDT_score",
+        "IDT_status",
         "IDT_accepted",
     ]
     assert rows.IDT_accepted.all()
-    assert Path(paths["validation_details_zip"]).is_file()
+    assert (rows.IDT_score < 10).all()
+    scored_events = [event for event in events if event.status == "fragment_scored"]
+    assert [event.idt_evaluation_index for event in scored_events] == list(
+        range(1, len(scored_events) + 1)
+    )
+    assert len(result.idt_evaluation_history) == len(scored_events)
+    assert all(event.idt_rule_scores == {"Repeat": 0.0} for event in scored_events)
+    assert all(event.details["route_attempt"] == 1 for event in scored_events)
+    validation_zip = Path(paths["validation_details_zip"])
+    assert validation_zip.is_file()
+    with zipfile.ZipFile(validation_zip) as archive:
+        names = set(archive.namelist())
+    assert {
+        "idt_score_history.csv",
+        "idt_score_trajectory.png",
+        "idt_score_trajectory.pdf",
+        "idt_score_trajectory.svg",
+        "assembly_step_manifest.json",
+        "assembly_step_manifest.csv",
+        "independent_assembly_verification.json",
+    } <= names
+    assert any(name.startswith("maps/") and name.endswith(".png") for name in names)
 
 
-def test_gblock_only_retries_padding_then_fragmented_route(rf00059_gblock_result):
+def test_gblock_only_retries_padding_then_fragmented_route(
+    rf00059_gblock_result, tmp_path
+):
+    events = []
     scorer = RejectUnsplitRF00059Donor()
     result = confirm_best_exact_dna_route(
         rf00059_gblock_result,
@@ -504,12 +555,29 @@ def test_gblock_only_retries_padding_then_fragmented_route(rf00059_gblock_result
             rf00059_gblock_result.route_candidates[0]["route_id"], "api"
         ),
         idt_scorer=scorer,
+        progress_callback=events.append,
     )
     assert result.status == "idt_accepted_route"
     assert len(result.cloning_steps) > 2
     assert any(len(sequence) > 300 for _name, sequence in scorer.calls)
     assert all(row["idt_accepted"] is True for row in result.purchase_fragments)
     assert len(result.route_attempts) >= 17
+    assert len(result.idt_evaluation_history) > len(result.idt_audit)
+    indices = [
+        event.idt_evaluation_index
+        for event in events
+        if event.status == "fragment_scored"
+    ]
+    assert indices == list(range(1, len(indices) + 1))
+    output = tmp_path / "seven_step"
+    paths = write_exact_dna_minimal_outputs(result, output)
+    with zipfile.ZipFile(paths["validation_details_zip"]) as archive:
+        genbanks = [
+            name
+            for name in archive.namelist()
+            if name.startswith("step") and name.endswith(".gb")
+        ]
+    assert len(genbanks) == 15
 
 
 def test_gblock_only_rejects_capacity_below_product_minimum():

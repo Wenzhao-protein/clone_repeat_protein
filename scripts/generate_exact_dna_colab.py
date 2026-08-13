@@ -234,7 +234,10 @@ def main() -> int:
             from pathlib import Path
 
             import ipywidgets as widgets
+            import matplotlib.pyplot as plt
             import pandas as pd
+            from Bio import SeqIO
+            from dna_features_viewer import BiopythonTranslator, CircularGraphicRecord
             from IPython.display import Markdown, clear_output, display
 
             from hurdler.constants import PLASMIDS
@@ -248,6 +251,10 @@ def main() -> int:
             from hurdler.idt import (
                 IDTComplexityScorer, clear_idt_secret_environment,
             )
+            from hurdler.idt_trajectory import (
+                idt_score_history_rows, plot_idt_score_trajectory,
+            )
+            from hurdler.exact_dna_artifacts import write_exact_dna_genbanks
             geometries = load_exact_dna_enzyme_catalog()
             site_i_names = sorted(name for name, item in geometries.items() if item.site_i_eligible)
             site_ii_names = sorted(name for name, item in geometries.items() if item.site_ii_eligible)
@@ -300,6 +307,221 @@ def main() -> int:
             query_fingerprint = ""
             confirmed_route_id = ""
             search_event_count = 0
+            viewer_directory = Path(tempfile.gettempdir()) / "hurdler_exact_dna_viewer"
+            viewer_rows = []
+            viewer_result = None
+
+            viewer_step = widgets.Dropdown(
+                options=(("Confirm a route first", None),),
+                description="Assembly step", layout=widgets.Layout(width="48%"),
+            )
+            viewer_molecule = widgets.ToggleButtons(
+                options=(("Plasmid", "plasmid"),), value="plasmid", description="Molecule",
+            )
+            viewer_view = widgets.ToggleButtons(
+                options=(("Circular", "circular"), ("Linear", "linear")),
+                value="circular", description="View",
+            )
+            viewer_range = widgets.IntRangeSlider(
+                value=(0, 1), min=0, max=1, step=1, description="Range (bp)",
+                continuous_update=False, layout=widgets.Layout(width="98%"),
+            )
+            viewer_focus = widgets.Button(description="Focus cloning region", icon="search-plus")
+            viewer_reset = widgets.Button(description="Reset full view", icon="expand")
+            viewer_render = widgets.Button(description="Render selected molecule", button_style="info")
+            viewer_status = widgets.HTML(
+                "<div style='border:2px dashed #4b2e83;border-radius:8px;padding:12px'>"
+                "Confirm a route to preview step00. A complete timeline appears only after live-IDT acceptance.</div>"
+            )
+            viewer_output = widgets.Output()
+            viewer_details = widgets.Output()
+
+            def _viewer_selected_row():
+                matches = [
+                    row for row in viewer_rows
+                    if int(row["step"]) == int(viewer_step.value)
+                    and row["molecule"] == viewer_molecule.value
+                ]
+                if len(matches) != 1:
+                    raise ValueError("The selected step/molecule is unavailable")
+                return matches[0]
+
+            def _viewer_record(row):
+                return SeqIO.read(viewer_directory / row["file"], "genbank")
+
+            def _viewer_reset_range(_button=None):
+                try:
+                    row = _viewer_selected_row()
+                except (TypeError, ValueError):
+                    return
+                record = _viewer_record(row)
+                viewer_range.max = max(1, len(record))
+                viewer_range.value = (0, len(record))
+                viewer_view.disabled = row["molecule"] == "insert"
+                if row["molecule"] == "insert":
+                    viewer_view.value = "linear"
+
+            def _viewer_update_molecules(_change=None):
+                if viewer_step.value is None:
+                    return
+                available = {
+                    row["molecule"] for row in viewer_rows
+                    if int(row["step"]) == int(viewer_step.value)
+                }
+                options = tuple(
+                    (value.title(), value)
+                    for value in ("plasmid", "insert") if value in available
+                )
+                viewer_molecule.options = options
+                if options and viewer_molecule.value not in {value for _label, value in options}:
+                    viewer_molecule.value = options[0][1]
+                _viewer_reset_range()
+
+            def _viewer_focus_region(_button=None):
+                row = _viewer_selected_row()
+                start = int(row.get("cloning_region_start_0based", 0))
+                end = int(row.get("cloning_region_end_0based_exclusive", row["length_bp"]))
+                padding = max(20, min(200, max(1, end - start) // 10))
+                viewer_range.value = (
+                    max(0, start - padding),
+                    min(int(row["length_bp"]), end + padding),
+                )
+                viewer_view.value = "linear"
+                _render_exact_viewer()
+
+            def _step_score_details(step_number):
+                if viewer_result is None or int(step_number) == 0:
+                    return None
+                step_row = next(
+                    (row for row in viewer_result.cloning_steps if int(row["step"]) == int(step_number)),
+                    None,
+                )
+                if step_row is None:
+                    return None
+                fragment_id = str(step_row.get("purchase_fragment_ids", "")).split(";")[0]
+                fragment = next(
+                    (row for row in viewer_result.purchase_fragments if row.get("fragment_id") == fragment_id),
+                    None,
+                )
+                return {
+                    "restriction_enzymes": step_row.get("restriction_enzymes", ""),
+                    "purchase_fragment_id": fragment_id,
+                    "idt_score": None if fragment is None else fragment.get("idt_score"),
+                    "idt_status": "" if fragment is None else fragment.get("idt_status", ""),
+                }
+
+            def _render_exact_viewer(_button=None):
+                with viewer_output:
+                    clear_output(wait=True)
+                    try:
+                        row = _viewer_selected_row()
+                        record = _viewer_record(row)
+                        start, end = map(int, viewer_range.value)
+                        circular = (
+                            row["molecule"] == "plasmid"
+                            and viewer_view.value == "circular"
+                            and (start, end) == (0, len(record))
+                        )
+                        def feature_filter(feature):
+                            if feature.type == "source":
+                                return False
+                            if not circular:
+                                return True
+                            qualifiers = feature.qualifiers
+                            if qualifiers.get("feature_kind", [""])[0] in {
+                                "restriction_site", "exact_target_DNA",
+                            }:
+                                return True
+                            if feature.type in {"regulatory", "repeat_region"}:
+                                return True
+                            return qualifiers.get("feature_class", [""])[0] in {
+                                "antibiotic_resistance", "origin", "replication_origin",
+                                "promoter", "terminator", "operator",
+                            }
+                        translator = BiopythonTranslator(features_filters=(feature_filter,))
+                        if circular:
+                            graphic = translator.translate_record(
+                                record, record_class=CircularGraphicRecord
+                            )
+                            figure, axis = plt.subplots(figsize=(8, 8))
+                            graphic.plot(ax=axis)
+                        else:
+                            graphic = translator.translate_record(record)
+                            if (start, end) != (0, len(record)):
+                                graphic = graphic.crop((start, end))
+                            figure, axis = plt.subplots(figsize=(13, 3.6))
+                            graphic.plot(ax=axis, figure_width=13)
+                        axis.set_title(f"{row['file']} · {start:,}–{end:,} bp")
+                        figure.tight_layout()
+                        display(figure)
+                        plt.close(figure)
+                    except Exception as exc:
+                        display(Markdown(f"**Viewer error:** `{type(exc).__name__}: {exc}`"))
+                        return
+                with viewer_details:
+                    clear_output(wait=True)
+                    score = _step_score_details(row["step"])
+                    message = (
+                        f"**Molecule:** `{row['file']}` · **length:** {len(record):,} bp · "
+                        f"**role:** `{row.get('role', row['molecule'])}`"
+                    )
+                    if score is not None:
+                        message += (
+                            f" · **clone RE:** `{score['restriction_enzymes']}` · "
+                            f"**IDT score:** `{score['idt_score']}` ({score['idt_status']})"
+                        )
+                    display(Markdown(message))
+                    if end - start <= 300:
+                        display(Markdown(f"**Bases {start + 1}–{end}:** `{str(record.seq[start:end])}`"))
+
+            def _reset_exact_viewer():
+                global viewer_rows, viewer_result
+                viewer_rows = []
+                viewer_result = None
+                viewer_step.options = (("Confirm a route first", None),)
+                viewer_step.value = None
+                viewer_status.value = (
+                    "<div style='border:2px dashed #4b2e83;border-radius:8px;padding:12px'>"
+                    "Confirm a route to preview step00. A complete timeline appears only after live-IDT acceptance.</div>"
+                )
+                with viewer_output:
+                    clear_output(wait=True)
+                with viewer_details:
+                    clear_output(wait=True)
+
+            def _prepare_exact_viewer(result, *, preview_only):
+                global viewer_rows, viewer_result
+                if viewer_directory.exists():
+                    shutil.rmtree(viewer_directory)
+                viewer_directory.mkdir(parents=True)
+                write_exact_dna_genbanks(
+                    result, viewer_directory, include_manifest=True, export_maps=False
+                )
+                rows = json.loads((viewer_directory / "assembly_step_manifest.json").read_text())
+                if preview_only:
+                    rows = [row for row in rows if int(row["step"]) == 0]
+                viewer_rows = rows
+                viewer_result = result
+                steps = sorted({int(row["step"]) for row in rows})
+                viewer_step.options = tuple((f"Step {step:02d}", step) for step in steps)
+                viewer_step.value = steps[-1]
+                viewer_status.value = (
+                    "<div style='border:2px solid #2d6a4f;background:#effaf4;border-radius:8px;padding:10px'>"
+                    + (
+                        "<b>Complete independently verified assembly timeline loaded.</b>"
+                        if not preview_only
+                        else "<b>Route preview loaded.</b> Full timeline waits for live-IDT acceptance."
+                    )
+                    + "</div>"
+                )
+                _viewer_update_molecules()
+                _render_exact_viewer()
+
+            viewer_step.observe(_viewer_update_molecules, names="value")
+            viewer_molecule.observe(lambda _change: _viewer_reset_range(), names="value")
+            viewer_focus.on_click(_viewer_focus_region)
+            viewer_reset.on_click(_viewer_reset_range)
+            viewer_render.on_click(_render_exact_viewer)
 
             def selected(boxes):
                 return tuple(name for name, box in boxes.items() if box.value)
@@ -343,6 +565,8 @@ def main() -> int:
                 confirm_button.disabled = not bool(route_dropdown.value)
                 if "validate_button" in globals():
                     validate_button.disabled = True
+                if viewer_rows:
+                    _reset_exact_viewer()
 
             def routes_for_current_selection(*, through="route"):
                 if query_result is None:
@@ -474,6 +698,9 @@ def main() -> int:
                             site_i_enzyme=str(pair_dropdown.value[0]),
                             site_ii_enzyme=str(pair_dropdown.value[1]),
                         ))
+                        if preview.status != "hurdler_compatible_molecular":
+                            raise RuntimeError(preview.message)
+                        _prepare_exact_viewer(preview, preview_only=True)
                         display(Markdown(
                             f"**Confirmed:** `{confirmed_route_id}` · "
                             f"{route['profile_id']} · {route['cut_scheme']}. "
@@ -494,6 +721,19 @@ def main() -> int:
                 widgets.HBox([pair_dropdown, plasmid_dropdown]),
                 widgets.HBox([scheme_dropdown, route_dropdown]),
                 confirm_button, confirmation_output,
+            ]))
+            display(widgets.VBox([
+                widgets.HTML(
+                    "<h3>Stepwise plasmid / insert viewer</h3>"
+                    "<p>Plasmids support circular and linear maps; inserts are linear. "
+                    "Use Focus cloning region or the range slider to inspect RE sites, "
+                    "disposable adapters, latent bases, and the exact target.</p>"
+                ),
+                viewer_status,
+                widgets.HBox([viewer_step, viewer_molecule, viewer_view]),
+                viewer_range,
+                widgets.HBox([viewer_focus, viewer_reset, viewer_render]),
+                viewer_output, viewer_details,
             ]))
 
             def select_and_confirm_top_route():
@@ -533,16 +773,140 @@ def main() -> int:
             validation_download_button = widgets.Button(description="Optional validation details", icon="download", disabled=True)
             validation_progress = widgets.HTML("Confirm a route above first.")
             validation_output = widgets.Output()
+            idt_plot_status = widgets.HTML(
+                "<div style='border:2px dashed #4b2e83;border-radius:8px;padding:12px'>"
+                "No IDT evaluations yet. Every real API evaluation and cache hit will appear here.</div>"
+            )
+            idt_plot_output = widgets.Output()
+            idt_history_table_output = widgets.Output()
+            selected_purchase_table_output = widgets.Output()
+            idt_score_events = []
             output_zip = None
             validation_zip = None
 
+            def _render_exact_idt_history():
+                rows = idt_score_history_rows(idt_score_events)
+                if not rows:
+                    idt_plot_status.value = (
+                        "<div style='border:2px dashed #4b2e83;border-radius:8px;padding:12px'>"
+                        "No IDT evaluations yet. Every real API evaluation and cache hit will appear here.</div>"
+                    )
+                    with idt_plot_output:
+                        clear_output(wait=True)
+                    with idt_history_table_output:
+                        clear_output(wait=True)
+                    return
+                passed = sum(row["idt_classification"] == "passed" for row in rows)
+                rejected = sum(row["idt_classification"] == "rejected" for row in rows)
+                unclassified = len(rows) - passed - rejected
+                idt_plot_status.value = (
+                    "<div style='border:2px solid #2d6a4f;background:#effaf4;border-radius:8px;padding:10px'>"
+                    f"<b>{len(rows)} chronological IDT evaluations</b> · {passed} passed · "
+                    f"{rejected} rejected · {unclassified} unclassified. "
+                    "The route-attempt index remains continuous across alternative routes.</div>"
+                )
+                with idt_plot_output:
+                    clear_output(wait=True)
+                    figure = plot_idt_score_trajectory(
+                        rows, title="Exact-DNA purchase-fragment IDT score trajectory"
+                    )
+                    display(figure)
+                    plt.close(figure)
+                with idt_history_table_output:
+                    clear_output(wait=True)
+                    table = pd.DataFrame(rows).copy()
+                    table["positive_rules"] = table["positive_rule_names_json"].map(
+                        lambda value: ", ".join(json.loads(value)) if value else ""
+                    )
+                    table["rule_scores"] = table["rule_scores_json"].map(
+                        lambda value: "; ".join(
+                            f"{name}={score:g}" for name, score in json.loads(value).items()
+                        ) if value else ""
+                    )
+                    display(table[[
+                        "evaluation_index", "route_attempt", "padding_variant",
+                        "fragment_id", "request_length_bp", "idt_total_score",
+                        "idt_classification", "idt_cache_hit", "rule_scores",
+                        "positive_rules",
+                    ]])
+
             def validation_event(event):
+                if event.status == "fragment_scored":
+                    idt_score_events.append(asdict(event))
+                    _render_exact_idt_history()
                 validation_progress.value = f"<b>{event.stage}</b> · {event.status} · {event.message}"
 
+            def _positive_rule_text(fragment):
+                try:
+                    rules = json.loads(str(fragment.get("idt_rule_scores_json") or "{}"))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    rules = {}
+                try:
+                    details = json.loads(str(fragment.get("idt_rule_details_json") or "[]"))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    details = []
+                positive = [str(name) for name, score in rules.items() if float(score) > 0]
+                reasons = []
+                for detail in details:
+                    if not isinstance(detail, dict) or str(detail.get("name")) not in positive:
+                        continue
+                    reason = str(detail.get("display_text") or "").strip()
+                    reasons.append(f"{detail.get('name')}: {reason or 'positive IDT rule score'}")
+                return ", ".join(positive), "; ".join(reasons)
+
+            def _display_selected_purchase_scores(result):
+                step_usage = {}
+                for step in result.cloning_steps:
+                    for fragment_id in str(step.get("purchase_fragment_ids", "")).split(";"):
+                        if fragment_id:
+                            step_usage.setdefault(fragment_id, []).append(int(step["step"]))
+                by_sequence = {}
+                for ordinal, fragment in enumerate(result.purchase_fragments, start=1):
+                    sequence = str(fragment.get("purchase_sequence", ""))
+                    if not sequence:
+                        continue
+                    fragment_id = str(fragment.get("fragment_id", f"purchase_{ordinal}"))
+                    positive, reasons = _positive_rule_text(fragment)
+                    if sequence not in by_sequence:
+                        by_sequence[sequence] = {
+                            "purchase_insert": f"purchase_insert_{len(by_sequence) + 1:02d}",
+                            "length_bp": len(sequence),
+                            "fragment_ids": [],
+                            "used_in_steps": [],
+                            "reused": False,
+                            "IDT_score": fragment.get("idt_score"),
+                            "IDT_status": fragment.get("idt_status", ""),
+                            "positive_rules": positive,
+                            "positive_rule_reasons": reasons,
+                        }
+                    row = by_sequence[sequence]
+                    row["fragment_ids"].append(fragment_id)
+                    row["used_in_steps"].extend(step_usage.get(fragment_id, []))
+                rows = []
+                for row in by_sequence.values():
+                    row["fragment_ids"] = ";".join(dict.fromkeys(row["fragment_ids"]))
+                    row["used_in_steps"] = ";".join(
+                        str(value) for value in sorted(set(row["used_in_steps"]))
+                    )
+                    row["reused"] = len(str(row["used_in_steps"]).split(";")) > 1
+                    rows.append(row)
+                with selected_purchase_table_output:
+                    clear_output(wait=True)
+                    display(Markdown(
+                        "### Final selected purchase gBlocks\\n"
+                        "Each exact DNA sequence is scored once; repeated cloning steps reuse the same accepted gBlock."
+                    ))
+                    display(pd.DataFrame(rows))
+
             def run_validation(_button=None):
-                global output_zip, validation_zip, idt_access_token
+                global output_zip, validation_zip, idt_access_token, idt_score_events
                 validate_button.disabled = True
                 download_button.disabled = True
+                validation_download_button.disabled = True
+                idt_score_events = []
+                _render_exact_idt_history()
+                with selected_purchase_table_output:
+                    clear_output(wait=True)
                 with validation_output:
                     clear_output(wait=True)
                     try:
@@ -588,6 +952,8 @@ def main() -> int:
                         download_button.disabled = False
                         validation_download_button.disabled = not validation_zip.is_file()
                         validation_progress.value = "<b>completed</b> · every purchase insert passed live IDT scoring"
+                        _display_selected_purchase_scores(result)
+                        _prepare_exact_viewer(result, preview_only=False)
                         display(pd.read_csv(destination / "cloning_steps.csv"))
                     except Exception as exc:
                         validation_progress.value = f"<b>failed</b> · {type(exc).__name__}"
@@ -615,7 +981,12 @@ def main() -> int:
             display(widgets.VBox([
                 widgets.HTML("<b>Only a plan whose every purchase gBlock passes live IDT scoring is exported. No order is submitted.</b>"),
                 output_directory, validation_progress,
-                widgets.HBox([validate_button, download_button]), validation_download_button, validation_output,
+                widgets.HBox([validate_button, download_button]),
+                validation_download_button,
+                widgets.HTML("<h3>IDT score trajectory across all attempted routes</h3>"),
+                idt_plot_status, idt_plot_output, idt_history_table_output,
+                selected_purchase_table_output,
+                validation_output,
             ]))
 
             if route_confirmation_mode == "Automatically use top-ranked route" and confirmed_route_id:

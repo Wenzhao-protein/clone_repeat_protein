@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
@@ -208,6 +210,9 @@ def build_exact_dna_assembly_records(
             "file": "step00_plasmid.gb",
             "role": "initial_plasmid",
             "length_bp": len(step00),
+            "sequence_sha256": hashlib.sha256(str(step00.seq).encode()).hexdigest(),
+            "cloning_region_start_0based": 0,
+            "cloning_region_end_0based_exclusive": len(step00),
         }
     ]
 
@@ -348,6 +353,11 @@ def build_exact_dna_assembly_records(
                 "role": str(step["stage"]),
                 "purchase_fragment_id": fragment_id,
                 "length_bp": len(insert),
+                "sequence_sha256": hashlib.sha256(str(insert.seq).encode()).hexdigest(),
+                "cloning_region_start_0based": target_feature_start,
+                "cloning_region_end_0based_exclusive": (
+                    target_feature_start + len(target_feature_sequence)
+                ),
             }
         )
 
@@ -420,6 +430,9 @@ def build_exact_dna_assembly_records(
                 "length_bp": len(plasmid),
                 "insert_length_bp": len(current_insert),
                 "independent_verification": "passed",
+                "sequence_sha256": hashlib.sha256(str(plasmid.seq).encode()).hexdigest(),
+                "cloning_region_start_0based": cursor,
+                "cloning_region_end_0based_exclusive": cursor + len(current_insert),
             }
         )
     return records, manifest
@@ -432,6 +445,7 @@ def write_exact_dna_genbanks(
     plasmid_database: PlasmidReferenceDatabase | None = None,
     plasmid_reference_path: str | Path | None = None,
     include_manifest: bool = False,
+    export_maps: bool = False,
 ) -> dict[str, str]:
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -472,7 +486,79 @@ def write_exact_dna_genbanks(
         SeqIO.write(final_plasmid_source, final_path, "genbank")
         paths["final_plasmid.gb"] = str(final_path)
     if include_manifest:
-        manifest_path = destination / "step_genbank_index.json"
+        manifest_path = destination / "assembly_step_manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-        paths["step_genbank_index.json"] = str(manifest_path)
+        paths["assembly_step_manifest.json"] = str(manifest_path)
+        legacy_path = destination / "step_genbank_index.json"
+        legacy_path.write_text(manifest_path.read_text())
+        paths["step_genbank_index.json"] = str(legacy_path)
+        csv_path = destination / "assembly_step_manifest.csv"
+        columns = sorted({key for row in manifest for key in row})
+        with csv_path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows({key: row.get(key, "") for key in columns} for row in manifest)
+        paths["assembly_step_manifest.csv"] = str(csv_path)
+    if export_maps and records:
+        try:
+            import matplotlib.pyplot as plt
+            from dna_features_viewer import BiopythonTranslator, CircularGraphicRecord
+        except ImportError:  # pragma: no cover - optional outside notebook installs
+            return paths
+        map_dir = destination / "maps"
+        map_dir.mkdir(exist_ok=True)
+        for filename, record in records:
+            views = (
+                ("circular", "linear")
+                if record.annotations.get("topology") == "circular"
+                else ("linear",)
+            )
+            for view in views:
+                def feature_filter(feature):
+                    if feature.type == "source":
+                        return False
+                    if view != "circular":
+                        return True
+                    qualifiers = feature.qualifiers
+                    if qualifiers.get("feature_kind", [""])[0] in {
+                        "restriction_site",
+                        "exact_target_DNA",
+                    }:
+                        return True
+                    if feature.type in {"regulatory", "repeat_region"}:
+                        return True
+                    return qualifiers.get("feature_class", [""])[0] in {
+                        "antibiotic_resistance",
+                        "origin",
+                        "replication_origin",
+                        "promoter",
+                        "terminator",
+                        "operator",
+                    }
+
+                translator = BiopythonTranslator(features_filters=(feature_filter,))
+                if view == "circular":
+                    graphic = translator.translate_record(
+                        record, record_class=CircularGraphicRecord
+                    )
+                    figure, axis = plt.subplots(figsize=(8, 8))
+                    graphic.plot(ax=axis)
+                else:
+                    graphic = translator.translate_record(record)
+                    figure, axis = plt.subplots(figsize=(13, 3.6))
+                    graphic.plot(ax=axis, figure_width=13)
+                axis.set_title(f"{filename} · {view}")
+                figure.tight_layout()
+                try:
+                    for suffix in ("png", "svg"):
+                        path = map_dir / f"{Path(filename).stem}.{view}.{suffix}"
+                        figure.savefig(
+                            path,
+                            dpi=200 if suffix == "png" else None,
+                            bbox_inches="tight",
+                            facecolor="white",
+                        )
+                        paths[f"map_{Path(filename).stem}_{view}_{suffix}"] = str(path)
+                finally:
+                    plt.close(figure)
     return paths

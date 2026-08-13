@@ -30,6 +30,7 @@ def test_exact_dna_colab_is_output_free_hidden_and_stably_named():
         assert "".join(cell["source"]).startswith("#@title ")
         assert cell["outputs"] == []
         assert cell["execution_count"] is None
+        compile("".join(cell["source"]), f"<{identifier}>", "exec")
     assert len(identifiers) == len(set(identifiers))
 
 
@@ -78,6 +79,12 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
     assert "scheme_dropdown" in query and "route_dropdown" in query
     assert "select_and_confirm_top_route" in query
     assert 'route_confirmation_mode == "Automatically use top-ranked route"' in query
+    assert "Stepwise plasmid / insert viewer" in query
+    assert "CircularGraphicRecord" in sources["exact-dna-engine"]
+    assert "_prepare_exact_viewer(preview, preview_only=True)" in query
+    assert "viewer_step" in query and "viewer_molecule" in query
+    assert "viewer_view" in query and "viewer_range" in query
+    assert "Focus cloning region" in query
     export = sources["exact-dna-idt-export"]
     upload = sources["exact-dna-idt-upload"]
     code_ids = [
@@ -100,6 +107,15 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
     assert "clear_idt_secret_environment()" in export
     assert "files.download" in export
     assert "Optional validation details" in export
+    assert "idt_score_history_rows" in sources["exact-dna-engine"]
+    assert "plot_idt_score_trajectory" in sources["exact-dna-engine"]
+    assert 'event.status == "fragment_scored"' in export
+    assert "idt_score_events.append(asdict(event))" in export
+    assert "route_attempt" in export and "padding_variant" in export
+    assert "rule_scores" in export and "positive_rules" in export
+    assert "Final selected purchase gBlocks" in export
+    assert "used_in_steps" in export and "reused" in export
+    assert "_prepare_exact_viewer(result, preview_only=False)" in export
     assert "run_validation()" in export
     assert "auto_download_results_zip" in export
     assert "idt_validation_choice" not in text

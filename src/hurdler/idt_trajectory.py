@@ -36,6 +36,8 @@ HISTORY_COLUMNS = (
     "evaluation_index",
     "fragment_id",
     "fragment_kind",
+    "route_attempt",
+    "padding_variant",
     "repeat_copies",
     "ga_generations",
     "feedback_round",
@@ -135,6 +137,8 @@ def idt_score_history_rows(records: Sequence[Mapping[str, Any]]) -> list[dict[st
                     or "fragment"
                 ),
                 "fragment_kind": str(record.get("fragment_kind") or ""),
+                "route_attempt": details.get("route_attempt"),
+                "padding_variant": details.get("padding_variant"),
                 "repeat_copies": record.get("copies") if is_event else record.get("repeat_copies"),
                 "ga_generations": record.get("generations") if is_event else record.get("ga_generations"),
                 "feedback_round": record.get("feedback_round"),

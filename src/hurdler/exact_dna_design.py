@@ -280,6 +280,7 @@ class ExactDNAResult:
     restoration_segments: list[dict[str, Any]] = field(default_factory=list)
     cloning_steps: list[dict[str, Any]] = field(default_factory=list)
     idt_audit: list[dict[str, Any]] = field(default_factory=list)
+    idt_evaluation_history: list[dict[str, Any]] = field(default_factory=list)
     route_attempts: list[dict[str, Any]] = field(default_factory=list)
     whole_target_idt: dict[str, Any] = field(default_factory=dict)
     final_insert_sequence: str = ""
@@ -1603,6 +1604,49 @@ def _score_one_purchase(
     return result
 
 
+def _json_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
+def _json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return list(value)
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return list(parsed) if isinstance(parsed, list) else []
+
+
+def _idt_rule_reasons(scored: Mapping[str, Any]) -> dict[str, str]:
+    reasons: dict[str, str] = {}
+    for detail in _json_list(scored.get("idt_rule_details_json")):
+        if not isinstance(detail, Mapping):
+            continue
+        value = detail.get("score")
+        score = (
+            float(value)
+            if isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            else None
+        )
+        if not (bool(detail.get("is_violated")) or (score is not None and score > 0)):
+            continue
+        name = str(detail.get("name") or "unnamed_rule")
+        reasons[name] = (
+            str(detail.get("display_text") or "").strip()
+            or "positive IDT rule score"
+        )
+    return reasons
+
+
 def _simulate_final_plasmid(
     route: Mapping[str, Any],
     target: str,
@@ -1713,6 +1757,9 @@ def confirm_exact_dna_route(
     plasmid_reference_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
     padding_variants: Mapping[tuple[Any, ...], int] | None = None,
+    idt_evaluation_start: int = 0,
+    route_attempt: int | None = None,
+    purchase_plan_padding_variant: int | None = None,
 ) -> ExactDNAResult:
     """Confirm one route, optionally score its exact purchase sequences."""
     if query_result.status != "hurdler_compatible_molecular":
@@ -1946,6 +1993,7 @@ def confirm_exact_dna_route(
                 continue
             sequence = str(fragment.get("purchase_sequence", ""))
             sequence_sha = _sha(sequence)
+            is_new_evaluation = sequence_sha not in scored_by_sha
             if sequence_sha not in scored_by_sha:
                 scored_by_sha[sequence_sha] = _score_one_purchase(
                     idt_scorer,
@@ -1964,22 +2012,80 @@ def confirm_exact_dna_route(
                     "idt_response_sha256": scored.get("idt_response_sha256", ""),
                     "idt_scored_sequence_sha256": scored.get("idt_scored_sequence_sha256", sequence_sha),
                     "idt_positive_score_names_json": scored.get("idt_positive_score_names_json", "[]"),
+                    "idt_rule_scores_json": scored.get("idt_rule_scores_json", "{}"),
                     "idt_rule_details_json": scored.get("idt_rule_details_json", "[]"),
+                    "idt_cache_hit": bool(scored.get("idt_cache_hit", False)),
                     "idt_accepted": accepted,
                 }
             )
-            result.idt_audit.append(
-                {
-                    "fragment_id": fragment.get("fragment_id", f"purchase_{ordinal}"),
-                    "source_fragment_id": fragment.get("source_fragment_id", ""),
-                    "length_bp": len(sequence),
-                    "dna_sha256": sequence_sha,
-                    "score": scored["idt_complexity_score"],
-                    "accepted": accepted,
-                    "positive_rules": scored.get("idt_positive_score_names_json", "[]"),
-                    "response_sha256": scored.get("idt_response_sha256", ""),
-                    "policy": IDT_SCORE_POLICY,
-                }
+            if not is_new_evaluation:
+                continue
+            evaluation_index = int(idt_evaluation_start) + len(result.idt_audit) + 1
+            rule_scores = {
+                str(name): float(value)
+                for name, value in _json_mapping(
+                    scored.get("idt_rule_scores_json")
+                ).items()
+                if isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(float(value))
+            }
+            positive_rules = tuple(
+                sorted(name for name, value in rule_scores.items() if value > 0)
+            )
+            rule_reasons = _idt_rule_reasons(scored)
+            audit_row = {
+                "idt_evaluation_index": evaluation_index,
+                "fragment_id": fragment.get("fragment_id", f"purchase_{ordinal}"),
+                "source_fragment_id": fragment.get("source_fragment_id", ""),
+                "fragment_kind": str(fragment.get("stage") or "purchase_fragment"),
+                "route_attempt": route_attempt,
+                "padding_variant": purchase_plan_padding_variant,
+                "request_length_bp": len(sequence),
+                "length_bp": len(sequence),
+                "dna_sha256": sequence_sha,
+                "score": scored["idt_complexity_score"],
+                "idt_complexity_score": scored["idt_complexity_score"],
+                "accepted": accepted,
+                "idt_explicit_pass": accepted,
+                "idt_score_complete": bool(scored.get("idt_score_complete")),
+                "idt_status": scored.get("idt_status", ""),
+                "idt_cache_hit": bool(scored.get("idt_cache_hit", False)),
+                "positive_rules": scored.get("idt_positive_score_names_json", "[]"),
+                "idt_positive_score_names_json": scored.get(
+                    "idt_positive_score_names_json", "[]"
+                ),
+                "idt_rule_scores_json": scored.get("idt_rule_scores_json", "{}"),
+                "idt_rule_details_json": scored.get("idt_rule_details_json", "[]"),
+                "response_sha256": scored.get("idt_response_sha256", ""),
+                "policy": IDT_SCORE_POLICY,
+            }
+            result.idt_audit.append(audit_row)
+            emit_progress(
+                progress_callback,
+                stage="idt",
+                status="fragment_scored",
+                event_name="idt_fragment_scored",
+                message=(
+                    f"{audit_row['fragment_id']} scored "
+                    f"{float(scored['idt_complexity_score']):g}"
+                ),
+                fragment_kind=str(audit_row["fragment_kind"]),
+                idt_score=float(scored["idt_complexity_score"]),
+                idt_positive_rules=positive_rules,
+                idt_evaluation_index=evaluation_index,
+                idt_fragment_name=str(audit_row["fragment_id"]),
+                idt_rule_scores=rule_scores,
+                idt_rule_reasons=rule_reasons,
+                idt_response_sha256=str(audit_row["response_sha256"]),
+                idt_cache_hit=bool(audit_row["idt_cache_hit"]),
+                idt_classification="passed" if accepted else "rejected",
+                details={
+                    "request_length_bp": len(sequence),
+                    "route_attempt": route_attempt,
+                    "padding_variant": purchase_plan_padding_variant,
+                    "source_fragment_id": str(audit_row["source_fragment_id"]),
+                },
             )
         if not all_passed:
             result.status = "idt_rejected_route"
@@ -2008,6 +2114,7 @@ def confirm_exact_dna_route(
         result.status = "idt_score_error"
         result.message = str(exc)
         result.termination_reason = "invalid_idt_score_structure"
+    result.idt_evaluation_history = list(result.idt_audit)
     emit_progress(
         progress_callback,
         stage="idt",
@@ -2036,7 +2143,7 @@ def confirm_best_exact_dna_route(
     systemic, so they stop the retry loop immediately.
     """
     if selection.validation_mode != "api":
-        return confirm_exact_dna_route(
+        result = confirm_exact_dna_route(
             query_result,
             selection,
             idt_scorer=idt_scorer,
@@ -2044,6 +2151,8 @@ def confirm_best_exact_dna_route(
             plasmid_reference_path=plasmid_reference_path,
             progress_callback=progress_callback,
         )
+        result.idt_evaluation_history = list(result.idt_audit)
+        return result
     pair = (selection.site_i_enzyme, selection.site_ii_enzyme)
     candidates = [
         row for row in query_result.route_candidates
@@ -2073,6 +2182,7 @@ def confirm_best_exact_dna_route(
     if not candidates:
         raise ValueError("No current route matches the confirmed RE/plasmid selection")
     attempts: list[dict[str, Any]] = []
+    evaluation_history: list[dict[str, Any]] = []
     last: ExactDNAResult | None = None
     attempt_ordinal = 0
     for route_ordinal, route in enumerate(candidates, start=1):
@@ -2109,7 +2219,12 @@ def confirm_best_exact_dna_route(
                 plasmid_reference_path=plasmid_reference_path,
                 progress_callback=progress_callback,
                 padding_variants=padding_variants,
+                idt_evaluation_start=len(evaluation_history),
+                route_attempt=attempt_ordinal,
+                purchase_plan_padding_variant=local_variant,
             )
+            evaluation_history.extend(attempt.idt_audit)
+            attempt.idt_evaluation_history = list(evaluation_history)
             failed_rows = [
                 row
                 for row in attempt.purchase_fragments
@@ -2157,6 +2272,7 @@ def confirm_best_exact_dna_route(
             break
     assert last is not None
     last.route_attempts = attempts
+    last.idt_evaluation_history = list(evaluation_history)
     if (
         query_result.query.get("purchase_policy")
         == IDT_GBLOCK_ONLY_PURCHASE_POLICY
@@ -2255,7 +2371,12 @@ def _user_purchase_rows(
     return rows
 
 
-def write_exact_dna_outputs(result: ExactDNAResult, output_dir: str | Path) -> dict[str, str]:
+def write_exact_dna_outputs(
+    result: ExactDNAResult,
+    output_dir: str | Path,
+    *,
+    include_validation_artifacts: bool = False,
+) -> dict[str, str]:
     """Write a concise cloning package plus a separate technical audit ZIP."""
     from .exact_dna_artifacts import write_exact_dna_genbanks
 
@@ -2315,7 +2436,22 @@ def write_exact_dna_outputs(result: ExactDNAResult, output_dir: str | Path) -> d
     )
     paths["purchase_fragments.fasta"] = str(purchase_fasta)
 
-    paths.update(write_exact_dna_genbanks(result, destination, include_manifest=False))
+    paths.update(
+        write_exact_dna_genbanks(
+            result,
+            destination,
+            include_manifest=include_validation_artifacts,
+            export_maps=include_validation_artifacts,
+        )
+    )
+    if include_validation_artifacts:
+        from .idt_trajectory import write_idt_score_trajectory
+
+        history = result.idt_evaluation_history or result.idt_audit
+        paths.update(write_idt_score_trajectory(history, destination))
+        verification_path = destination / "independent_assembly_verification.json"
+        write_json_atomic(result.independent_verification, verification_path)
+        paths["independent_assembly_verification.json"] = str(verification_path)
     if result.final_insert_sequence:
         final_insert = destination / "final_exact_insert.fasta"
         final_insert.write_text(
@@ -2449,6 +2585,8 @@ def _minimal_cloning_package_rows(
                 "prepare_insert_with_RE": prepare,
                 "clone_with_RE": str(step.get("restriction_enzymes", "")),
                 "reused_from_step": "" if first_step == int(step["step"]) else first_step,
+                "IDT_score": fragment.get("idt_score", ""),
+                "IDT_status": fragment.get("idt_status", ""),
                 "IDT_accepted": True,
             }
         )
@@ -2473,6 +2611,8 @@ def write_exact_dna_minimal_outputs(
         "prepare_insert_with_RE",
         "clone_with_RE",
         "reused_from_step",
+        "IDT_score",
+        "IDT_status",
         "IDT_accepted",
     ]
     with steps.open("w", newline="") as handle:
@@ -2485,7 +2625,11 @@ def write_exact_dna_minimal_outputs(
     validation_zip = destination.parent / f"{destination.name}_validation_details.zip"
     with tempfile.TemporaryDirectory(prefix="hurdler_exact_validation_") as temporary:
         details = Path(temporary) / "validation_details"
-        full_paths = write_exact_dna_outputs(result, details)
+        full_paths = write_exact_dna_outputs(
+            result,
+            details,
+            include_validation_artifacts=True,
+        )
         technical = Path(full_paths.get("technical_audit_zip", ""))
         with zipfile.ZipFile(
             validation_zip, "w", compression=zipfile.ZIP_DEFLATED

@@ -30,9 +30,13 @@ Exact DNA and regulatory-element arrays: [![Open exact-DNA designer in Colab](ht
   array starts by asking for a temporary `idt.env` upload. One **Run all**
   authenticates and discards that file, searches all initially selected REs
   and plasmids, and exports only when every actual 125--3,000 bp purchase
-  gBlock passes live IDT complexity scoring. The main ZIP contains only the
-  per-step insert/RE table and the accepted purchase-insert FASTA; annotated
-  GenBank and molecular audit files are a separate optional download. The
+  gBlock passes live IDT complexity scoring. The notebook shows every
+  chronological IDT evaluation (total and per-rule scores), a deduplicated
+  final purchase table, and an interactive circular/linear viewer spanning
+  `step00_plasmid` through the final assembly. The main ZIP contains only the
+  per-step insert/RE/IDT-score table and the accepted purchase-insert FASTA;
+  score plots, annotated GenBank/maps, and molecular audit files are a separate
+  optional download. The
   [main-branch exact-DNA link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb)
   becomes permanent after merge.
 - **Local browser:** follow the commands below. The final script starts the
@@ -44,8 +48,7 @@ plasmid reference database.
 Credentials and IDT scoring stay inside the active Colab or local process; the
 software produces design files only and never submits an order.
 
-Live IDT scoring is the repeat-protein Colab default; the exact-DNA Colab
-defaults to molecular compatibility with no HTTP request. A local runtime automatically tries
+Live IDT scoring is required by both Colab workflows. A local runtime automatically tries
 `~/.config/hurdler/idt.env`; hosted Colab instead displays a temporary env-file
 upload. The file contains either `IDT_ACCESS_TOKEN`, or all of
 `IDT_CLIENT_ID`, `IDT_CLIENT_SECRET`, `IDT_USERNAME`, and `IDT_PASSWORD`.
