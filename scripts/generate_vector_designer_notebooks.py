@@ -31,23 +31,59 @@ displayed fields, menus, checkboxes, and buttons from top to bottom.
 """
 
 
-COLAB_INTRO = """# Annotation-aware HURDLER designer v2 · exact-repeat RDL workflow
+COLAB_INTRO = """# HURDLER repeat-protein designer — interactive tutorial
 
-The protein defaults are visible as native Colab Forms before code runs. Choose
-**Runtime → Run all** once to install HURDLER and reveal separate single-enzyme,
-plasmid, RE-solution, and cut-scheme selectors. Source code stays folded.
+This notebook designs a scarless, iterative cloning route for a repeat protein
+and exports an auditable molecular record for every step. It **does not place an
+order**. Run the notebook once with **Runtime → Run all**, then work through the
+numbered panels from top to bottom.
 
-HURDLER never silently chooses route 1 or a Site-III enzyme. After the query,
-select the three enzymes, plasmid, and cut scheme, then confirm the route. Only
-then does the GA/IDT panel appear. In
-full-protein mode, a missing boundary intentionally stops after showing
-candidate start/end/period values; enter the confirmed values in Step 1 and
-press **Re-run HURDLER query**. No source code needs to be opened.
+Here **RDL** means the repeat-directional-ligation cycle: one optimized
+secondary donor can be digested and inserted repeatedly at the growing array
+boundary while Site II is re-silenced after ligation.
 
-IDT is used only for complexity scoring, never for codon optimization or
-ordering. Locally the default credential file is
-`~/.config/hurdler/idt.env`; hosted Colab requests a temporary upload. Values
-are read only when optimization starts and cleared from the process afterward.
+## What the three restriction-enzyme roles mean
+
+- **Site I** is active in the coding sequence and defines one HURDLER boundary.
+- **Site II** supplies the compatible second boundary but is silenced in the
+  assembled sequence by a synonymous codon. The encoded protein is unchanged.
+- **Site III** releases the reusable secondary fragment from disposable
+  adapters. Those adapters are removed during digestion and are not present in
+  the expressed construct.
+- **Vector cutters** open an annotation-aware plasmid cut scheme. A route may
+  restore bases removed around the MCS; `restore length` is the combined left
+  and right restoration sequence, excluding temporary Type-IIS adapters.
+
+## Tutorial workflow
+
+1. Choose temporary Colab storage or explicitly mount Google Drive. Computation
+   always runs under `/content`; Drive receives only checkpoint/final ZIP files.
+2. Choose exactly one protein input mode. The supplied split example is visible
+   by default; the complete-protein/FASTA box stays hidden until selected.
+3. Select individual RE enzymes and plasmids. The live cards count only routes
+   jointly supported by the current RE, plasmid and restore-length filters.
+4. Run the molecular query, then explicitly choose Site I/II, Site III,
+   plasmid and cut scheme. Changing an upstream field invalidates confirmation.
+5. Choose automatic secondary exploration (from one repeat to the physical
+   limit) or a bounded repeat-copy range. The GA preserves translation and uses
+   repeated RE sites, GC, repeated k-mers, hairpin proxies and codon usage in
+   its score. In Live API mode every completed candidate is sent to IDT for
+   **complexity scoring only**; HURDLER never uses an IDT optimization result.
+6. Download the UTC-stamped ZIP. It contains purchase FASTA/CSV, IDT and GA
+   audits, `step00_plasmid.gb`, every `stepXX_insert.gb` and
+   `stepXX_plasmid.gb`, translations, manifests, and static plasmid maps.
+
+## Recovery and interpretation
+
+The longest live-IDT-accepted secondary is checkpointed immediately and the
+checkpoint is refreshed every 180 seconds. IDT score sum `<10` is this
+notebook's complexity-screen criterion, not a quotation or wet-lab guarantee.
+The interactive viewer can switch step/molecule, draw plasmids circularly or
+linearly, focus on the cloning region, and show bases/codon translation when
+zoomed. See the [DNA Features Viewer documentation](https://edinburgh-genome-foundry.github.io/DnaFeaturesViewer/index.html).
+
+Credentials are kept only in runtime memory/environment, cleared after use,
+and never copied to Drive, GenBank, manifests, notebook output, or ZIP files.
 """
 
 
@@ -404,31 +440,13 @@ print(f"HURDLER ready: {Path(hurdler_package.__file__).resolve()}")
 '''
 
 
-COLAB_PROTEIN_FORM = r'''#@markdown ### Choose one protein-input mode
-input_mode = "N-cap + repeat module + C-cap" #@param ["N-cap + repeat module + C-cap", "Complete exact protein / FASTA"]
-sequence_id = "" #@param {type:"string", placeholder:"optional; FASTA header is used when blank"}
-
-#@markdown ### Split input (used only in N-cap/module/C-cap mode)
-n_cap_aa = "MGSHHHHHHSSGIEGRSSGYKLILNGKTLKGETTTEAVDAATAEKVFKQYANDNGVDGEWTYDDATKTFTVTEGGGGSGGGGSLEVLFQGPDLPKLVKLLKSSNEEILLKALRALAEIASGG" #@param {type:"string"}
-repeat_module_aa = "NEQIQAVIDAGALPALVQLLSSPNEQILQEALWALSNIASGG" #@param {type:"string"}
-initial_repeat_copies = 25 #@param {type:"integer"}
-c_cap_aa = "NEQIQAVIDAGALPALVQLLSSPNEQILQEALWALSNIASGGNEQKQAVKEAGALEKLEQLQSHENEKIQKEAQEALEKLQSHGGGLEVLFQGPSSGEFGGGGSMVSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFMYGSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYKGGGSSGHHHHHH" #@param {type:"string"}
-
-#@markdown ### Complete-protein input (used only in complete-protein mode)
-#@markdown Paste one raw AA sequence or one FASTA record. Every residue and repeat variant is preserved.
-full_protein_or_fasta = "" #@param {type:"string", placeholder:"raw AA or one FASTA record"}
-#@markdown Enter all three confirmed 1-based values, or leave all as 0 to request boundary candidates.
-repeat_region_start_1based = 0 #@param {type:"integer"}
-repeat_region_end_1based = 0 #@param {type:"integer"}
-repeat_period_aa = 0 #@param {type:"integer"}
-'''
+COLAB_STORAGE_PANEL = r'''display(storage_panel)'''
 
 
-COLAB_SELECTOR_POLICY_FORM = r'''#@markdown ### Cutter reuse policy
-#@markdown Individual RE and plasmid selectors appear in the next two cells after initialization.
-allow_left_cutter_in_hurdler_pair = False #@param {type:"boolean"}
-allow_right_cutter_in_hurdler_pair = False #@param {type:"boolean"}
-'''
+COLAB_PROTEIN_FORM = r'''display(protein_input_panel)'''
+
+
+COLAB_SELECTOR_POLICY_FORM = r'''display(cutter_policy_panel)'''
 
 
 COLAB_IMPORTS = r'''import getpass
@@ -439,11 +457,15 @@ import shutil
 import time
 import traceback
 from dataclasses import asdict, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import ipywidgets as widgets
+from Bio import SeqIO
+from dna_features_viewer import BiopythonTranslator, CircularGraphicRecord
 from IPython.display import Markdown, clear_output, display
+import matplotlib.pyplot as plt
 
 from hurdler.design import parse_protein_input
 from hurdler.idt import (
@@ -455,6 +477,11 @@ from hurdler.idt import (
     configure_idt_credentials_from_values,
 )
 from hurdler.design import role_enzyme_options
+from hurdler.optimization import translate_dna
+from hurdler.design_artifacts import (
+    timestamped_results_archive,
+    write_secondary_checkpoint,
+)
 from hurdler.protein_index import ProteinPatternIndex
 from hurdler.progress import DesignProgressEvent
 from hurdler.vector_design import (
@@ -467,6 +494,7 @@ from hurdler.vector_design import (
     design_query,
     filter_route_universe,
     bundled_protein_index_dir,
+    _secondary_adapters,
     write_design_outputs_v2,
 )
 
@@ -855,6 +883,145 @@ COLAB_CONTROLLER_V2 = r'''PLASMID_OPTIONS = (
     "pET-28a(+)_start_codon", "pCold_I", "pUC18", "pQE-3",
 )
 
+
+def _help_card(title, widget, *, unit, default, purpose, allowed, effect):
+    return widgets.VBox([
+        widgets.HTML(
+            f"<b>{title}</b> <span style='color:#666'>[{unit}]</span><br>"
+            f"<small><b>Default:</b> {default} · <b>Allowed:</b> {allowed}<br>"
+            f"<b>Purpose:</b> {purpose}<br><b>Effect:</b> {effect}</small>"
+        ),
+        widget,
+    ], layout=widgets.Layout(border="1px solid #ddd", padding="7px", margin="3px 0"))
+
+
+# Storage is opt-in. Merely choosing Drive does not authenticate or mount it.
+storage_mode_widget = widgets.ToggleButtons(
+    options=(("Colab temporary storage", "runtime"), ("Google Drive", "drive")),
+    value="runtime", description="Storage",
+)
+drive_root_widget = widgets.Text(
+    value="/content/drive/MyDrive/HURDLER",
+    description="Drive folder", layout=widgets.Layout(width="98%"),
+)
+mount_drive_button = widgets.Button(description="Mount Google Drive", icon="folder-open")
+storage_status = widgets.HTML(
+    "<b>Runtime storage active.</b> A Colab restart removes local files; download the final ZIP or opt into Drive."
+)
+storage_state = {"drive_mounted": False}
+
+
+def _mount_google_drive(_button=None):
+    if storage_mode_widget.value != "drive":
+        storage_status.value = "Select <b>Google Drive</b> first; no mount was attempted."
+        return
+    try:
+        from google.colab import drive
+    except ImportError:
+        storage_status.value = "Google Drive mounting is available only in hosted Colab."
+        return
+    drive.mount("/content/drive")
+    Path(drive_root_widget.value).mkdir(parents=True, exist_ok=True)
+    storage_state["drive_mounted"] = True
+    storage_status.value = (
+        "<b>Drive mounted.</b> Only checkpoint and final ZIP files will be copied; computation remains under /content."
+    )
+
+
+mount_drive_button.on_click(_mount_google_drive)
+
+
+def _storage_mode_changed(_change=None):
+    if storage_mode_widget.value == "runtime":
+        storage_status.value = (
+            "<b>Runtime storage active.</b> A Colab restart removes local files; download the final ZIP or opt into Drive."
+        )
+    elif storage_state.get("drive_mounted"):
+        storage_status.value = "<b>Drive already mounted.</b> Checkpoint and final ZIP files will be copied."
+    else:
+        storage_status.value = "<b>Drive selected but not mounted.</b> Click Mount Google Drive before optimization."
+
+
+storage_mode_widget.observe(_storage_mode_changed, names="value")
+storage_panel = widgets.VBox([
+    widgets.HTML("<h2>0. Choose result storage</h2>"),
+    _help_card(
+        "Storage destination", storage_mode_widget, unit="mode", default="Colab temporary storage",
+        purpose="Controls whether recovery/final ZIP files are also copied to Google Drive.",
+        allowed="runtime or Drive", effect="Drive is mounted only after the button is clicked; credentials are never saved.",
+    ),
+    _help_card(
+        "Drive output folder", drive_root_widget, unit="path", default="MyDrive/HURDLER",
+        purpose="Destination for checkpoint and final ZIP archives.", allowed="a folder under /content/drive",
+        effect="Does not change the /content computation directory.",
+    ),
+    mount_drive_button, storage_status,
+])
+
+
+# Exactly one protein-input panel is visible. The supplied tutorial example is
+# intentionally visible at first; the complete-sequence box is not.
+input_mode_widget = widgets.ToggleButtons(
+    options=(("N-cap / module / C-cap", "split"), ("Complete protein / FASTA", "full")),
+    value="split", description="Input mode",
+)
+sequence_id_widget = widgets.Text(
+    value="", placeholder="interactive_design", description="Sequence ID",
+    layout=widgets.Layout(width="98%"),
+)
+n_cap_widget = widgets.Textarea(
+    value=default_n_cap, description="N-cap AA", layout=widgets.Layout(width="98%", height="80px"),
+)
+repeat_module_widget = widgets.Textarea(
+    value=default_repeat_module, description="Module AA", layout=widgets.Layout(width="98%", height="75px"),
+)
+initial_copies_widget = widgets.BoundedIntText(
+    value=default_repeat_copies, min=2, max=10000, description="Target copies",
+)
+c_cap_widget = widgets.Textarea(
+    value=default_c_cap, description="C-cap AA", layout=widgets.Layout(width="98%", height="100px"),
+)
+full_protein_widget = widgets.Textarea(
+    value="", placeholder=">protein_id\nFULL_AMINO_ACID_SEQUENCE",
+    description="Full AA/FASTA", layout=widgets.Layout(width="98%", height="150px"),
+)
+repeat_start_widget = widgets.BoundedIntText(value=0, min=0, max=1_000_000, description="Start")
+repeat_end_widget = widgets.BoundedIntText(value=0, min=0, max=1_000_000, description="End")
+repeat_period_widget = widgets.BoundedIntText(value=0, min=0, max=100_000, description="Period")
+
+split_input_panel = widgets.VBox([
+    _help_card("N-terminal cap", n_cap_widget, unit="AA", default="tutorial construct N-cap", purpose="Fixed protein before the repeat array.", allowed="standard one-letter amino acids; may be empty", effect="Included once in the primary CDS and translation."),
+    _help_card("Repeat module", repeat_module_widget, unit="AA", default="43-AA tutorial armadillo module", purpose="Exact protein unit repeated in the array.", allowed="standard one-letter amino acids", effect="Determines HURDLER sites, secondary core bp and all copy counts."),
+    _help_card("Final target copies", initial_copies_widget, unit="repeat copies", default=str(default_repeat_copies), purpose="Exact repeat count required in the final protein.", allowed="integer 2–10,000", effect="Sets the final CDS and the primary + secondary reuse equation."),
+    _help_card("C-terminal cap", c_cap_widget, unit="AA", default="tutorial construct C-cap", purpose="Fixed protein after the repeat array.", allowed="standard one-letter amino acids; may be empty", effect="Included once in the primary CDS and translation."),
+])
+full_input_panel = widgets.VBox([
+    _help_card("Complete protein or FASTA", full_protein_widget, unit="AA", default="empty", purpose="Preserves every residue and repeat variant in one complete protein.", allowed="one raw sequence or one FASTA record", effect="HURDLER proposes boundaries when coordinates remain zero."),
+    _help_card("Repeat-region coordinates", widgets.HBox([repeat_start_widget, repeat_end_widget, repeat_period_widget]), unit="1-based AA", default="0 / 0 / 0", purpose="Confirms repeat start, inclusive end and period.", allowed="all zero or all positive", effect="Required together before full-protein optimization."),
+])
+
+
+def _sync_input_panel(_change=None):
+    split_input_panel.layout.display = "" if input_mode_widget.value == "split" else "none"
+    full_input_panel.layout.display = "" if input_mode_widget.value == "full" else "none"
+
+
+_sync_input_panel()
+protein_input_panel = widgets.VBox([
+    widgets.HTML("<h2>1. Enter the repeat protein</h2><p>Use the two buttons to switch input methods; only the active method is read.</p>"),
+    _help_card("Protein input method", input_mode_widget, unit="mode", default="split tutorial example", purpose="Chooses explicit cap/module/copy input or one complete protein.", allowed="one of two buttons", effect="Switching invalidates cached routes and confirmed designs."),
+    _help_card("Sequence identifier", sequence_id_widget, unit="text", default="interactive_design or FASTA header", purpose="Names result records and ZIP files.", allowed="short text", effect="Does not change molecular compatibility."),
+    split_input_panel, full_input_panel,
+])
+
+allow_left_cutter_widget = widgets.Checkbox(value=False, description="Allow left vector cutter reuse")
+allow_right_cutter_widget = widgets.Checkbox(value=False, description="Allow right vector cutter reuse")
+cutter_policy_panel = widgets.VBox([
+    widgets.HTML("<h3>1b. Optional cutter-reuse fallback</h3>"),
+    _help_card("Left cutter reuse", allow_left_cutter_widget, unit="boolean", default="off", purpose="Allows the left vector cutter to also fill a HURDLER RE role only as a fallback.", allowed="on/off", effect="Can recover routes but is evaluated after restore filtering."),
+    _help_card("Right cutter reuse", allow_right_cutter_widget, unit="boolean", default="off", purpose="Allows the right vector cutter to also fill a HURDLER RE role only as a fallback.", allowed="on/off", effect="Can recover routes but is evaluated after restore filtering."),
+])
+
 protein_index = ProteinPatternIndex.load(bundled_protein_index_dir())
 enzyme_roles = role_enzyme_options(protein_index)
 project_root = bundled_protein_index_dir().parents[2]
@@ -912,17 +1079,17 @@ plasmid_selection_status = widgets.HTML()
 enzyme_route_support = widgets.HTML()
 plasmid_route_support = widgets.HTML()
 
-max_restoration_length_widget = widgets.IntText(
-    value=100,
+max_restoration_length_widget = widgets.BoundedIntText(
+    value=100, min=0, max=10000,
     description="Max restore (bp)",
     layout=widgets.Layout(width="320px"),
 )
 advanced_route_filters = widgets.Accordion(children=[widgets.VBox([
-    widgets.HTML(
-        "Keep only routes whose combined left + right restoration sequence is "
-        "at most this many base pairs. The limit is inclusive."
+    _help_card(
+        "Maximum restoration length", max_restoration_length_widget,
+        unit="bp", default="100", purpose="Caps left + right vector sequence restored by the donor.",
+        allowed="integer 0–10,000; inclusive", effect="Longer routes disappear from live counts and final query; Type-IIS adapters are excluded.",
     ),
-    max_restoration_length_widget,
 ])])
 advanced_route_filters.set_title(0, "Advanced route filters")
 advanced_route_filters.selected_index = None
@@ -940,6 +1107,11 @@ state = {
     "progress_events": [],
     "route_universe": None,
     "route_universe_fingerprint": None,
+    "design_result": None,
+    "run_directory": None,
+    "best_checkpoint": None,
+    "last_checkpoint_write": 0.0,
+    "checkpoint_archive": None,
 }
 
 query_button = widgets.Button(description="Run / re-run HURDLER query", button_style="primary")
@@ -997,28 +1169,28 @@ def _form_query(
 ):
     common = dict(
         schema_version=DESIGN_SCHEMA_VERSION_V2,
-        sequence_id=str(sequence_id).strip() or "interactive_design",
+        sequence_id=str(sequence_id_widget.value).strip() or "interactive_design",
         site_i_allowlist=site_i_allowlist,
         site_ii_allowlist=site_ii_allowlist,
         site_iii_allowlist=site_iii_allowlist,
         plasmid_allowlist=plasmid_allowlist,
-        allow_left_cutter_in_hurdler_pair=bool(allow_left_cutter_in_hurdler_pair),
-        allow_right_cutter_in_hurdler_pair=bool(allow_right_cutter_in_hurdler_pair),
+        allow_left_cutter_in_hurdler_pair=bool(allow_left_cutter_widget.value),
+        allow_right_cutter_in_hurdler_pair=bool(allow_right_cutter_widget.value),
         max_restoration_length_bp=max_restoration_length_bp,
     )
-    if input_mode == "N-cap + repeat module + C-cap":
+    if input_mode_widget.value == "split":
         return CompatibilityQuery(
-            input_mode="split", n_cap=n_cap_aa, repeat_module=repeat_module_aa,
-            c_cap=c_cap_aa, repeat_copies=int(initial_repeat_copies), **common,
+            input_mode="split", n_cap=n_cap_widget.value, repeat_module=repeat_module_widget.value,
+            c_cap=c_cap_widget.value, repeat_copies=int(initial_copies_widget.value), **common,
         )
-    parsed_id, normalized = parse_protein_input(full_protein_or_fasta)
+    parsed_id, normalized = parse_protein_input(full_protein_widget.value)
     coordinates = (
-        int(repeat_region_start_1based), int(repeat_region_end_1based), int(repeat_period_aa),
+        int(repeat_start_widget.value), int(repeat_end_widget.value), int(repeat_period_widget.value),
     )
     if any(value > 0 for value in coordinates) and not all(value > 0 for value in coordinates):
         raise ValueError("Provide repeat start, end, and period together, or leave all three as 0")
     confirmed = all(value > 0 for value in coordinates)
-    common["sequence_id"] = str(sequence_id).strip() or parsed_id
+    common["sequence_id"] = str(sequence_id_widget.value).strip() or parsed_id
     return CompatibilityQuery(
         input_mode="full", full_protein_sequence=normalized,
         repeat_region_start=coordinates[0] if confirmed else None,
@@ -1073,10 +1245,24 @@ def _invalidate_confirmation(message=""):
     ga_panel.layout.display = "none"
     design_button.disabled = True
     download_button.disabled = True
+    state["design_result"] = None
+    if "viewer_panel" in globals():
+        viewer_panel.layout.display = "none"
     if message:
         with route_output:
             clear_output(wait=True)
             display(Markdown(message))
+
+
+def _input_changed(_change=None):
+    _sync_input_panel()
+    state["route_universe"] = None
+    state["route_universe_fingerprint"] = None
+    state["query_result"] = None
+    state["query_fingerprint"] = None
+    _populate_pair_choices(None)
+    _set_support_summary([])
+    _invalidate_confirmation("**Protein input changed. Run the HURDLER query again.**")
 
 
 def _selection_changed(_change=None):
@@ -1392,6 +1578,7 @@ def _confirm_route(_button=None):
         state["confirmed_fingerprint"] = current
         ga_panel.layout.display = ""
         design_button.disabled = False
+        _update_secondary_lengths()
         display(Markdown(
             f"**Confirmed:** {route['site_i_enzyme']} / {route['site_ii_enzyme']} / "
             f"{site_iii_choice.value} → {route['profile_id']} · {route['cut_scheme']}. "
@@ -1416,6 +1603,13 @@ plasmid_bulk_control.observe(
     lambda change: _bulk_selection_changed("plasmids", change), names="value"
 )
 max_restoration_length_widget.observe(_route_filter_changed, names="value")
+for input_widget in (
+    input_mode_widget, sequence_id_widget, n_cap_widget, repeat_module_widget,
+    initial_copies_widget, c_cap_widget, full_protein_widget,
+    repeat_start_widget, repeat_end_widget, repeat_period_widget,
+    allow_left_cutter_widget, allow_right_cutter_widget,
+):
+    input_widget.observe(_input_changed, names="value")
 _refresh_selection_group("enzymes")
 _refresh_selection_group("plasmids")
 pair_choice.observe(_update_site_iii, names="value")
@@ -1425,7 +1619,7 @@ query_button.on_click(_run_query)
 confirm_button.on_click(_confirm_route)
 
 
-def _numeric_control(description, value, minimum, maximum, step, *, integer=False):
+def _numeric_control(description, value, minimum, maximum, step, *, integer=False, help_text=""):
     slider_type = widgets.IntSlider if integer else widgets.FloatSlider
     text_type = widgets.BoundedIntText if integer else widgets.BoundedFloatText
     slider = slider_type(value=value, min=minimum, max=maximum, step=step, readout=False,
@@ -1434,7 +1628,10 @@ def _numeric_control(description, value, minimum, maximum, step, *, integer=Fals
                        layout=widgets.Layout(width="34%"))
     widgets.link((slider, "value"), (number, "value"))
     card = widgets.VBox([
-        widgets.HTML(f"<b>{description}</b>"), widgets.HBox([slider, number]),
+        widgets.HTML(
+            f"<b>{description}</b><br><small>Default {value}; allowed {minimum}–{maximum}. "
+            f"{help_text}</small>"
+        ), widgets.HBox([slider, number]),
     ], layout=widgets.Layout(width="49%", border="1px solid #ddd", padding="6px"))
     return card, number
 
@@ -1455,39 +1652,95 @@ credential_path = widgets.Text(
     value=str(IDT_CREDENTIAL_PATH), description="Local env", layout=widgets.Layout(width="98%"),
 )
 credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False, description="Upload temporary idt.env")
-output_directory_widget = widgets.Text(value="/content/hurdler_design", description="Output", layout=widgets.Layout(width="98%"))
+output_directory_widget = widgets.Text(value="/content/hurdler_runs/current", description="Runtime work folder", layout=widgets.Layout(width="98%"))
 auto_download_widget = widgets.Checkbox(value=True, description="Auto-download ZIP after success")
 verbose_generations = widgets.Checkbox(value=False, description="Show every GA generation in Advanced log")
 
-population_card, population_number = _numeric_control("Population", 16, 4, 256, 4, integer=True)
-mutation_card, mutation_number = _numeric_control("Mutation rate", 0.08, 0.001, 0.5, 0.001)
-crossover_card, crossover_number = _numeric_control("Crossover rate", 0.75, 0.0, 1.0, 0.01)
-elite_card, elite_number = _numeric_control("Elite fraction", 0.15, 0.01, 0.5, 0.01)
+population_card, population_number = _numeric_control("Population", 16, 4, 256, 4, integer=True, help_text="Candidates per GA generation; larger values improve exploration but cost time.")
+mutation_card, mutation_number = _numeric_control("Mutation rate", 0.08, 0.001, 0.5, 0.001, help_text="Probability of synonymous codon mutation; higher values explore more aggressively.")
+crossover_card, crossover_number = _numeric_control("Crossover rate", 0.75, 0.0, 1.0, 0.01, help_text="Probability of recombining parent DNA candidates while preserving translation.")
+elite_card, elite_number = _numeric_control("Elite fraction", 0.15, 0.01, 0.5, 0.01, help_text="Best fraction retained each generation; high values reduce diversity.")
 minimum_secondary_card, minimum_secondary_number = _numeric_control(
-    "Minimum secondary modules (N)", 12, 1, 1000, 1, integer=True
+    "Minimum secondary copies", 12, 1, 1000, 1, integer=True,
+    help_text="Bounded-mode lower repeat count. Automatic mode always starts at one copy."
+)
+maximum_secondary_card, maximum_secondary_number = _numeric_control(
+    "Maximum secondary copies", 20, 1, 1000, 1, integer=True,
+    help_text="Bounded-mode inclusive upper repeat count; it must not be below the minimum."
 )
 feedback_round_card, feedback_round_number = _numeric_control(
-    "Maximum GA→IDT feedback rounds", 100, 1, 1000, 1, integer=True
+    "Maximum GA→IDT feedback rounds", 100, 1, 1000, 1, integer=True,
+    help_text="Retries per copy count. Positive IDT rules adjust weights before the next retry."
 )
 generations_per_round_card, generations_per_round_number = _numeric_control(
-    "GA generations per feedback round", 10, 1, 1000, 1, integer=True
+    "GA generations per feedback round", 10, 1, 1000, 1, integer=True,
+    help_text="Generations added before each exact-DNA IDT score request."
 )
 elite_seed_card, elite_seed_number = _numeric_control(
-    "Warm-start top candidates", 10, 1, 256, 1, integer=True
+    "Warm-start top candidates", 10, 1, 256, 1, integer=True,
+    help_text="Number of prior elite sequences carried into the next feedback round."
 )
 max_population_card, max_population_number = _numeric_control(
-    "Adaptive population cap", 256, 4, 2048, 4, integer=True
+    "Adaptive population cap", 256, 4, 2048, 4, integer=True,
+    help_text="Upper bound when IDT rejection increases the GA population."
 )
 max_mutation_card, max_mutation_number = _numeric_control(
-    "Adaptive mutation cap", 0.35, 0.001, 1.0, 0.001
+    "Adaptive mutation cap", 0.35, 0.001, 1.0, 0.001,
+    help_text="Maximum mutation rate reached during IDT feedback."
 )
 max_crossover_card, max_crossover_number = _numeric_control(
-    "Adaptive crossover cap", 0.95, 0.0, 1.0, 0.01
+    "Adaptive crossover cap", 0.95, 0.0, 1.0, 0.01,
+    help_text="Maximum crossover rate reached during IDT feedback."
 )
+secondary_search_mode_widget = widgets.ToggleButtons(
+    options=(("Automatic to limit", "automatic"), ("Bounded copy range", "bounded")),
+    value="automatic", description="Secondary search",
+)
+secondary_length_status = widgets.HTML()
 seed_number = widgets.IntText(value=42, description="Random seed")
 generation_schedule_widget = widgets.Text(value="10,20,40,60,80,100", description="Generations")
 auto_weight_feedback = widgets.Checkbox(value=True, description="Adjust weights from IDT positive rules")
 auto_parameter_feedback = widgets.Checkbox(value=True, description="Adapt population / mutation / crossover from IDT score")
+
+
+def _secondary_bounds():
+    if secondary_search_mode_widget.value == "automatic":
+        return 1, None
+    minimum = int(minimum_secondary_number.value)
+    maximum = int(maximum_secondary_number.value)
+    if maximum < minimum:
+        raise ValueError("Maximum secondary copies cannot be smaller than minimum secondary copies")
+    return minimum, maximum
+
+
+def _update_secondary_lengths(_change=None):
+    bounded = secondary_search_mode_widget.value == "bounded"
+    minimum_secondary_number.disabled = not bounded
+    maximum_secondary_number.disabled = not bounded
+    module_bp = len("".join(str(repeat_module_widget.value).split())) * 3
+    try:
+        minimum, maximum = _secondary_bounds()
+    except ValueError as exc:
+        secondary_length_status.value = f"<span style='color:#b31b1b'><b>{exc}</b></span>"
+        return
+    adapter_bp = 0
+    route = state.get("confirmed_route")
+    if route is not None and state.get("confirmed_site_iii"):
+        try:
+            selected = {**route, "site_iii_enzyme": state["confirmed_site_iii"]}
+            left_adapter, right_adapter, _evidence = _secondary_adapters(selected, project_root=project_root)
+            adapter_bp = len(left_adapter) + len(right_adapter)
+        except Exception:
+            adapter_bp = 0
+    if maximum is None:
+        physical = max(0, (3000 - adapter_bp) // max(1, module_bp))
+        text = f"Automatic: starts at 1 copy ({module_bp:,} core bp) and explores up to about {physical:,} copies under the 3,000-bp purchase cap"
+    else:
+        text = (
+            f"Bounded: {minimum}–{maximum} copies; core {minimum * module_bp:,}–{maximum * module_bp:,} bp; "
+            f"purchase {minimum * module_bp + adapter_bp:,}–{maximum * module_bp + adapter_bp:,} bp including {adapter_bp} adapter bp"
+        )
+    secondary_length_status.value = f"<b>{text}.</b>"
 
 weight_defaults = {
     "selected_re_site_excess": 1_000_000_000.0,
@@ -1516,15 +1769,20 @@ def _two_per_row(items):
 
 
 advanced_panel = widgets.VBox([
+    widgets.HTML(
+        "<p><b>Advanced GA settings.</b> All sequence changes are synonymous. "
+        "The selected Site-I/Site-II excess count is a hard constraint; repeated non-selected RE sites and IDT rule feedback are weighted score terms.</p>"
+    ),
     _two_per_row([population_card, mutation_card, crossover_card, elite_card]),
     _two_per_row([
         generations_per_round_card, elite_seed_card,
         max_population_card, max_mutation_card, max_crossover_card,
     ]),
-    widgets.HBox([seed_number, generation_schedule_widget]),
+    _help_card("Random seed", seed_number, unit="integer", default="42", purpose="Makes stochastic GA choices reproducible.", allowed="any integer", effect="Changing it explores a different synonymous-DNA trajectory."),
+    _help_card("Generation schedule", generation_schedule_widget, unit="generations", default="10,20,40,60,80,100", purpose="Legacy schedule used by applicable optimization routes.", allowed="positive comma-separated integers ending at 100", effect="Longer schedules cost more CPU."),
     widgets.HBox([auto_weight_feedback, auto_parameter_feedback]),
     verbose_generations,
-    widgets.HTML("<b>GA score weights</b>"),
+    widgets.HTML("<b>GA score weights</b><br><small>Each value multiplies its named violation. Larger values make that defect less tolerable; IDT positive-rule feedback may raise mapped weights but never changes the protein.</small>"),
     _two_per_row(list(weight_widgets.values())),
 ])
 
@@ -1603,6 +1861,76 @@ def _progress_update(event: DesignProgressEvent):
             or (verbose_generations.value and row["stage"] == "ga")
         ]
         attempt_log_html.value = "<pre>" + "\n".join(lines[-12:]) + "</pre>"
+    _persist_checkpoint(force=False)
+
+
+def _checkpoint_local_path():
+    run_directory = Path(state.get("run_directory") or output_directory_widget.value)
+    root = Path("/content/hurdler_checkpoints") if Path("/content").is_dir() else run_directory.parent / "checkpoints"
+    root.mkdir(parents=True, exist_ok=True)
+    safe_id = "".join(character if character.isalnum() or character in "._-" else "_" for character in str(sequence_id_widget.value or "interactive_design"))
+    return root / f"hurdler_{safe_id}_checkpoint_latest.zip"
+
+
+def _copy_archive_to_drive(path):
+    if storage_mode_widget.value != "drive":
+        return None
+    if not storage_state.get("drive_mounted"):
+        raise RuntimeError("Google Drive was selected but is not mounted; click Mount Google Drive in Step 0")
+    destination = Path(drive_root_widget.value)
+    destination.mkdir(parents=True, exist_ok=True)
+    copied = destination / Path(path).name
+    shutil.copy2(path, copied)
+    return copied
+
+
+def _persist_checkpoint(payload=None, *, force=False):
+    now = time.monotonic()
+    if payload is not None:
+        score = payload.get("idt_complexity_score")
+        accepted = (
+            payload.get("event") == "accepted_secondary"
+            and payload.get("validation_mode") == "api"
+            and isinstance(score, (int, float)) and not isinstance(score, bool)
+            and float(score) < 10
+        )
+        previous = state.get("best_checkpoint")
+        if accepted and (previous is None or int(payload["repeat_copies"]) > int(previous["repeat_copies"])):
+            state["best_checkpoint"] = dict(payload)
+            force = True
+    if not force and now - float(state.get("last_checkpoint_write") or 0.0) < 180:
+        return None
+    best = state.get("best_checkpoint")
+    public_payload = best or {
+        "event": "heartbeat",
+        "sequence_id": str(sequence_id_widget.value or "interactive_design"),
+        "accepted_secondary_available": False,
+        "status": stage_html.value,
+        "query_fingerprint": state.get("confirmed_fingerprint"),
+        "route_fingerprint": hashlib.sha256(
+            json.dumps(state.get("confirmed_route") or {}, sort_keys=True).encode()
+        ).hexdigest(),
+        "tested_lengths": sorted({
+            row.get("copies") for row in state.get("progress_events", []) if row.get("copies") is not None
+        }),
+        "failure_reason": "No live-IDT-accepted secondary has been obtained yet",
+    }
+    checkpoint = write_secondary_checkpoint(public_payload, _checkpoint_local_path())
+    state["checkpoint_archive"] = checkpoint
+    state["last_checkpoint_write"] = now
+    if storage_mode_widget.value == "drive" and storage_state.get("drive_mounted"):
+        _copy_archive_to_drive(checkpoint)
+    return checkpoint
+
+
+def _checkpoint_update(payload):
+    _persist_checkpoint(payload, force=False)
+    checkpoint = state.get("best_checkpoint")
+    if checkpoint:
+        stage_html.value = (
+            f"<b>Checkpoint saved:</b> {checkpoint['repeat_copies']} secondary copies · "
+            f"IDT {checkpoint['idt_complexity_score']} · {Path(state['checkpoint_archive']).name}"
+        )
 
 
 def _secret_value(reader, name):
@@ -1699,6 +2027,9 @@ def _run_design(_button=None):
     download_button.disabled = True
     state["progress_events"] = []
     state["archive"] = None
+    state["design_result"] = None
+    state["best_checkpoint"] = None
+    state["last_checkpoint_write"] = 0.0
     generation_progress.value = 0
     stage_html.value = "<b>Status:</b> starting"
     with design_output:
@@ -1712,9 +2043,14 @@ def _run_design(_button=None):
         mode = validation_mode_widget.value
         scorer = None
         output_directory = Path(output_directory_widget.value)
+        output_directory.mkdir(parents=True, exist_ok=True)
+        state["run_directory"] = output_directory
+        if storage_mode_widget.value == "drive" and not storage_state.get("drive_mounted"):
+            raise RuntimeError("Google Drive was selected but is not mounted; click Mount Google Drive in Step 0")
         if mode == "api":
             _configure_api_credentials()
             scorer = IDTComplexityScorer(output_directory / "idt_audit.jsonl")
+        minimum_secondary, maximum_secondary = _secondary_bounds()
         request = DesignRequestV2(
             schema_version=DESIGN_SCHEMA_VERSION_V2,
             query=query,
@@ -1732,7 +2068,8 @@ def _run_design(_button=None):
             generation_schedule=_generation_schedule(),
             score_weights={name: float(widget.value) for name, widget in weight_widgets.items()},
             auto_adjust_weights_from_idt=bool(auto_weight_feedback.value),
-            minimum_secondary_copies=int(minimum_secondary_number.value),
+            minimum_secondary_copies=minimum_secondary,
+            maximum_secondary_copies=maximum_secondary,
             max_idt_feedback_rounds=int(feedback_round_number.value),
             generations_per_feedback_round=int(generations_per_round_number.value),
             elite_seed_count=int(elite_seed_number.value),
@@ -1741,12 +2078,25 @@ def _run_design(_button=None):
             max_mutation_rate=float(max_mutation_number.value),
             max_crossover_rate=float(max_crossover_number.value),
         )
-        result = design_construct_v2(request, idt_scorer=scorer, progress_callback=_progress_update)
+        result = design_construct_v2(
+            request,
+            idt_scorer=scorer,
+            progress_callback=_progress_update,
+            checkpoint_callback=_checkpoint_update,
+        )
         files = write_design_outputs_v2(result, output_directory)
-        archive = Path(shutil.make_archive(str(output_directory.resolve()), "zip", root_dir=output_directory.resolve()))
+        archive_root = Path("/content/hurdler_archives") if Path("/content").is_dir() else output_directory.parent / "archives"
+        archive = timestamped_results_archive(
+            output_directory,
+            archive_root,
+            sequence_id=query.sequence_id,
+        )
+        drive_archive = _copy_archive_to_drive(archive) if storage_mode_widget.value == "drive" else None
         state["design_files"] = files
         state["archive"] = archive
+        state["design_result"] = result
         download_button.disabled = False
+        _prepare_viewer(result, output_directory)
         with design_output:
             display(Markdown(f"**Design status:** `{result.status}` — {result.message}"))
             if result.rdl_plan:
@@ -1759,7 +2109,8 @@ def _run_design(_button=None):
             if result.cloning_steps:
                 display(Markdown("### Cloning plan"))
                 display(pd.DataFrame(result.cloning_steps))
-            display(Markdown(f"ZIP prepared: `{archive.name}`. No order was submitted."))
+            drive_text = f" Drive copy: `{drive_archive}`." if drive_archive else ""
+            display(Markdown(f"ZIP prepared: `{archive.name}`.{drive_text} No order was submitted."))
         if auto_download_widget.value and result.status in {"idt_accepted", "optimized_unvalidated_batch"}:
             _download_design()
     except Exception as exc:
@@ -1774,26 +2125,200 @@ def _run_design(_button=None):
         design_button.disabled = state.get("confirmed_route") is None
 
 
+viewer_step_widget = widgets.Dropdown(description="Assembly step", layout=widgets.Layout(width="48%"))
+viewer_molecule_widget = widgets.ToggleButtons(
+    options=(("Plasmid", "plasmid"), ("Insert", "insert")), value="plasmid", description="Molecule",
+)
+viewer_view_widget = widgets.ToggleButtons(
+    options=(("Circular", "circular"), ("Linear", "linear")), value="circular", description="View",
+)
+viewer_range_widget = widgets.IntRangeSlider(
+    value=(0, 1), min=0, max=1, step=1, description="Range (bp)",
+    continuous_update=False, layout=widgets.Layout(width="98%"),
+)
+viewer_focus_button = widgets.Button(description="Focus cloning region", icon="search-plus")
+viewer_reset_button = widgets.Button(description="Reset full view", icon="expand")
+viewer_render_button = widgets.Button(description="Render selected molecule", button_style="info")
+viewer_output = widgets.Output()
+viewer_translation_output = widgets.Output()
+viewer_panel = widgets.VBox([
+    widgets.HTML(
+        "<h3>Stepwise plasmid / insert viewer</h3>"
+        "<p>Select a step and molecule. Plasmids support circular and linear maps; inserts are linear. "
+        "Use Focus cloning region or the range slider to zoom. At ≤300 bp the exact bases and per-codon translation are shown.</p>"
+    ),
+    widgets.HBox([viewer_step_widget, viewer_molecule_widget, viewer_view_widget]),
+    viewer_range_widget,
+    widgets.HBox([viewer_focus_button, viewer_reset_button, viewer_render_button]),
+    viewer_output, viewer_translation_output,
+])
+viewer_panel.layout.display = "none"
+
+
+def _viewer_rows():
+    result = state.get("design_result")
+    return list(result.assembly_steps) if result is not None else []
+
+
+def _viewer_selected_row():
+    matches = [
+        row for row in _viewer_rows()
+        if int(row["step"]) == int(viewer_step_widget.value)
+        and row["molecule"] == viewer_molecule_widget.value
+    ]
+    if len(matches) != 1:
+        raise ValueError("The selected step/molecule is unavailable")
+    return matches[0]
+
+
+def _viewer_update_molecules(_change=None):
+    if viewer_step_widget.value is None:
+        return
+    available = [
+        row["molecule"] for row in _viewer_rows()
+        if int(row["step"]) == int(viewer_step_widget.value)
+    ]
+    options = tuple((value.title(), value) for value in ("plasmid", "insert") if value in available)
+    viewer_molecule_widget.options = options
+    if options and viewer_molecule_widget.value not in {value for _label, value in options}:
+        viewer_molecule_widget.value = options[0][1]
+    _viewer_reset()
+
+
+def _viewer_reset(_button=None):
+    try:
+        row = _viewer_selected_row()
+    except (ValueError, TypeError):
+        return
+    record = SeqIO.read(Path(state["run_directory"]) / row["file"], "genbank")
+    viewer_range_widget.max = max(1, len(record))
+    viewer_range_widget.value = (0, len(record))
+    viewer_view_widget.disabled = row["molecule"] == "insert"
+    if row["molecule"] == "insert":
+        viewer_view_widget.value = "linear"
+
+
+def _viewer_focus(_button=None):
+    row = _viewer_selected_row()
+    start = int(row.get("cloning_region_start_0based", 0))
+    end = int(row.get("cloning_region_end_0based_exclusive", row["length_bp"]))
+    padding = max(20, min(200, (end - start) // 10))
+    viewer_range_widget.value = (
+        max(0, start - padding), min(int(row["length_bp"]), end + padding)
+    )
+    viewer_view_widget.value = "linear"
+    _render_viewer()
+
+
+def _render_viewer(_button=None):
+    with viewer_output:
+        clear_output(wait=True)
+        try:
+            row = _viewer_selected_row()
+            record = SeqIO.read(Path(state["run_directory"]) / row["file"], "genbank")
+            start, end = map(int, viewer_range_widget.value)
+            translator = BiopythonTranslator(features_filters=(lambda feature: feature.type != "source",))
+            circular = row["molecule"] == "plasmid" and viewer_view_widget.value == "circular" and (start, end) == (0, len(record))
+            if circular:
+                graphic = translator.translate_record(record, record_class=CircularGraphicRecord)
+                figure, axis = plt.subplots(figsize=(8, 8))
+                graphic.plot(ax=axis)
+            else:
+                graphic = translator.translate_record(record)
+                if (start, end) != (0, len(record)):
+                    graphic = graphic.crop((start, end))
+                figure, axis = plt.subplots(figsize=(13, 3.6))
+                graphic.plot(ax=axis, figure_width=13)
+            axis.set_title(f"{row['file']} · {start:,}–{end:,} bp")
+            figure.tight_layout()
+            display(figure)
+            plt.close(figure)
+        except Exception as exc:
+            display(Markdown(f"**Viewer error:** `{type(exc).__name__}: {exc}`"))
+            return
+    with viewer_translation_output:
+        clear_output(wait=True)
+        window = str(record.seq[start:end])
+        display(Markdown(
+            f"**Molecule:** `{row['file']}` · **length:** {len(record):,} bp · "
+            f"**SHA256:** `{row['sequence_sha256']}` · **copy count:** {row.get('copy_count', '—')}"
+        ))
+        target_cds = next((
+            feature for feature in record.features
+            if feature.type == "CDS" and "repeat-protein" in feature.qualifiers.get("label", [""])[0]
+        ), None)
+        if target_cds is not None:
+            display(Markdown(f"**Expressed translation ({len(target_cds.qualifiers['translation'][0]):,} AA):** `{target_cds.qualifiers['translation'][0]}`"))
+        if end - start <= 300:
+            display(Markdown(f"**Bases {start + 1}–{end}:** `{window}`"))
+            if target_cds is not None:
+                cds_start, cds_end = int(target_cds.location.start), int(target_cds.location.end)
+                aligned_start = max(start, cds_start)
+                aligned_start += (3 - (aligned_start - cds_start) % 3) % 3
+                aligned_end = min(end, cds_end)
+                aligned_end -= (aligned_end - cds_start) % 3
+                codon_rows = []
+                for position in range(aligned_start, aligned_end, 3):
+                    codon = str(record.seq[position:position + 3])
+                    codon_rows.append({
+                        "bp": f"{position + 1}-{position + 3}",
+                        "codon": codon,
+                        "AA": translate_dna(codon),
+                        "protein_position": (position - cds_start) // 3 + 1,
+                    })
+                if codon_rows:
+                    display(pd.DataFrame(codon_rows))
+
+
+def _prepare_viewer(result, output_directory):
+    rows = list(result.assembly_steps)
+    if not rows:
+        viewer_panel.layout.display = "none"
+        return
+    steps = sorted({int(row["step"]) for row in rows})
+    viewer_step_widget.options = tuple((f"Step {step:02d}", step) for step in steps)
+    viewer_step_widget.value = steps[-1]
+    viewer_panel.layout.display = ""
+    _viewer_update_molecules()
+    _render_viewer()
+
+
+viewer_step_widget.observe(_viewer_update_molecules, names="value")
+viewer_molecule_widget.observe(lambda _change: _viewer_reset(), names="value")
+viewer_focus_button.on_click(_viewer_focus)
+viewer_reset_button.on_click(_viewer_reset)
+viewer_render_button.on_click(_render_viewer)
+
+
 design_button.on_click(_run_design)
 download_button.on_click(_download_design)
 
 credential_upload_row = widgets.HBox([credential_path, credential_upload])
 basic_panel = widgets.VBox([
-    settings_mode,
-    widgets.HBox([validation_mode_widget, auto_download_widget]),
-    _two_per_row([minimum_secondary_card, feedback_round_card]),
-    credential_source,
+    _help_card("Settings level", settings_mode, unit="mode", default="recommended", purpose="Shows or hides low-level GA controls.", allowed="recommended or advanced", effect="Recommended mode still uses the displayed frozen defaults."),
+    _help_card("Validation", validation_mode_widget, unit="mode", default="Live IDT API", purpose="Chooses live complexity scoring, unvalidated Bulk Input export, or molecular compatibility only.", allowed="API, batch, none", effect="Only API mode can claim IDT-accepted secondary DNA."),
+    auto_download_widget,
+    _help_card("Secondary-copy search", secondary_search_mode_widget, unit="mode", default="automatic", purpose="Explores secondary donor repeat count.", allowed="automatic from 1 or bounded min/max", effect="Automatic proves the physical/route limit; bounded stops at the user ceiling."),
+    _two_per_row([minimum_secondary_card, maximum_secondary_card]),
+    secondary_length_status,
+    feedback_round_card,
+    _help_card("Credential source", credential_source, unit="authentication", default="automatic external env/upload", purpose="Provides the live IDT scoring token only when API mode starts.", allowed="external path/upload, Colab Secrets, hidden prompt", effect="Secrets remain in memory/environment and are cleared after the run."),
     credential_upload_row,
     credential_help,
-    output_directory_widget,
+    _help_card("Runtime work folder", output_directory_widget, unit="path", default="/content/hurdler_runs/current", purpose="Stores active computation and complete uncompressed outputs.", allowed="runtime path", effect="Drive mode still computes here and copies only ZIP archives."),
 ])
 ga_panel = widgets.VBox([
     basic_panel, advanced_panel,
     widgets.HTML("<h3>Live progress</h3>"), stage_html, generation_progress,
     current_html, attempt_log_html,
-    widgets.HBox([design_button, download_button]), design_output,
+    widgets.HBox([design_button, download_button]), design_output, viewer_panel,
 ])
 ga_panel.layout.display = "none"
+secondary_search_mode_widget.observe(_update_secondary_lengths, names="value")
+minimum_secondary_number.observe(_update_secondary_lengths, names="value")
+maximum_secondary_number.observe(_update_secondary_lengths, names="value")
+repeat_module_widget.observe(_update_secondary_lengths, names="value")
+_update_secondary_lengths()
 _refresh_live_support()
 '''
 
@@ -1804,7 +2329,8 @@ COLAB_ENZYME_SELECTOR = r'''display(widgets.VBox([
         f"<p>One shared pool: {len(enzyme_roles['site_i'])} Site-I/II enzymes and "
         f"{len(declared_site_iii)} maintained Site-III enzymes "
         f"({len(enzyme_roles['site_iii'])} occur in the current protein-pair index). "
-        f"Each selected enzyme is used only in legal roles.</p>"
+        f"Each selected enzyme is used only in legal roles. Site I is retained active, Site II is synonymously silenced, "
+        f"and Site III releases disposable secondary adapters. The card below reports jointly usable routes—not checkbox counts.</p>"
     ),
     widgets.HBox([enzyme_bulk_control, enzyme_selection_status]),
     enzyme_route_support,
@@ -1813,7 +2339,7 @@ COLAB_ENZYME_SELECTOR = r'''display(widgets.VBox([
 
 
 COLAB_PLASMID_SELECTOR = r'''display(widgets.VBox([
-    widgets.HTML("<h2>3. Select plasmid profiles</h2>"),
+    widgets.HTML("<h2>3. Select plasmid profiles</h2><p>Profiles are annotation-aware expression orientations. Selecting a plasmid does not guarantee a route: its cut scheme must also support the chosen RE pair and restore threshold.</p>"),
     widgets.HBox([plasmid_bulk_control, plasmid_selection_status]),
     plasmid_route_support,
     plasmid_checkbox_grid,
@@ -1821,7 +2347,7 @@ COLAB_PLASMID_SELECTOR = r'''display(widgets.VBox([
 
 
 COLAB_QUERY_PANEL = r'''display(widgets.VBox([
-    widgets.HTML("<h2>4. Query protein patterns and annotation-safe vector routes</h2>"),
+    widgets.HTML("<h2>4. Query protein patterns and annotation-safe vector routes</h2><p>The query enumerates protein-compatible Site-I/Site-II codon windows, then intersects them with selected Site III enzymes, plasmid profiles, protected annotations and the inclusive restore-length cap.</p>"),
     advanced_route_filters,
     query_button, query_output,
 ]))
@@ -1829,13 +2355,13 @@ _run_query()'''
 
 
 COLAB_RE_ROUTE_PANEL = r'''display(widgets.VBox([
-    widgets.HTML("<h2>5. Select the three RE enzymes</h2>"),
+    widgets.HTML("<h2>5. Select the three RE enzymes</h2><p>Choose a ranked Site-I/Site-II pair, then one compatible Site III. No first-ranked route is auto-confirmed.</p>"),
     pair_choice, site_iii_choice,
 ]))'''
 
 
 COLAB_VECTOR_ROUTE_PANEL = r'''display(widgets.VBox([
-    widgets.HTML("<h2>6. Select plasmid and cut scheme, then confirm</h2>"),
+    widgets.HTML("<h2>6. Select plasmid and cut scheme, then confirm</h2><p>The cut scheme specifies the two vector cutters, retained long backbone, removed MCS arc and exact restoration bases. Confirmation freezes its fingerprint for optimization.</p>"),
     profile_choice, scheme_choice, confirm_button, route_output,
 ]))'''
 
@@ -1888,24 +2414,11 @@ def notebook(*, colab: bool = False):
                     title='0. Initialize HURDLER { display-mode: "form" }',
                 ),
                 _code_cell(
-                    COLAB_PROTEIN_FORM,
-                    colab=True,
-                    cell_id="hurdler-protein-form",
-                    title='1. Protein and repeat boundary { display-mode: "form", run: "auto" }',
-                    tags=["parameters", "colab-native-form"],
-                ),
-                _code_cell(
-                    COLAB_SELECTOR_POLICY_FORM,
-                    colab=True,
-                    cell_id="hurdler-selector-policy-form",
-                    title='1b. Cutter fallback policy { display-mode: "form", run: "auto" }',
-                    tags=["parameters", "colab-native-form"],
-                ),
-                _code_cell(
                     PARAMETERS,
                     colab=True,
                     cell_id="hurdler-test-defaults",
                     title='Internal smoke-test defaults { display-mode: "form" }',
+                    tags=["parameters"],
                 ),
                 _code_cell(
                     COLAB_IMPORTS,
@@ -1918,6 +2431,24 @@ def notebook(*, colab: bool = False):
                     colab=True,
                     cell_id="hurdler-controller-v2",
                     title='Prepare interactive controllers { display-mode: "form" }',
+                ),
+                _code_cell(
+                    COLAB_STORAGE_PANEL,
+                    colab=True,
+                    cell_id="hurdler-storage-panel",
+                    title='0b. Storage and recovery { display-mode: "form" }',
+                ),
+                _code_cell(
+                    COLAB_PROTEIN_FORM,
+                    colab=True,
+                    cell_id="hurdler-protein-form",
+                    title='1. Protein and repeat boundary { display-mode: "form" }',
+                ),
+                _code_cell(
+                    COLAB_SELECTOR_POLICY_FORM,
+                    colab=True,
+                    cell_id="hurdler-selector-policy-form",
+                    title='1b. Cutter fallback policy { display-mode: "form" }',
                 ),
                 _code_cell(
                     COLAB_ENZYME_SELECTOR,

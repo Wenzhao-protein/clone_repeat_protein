@@ -7,6 +7,7 @@ dependencies:
   - biopython>=1.83
   - duckdb>=1.1
   - dssp>=4.4
+  - dna-features-viewer>=3.1.5,<4
   - h5py>=3.10
   - ipykernel>=6.29
   - ipywidgets>=8.1

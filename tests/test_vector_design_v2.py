@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -28,6 +28,7 @@ from hurdler.vector_design import (
     filter_route_universe,
     design_construct_v2,
     design_query,
+    write_design_outputs_v2,
 )
 
 
@@ -226,6 +227,26 @@ def test_compatibility_query_missing_restoration_limit_remains_unbounded():
         "repeat_copies": 2,
     }
     assert CompatibilityQuery.from_dict(payload).max_restoration_length_bp is None
+
+
+def test_secondary_search_bounds_validate_and_legacy_payload_is_unbounded():
+    query = _compatible_query()
+    route = design_query(query).vector_routes[0]
+    common = dict(
+        schema_version=DESIGN_SCHEMA_VERSION_V2,
+        query=query,
+        selection=DesignSelection(
+            route["candidate_id"], route["profile_id"], route["scheme_id"],
+            route["site_iii_options"][0],
+        ),
+    )
+    request = DesignRequestV2(**common, minimum_secondary_copies=2)
+    assert request.maximum_secondary_copies is None
+    assert DesignRequestV2.from_dict(asdict(request)).maximum_secondary_copies is None
+    with pytest.raises(ValueError, match="cannot be smaller"):
+        DesignRequestV2(**common, minimum_secondary_copies=3, maximum_secondary_copies=2)
+    with pytest.raises(ValueError, match="positive integer"):
+        DesignRequestV2(**common, maximum_secondary_copies=True)
 
 
 def test_query_is_protein_first_and_returns_pair_to_profile_to_scheme_routes():
@@ -490,7 +511,7 @@ def test_split_adaptive_search_reaches_hard_upper_bound_with_machine_readable_pr
     assert any(row["copies"] == 3 and row["passed"] for row in result.optimization_attempts)
 
 
-def test_exact_target_rdl_reuses_one_secondary_and_emits_progress():
+def test_exact_target_rdl_reuses_one_secondary_and_emits_progress(tmp_path):
     n_cap = "MGSHHHHHHSSGIEGRSSGYKLILNGKTLKGETTTEAVDAATAEKVFKQYANDNGVDGEWTYDDATKTFTVTEGGGGSGGGGSLEVLFQGPDLPKLVKLLKSSNEEILLKALRALAEIASGG"
     module = "NEQIQAVIDAGALPALVQLLSSPNEQILQEALWALSNIASGG"
     c_cap = "NEQIQAVIDAGALPALVQLLSSPNEQILQEALWALSNIASGGNEQKQAVKEAGALEKLEQLQSHENEKIQKEAQEALEKLQSHGGGLEVLFQGPSSGEFGGGGSMVSKGEEDNMAIIKEFMRFKVHMEGSVNGHEFEIEGEGEGRPYEGTQTAKLKVTKGGPLPFAWDILSPQFMYGSKAYVKHPADIPDYLKLSFPEGFKWERVMNFEDGGVVTVTQDSSLQDGEFIYKVKLRGTNFPSDGPVMQKKTMGWEASSERMYPEDGALKGEIKQRLKLKDGGHYDAEVKTTYKAKKPVQLPGAYNVNIKLDITSHNEDYTIVEQYERAEGRHSTGGMDELYKGGGSSGHHHHHH"
@@ -522,6 +543,7 @@ def test_exact_target_rdl_reuses_one_secondary_and_emits_progress():
             }
 
     events: list[DesignProgressEvent] = []
+    checkpoints: list[dict] = []
     result = design_construct_v2(
         DesignRequestV2(
             schema_version=DESIGN_SCHEMA_VERSION_V2,
@@ -538,6 +560,7 @@ def test_exact_target_rdl_reuses_one_secondary_and_emits_progress():
         ),
         idt_scorer=PassingScorer(),
         progress_callback=events.append,
+        checkpoint_callback=checkpoints.append,
     )
     assert result.status == "idt_accepted"
     plan = result.rdl_plan
@@ -563,6 +586,31 @@ def test_exact_target_rdl_reuses_one_secondary_and_emits_progress():
     assert events and events[0].stage == "design"
     assert any(event.stage == "ga" and event.status == "running" for event in events)
     assert events[-1].stage == "rdl_plan" and events[-1].status == "completed"
+    assert checkpoints
+    assert checkpoints[-1]["repeat_copies"] == plan["secondary_repeat_copies"]
+    assert checkpoints[-1]["idt_complexity_score"] < 10
+    assert hashlib.sha256(checkpoints[-1]["purchase_sequence"].encode()).hexdigest() == checkpoints[-1]["purchase_sha256"]
+    paths = write_design_outputs_v2(result, tmp_path)
+    expected_steps = plan["secondary_reuse_count"] + 1
+    plasmid_files = sorted(tmp_path.glob("step*_plasmid.gb"))
+    insert_files = sorted(tmp_path.glob("step*_insert.gb"))
+    assert len(plasmid_files) == expected_steps + 1  # includes step00
+    assert len(insert_files) == expected_steps
+    assert paths["final_plasmid_genbank"].endswith("final_plasmid.gb")
+    from Bio import SeqIO
+
+    final_record = SeqIO.read(plasmid_files[-1], "genbank")
+    assert str(final_record.seq) == result.final_plasmid["final_plasmid_sequence"]
+    target_cds = next(
+        feature for feature in final_record.features
+        if feature.type == "CDS" and "repeat-protein CDS" in feature.qualifiers.get("label", [""])[0]
+    )
+    assert target_cds.qualifiers["translation"][0] == result.final_protein_sequence
+    secondary_records = [SeqIO.read(path, "genbank") for path in insert_files[1:]]
+    assert {
+        "".join(next(feature for feature in record.features if feature.type == "source").qualifiers["purchase_sha256"])
+        for record in secondary_records
+    } == {result.secondary_fragments[0]["purchase_sha256"]}
 
 
 def test_exact_rdl_internal_primary_boundary_supports_one_physical_copy():

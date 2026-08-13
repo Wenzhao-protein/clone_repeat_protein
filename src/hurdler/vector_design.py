@@ -9,7 +9,7 @@ import math
 import time
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from .constants import validate_protein_sequence
 from .design import (
@@ -68,6 +68,9 @@ ASSEMBLY_STRATEGIES = (
 
 class ComplexityScorer(Protocol):
     def score(self, name: str, sequence: str) -> dict[str, Any]: ...
+
+
+CheckpointCallback = Callable[[Mapping[str, Any]], None]
 
 
 class IDTScoringError(RuntimeError):
@@ -176,6 +179,7 @@ class DesignRequestV2:
     score_weights: Mapping[str, float] = field(default_factory=lambda: dict(GA_SCORE_PROFILE))
     auto_adjust_weights_from_idt: bool = True
     minimum_secondary_copies: int = 1
+    maximum_secondary_copies: int | None = None
     max_idt_feedback_rounds: int = 100
     generations_per_feedback_round: int = 10
     elite_seed_count: int = 10
@@ -200,8 +204,21 @@ class DesignRequestV2:
             )
         if int(self.population_size) < 2:
             raise ValueError("population_size must be at least two")
+        if isinstance(self.minimum_secondary_copies, bool) or not isinstance(
+            self.minimum_secondary_copies, int
+        ):
+            raise ValueError("minimum_secondary_copies must be a positive integer")
         if int(self.minimum_secondary_copies) < 1:
             raise ValueError("minimum_secondary_copies must be at least one")
+        if self.maximum_secondary_copies is not None:
+            if isinstance(self.maximum_secondary_copies, bool) or not isinstance(
+                self.maximum_secondary_copies, int
+            ):
+                raise ValueError("maximum_secondary_copies must be a positive integer or None")
+            if self.maximum_secondary_copies < self.minimum_secondary_copies:
+                raise ValueError(
+                    "maximum_secondary_copies cannot be smaller than minimum_secondary_copies"
+                )
         if not 1 <= int(self.max_idt_feedback_rounds) <= 1000:
             raise ValueError("max_idt_feedback_rounds must be between 1 and 1000")
         if not 1 <= int(self.generations_per_feedback_round) <= 1000:
@@ -258,6 +275,7 @@ class DesignResultV2:
     maximum_secondary_evidence: dict[str, Any] = field(default_factory=dict)
     rdl_plan: dict[str, Any] = field(default_factory=dict)
     intermediate_validations: list[dict[str, Any]] = field(default_factory=list)
+    assembly_steps: list[dict[str, Any]] = field(default_factory=list)
     idt_audit: list[dict[str, Any]] = field(default_factory=list)
     final_plasmid: dict[str, Any] | None = None
     final_protein_sequence: str = ""
@@ -1646,6 +1664,7 @@ def _design_exact_reused_secondary_rdl(
     *,
     idt_scorer: ComplexityScorer | None,
     progress_callback: ProgressCallback | None,
+    checkpoint_callback: CheckpointCallback | None,
 ) -> DesignResultV2:
     """Build an exact target from one primary and one reusable secondary."""
     started = time.monotonic()
@@ -1777,7 +1796,10 @@ def _design_exact_reused_secondary_rdl(
 
     secondary_cache: dict[int, dict[str, Any]] = {}
     evaluated_secondary: dict[int, dict[str, Any] | None] = {}
-    exact_route_capacity = min(int(capacity), target_copies - minimum_primary)
+    physical_exact_route_capacity = min(int(capacity), target_copies - minimum_primary)
+    exact_route_capacity = physical_exact_route_capacity
+    if request.maximum_secondary_copies is not None:
+        exact_route_capacity = min(exact_route_capacity, int(request.maximum_secondary_copies))
     if exact_route_capacity < minimum_secondary:
         result.status = "optimization_failed"
         result.message = (
@@ -1824,6 +1846,43 @@ def _design_exact_reused_secondary_rdl(
         evaluated_secondary[copies] = accepted
         if accepted is not None:
             secondary_cache[copies] = accepted
+            if checkpoint_callback is not None:
+                fragment = dict(accepted["fragments"][0])
+                checkpoint_callback(
+                    {
+                        "event": "accepted_secondary",
+                        "sequence_id": request.query.sequence_id,
+                        "repeat_copies": copies,
+                        "core_sequence": str(accepted["dna_sequence"]),
+                        "core_length_bp": len(str(accepted["dna_sequence"])),
+                        "purchase_sequence": str(fragment["purchase_sequence"]),
+                        "purchase_length_bp": int(fragment["purchase_length_bp"]),
+                        "purchase_sha256": str(fragment["purchase_sha256"]),
+                        "idt_complexity_score": accepted.get("idt_complexity_score"),
+                        "idt_status": accepted.get("idt_status"),
+                        "idt_response_sha256": fragment.get("idt_response_sha256", ""),
+                        "validation_mode": request.validation_mode,
+                        "ga_total_generations": int(accepted["ga_total_generations"]),
+                        "ga_score": float(accepted["ga_score"]),
+                        "ga_weights": dict(profile),
+                        "tested_secondary_copies": sorted(evaluated_secondary),
+                        "tested_lengths": sorted(evaluated_secondary),
+                        "failed_secondary_copies": sorted(
+                            key for key, value in evaluated_secondary.items() if value is None
+                        ),
+                        "failure_reason": (
+                            "Some tested copy counts exhausted the configured GA/IDT feedback rounds"
+                            if any(value is None for value in evaluated_secondary.values())
+                            else ""
+                        ),
+                        "query_fingerprint": hashlib.sha256(
+                            json.dumps(asdict(request), sort_keys=True).encode()
+                        ).hexdigest(),
+                        "route_fingerprint": hashlib.sha256(
+                            json.dumps(route, sort_keys=True).encode()
+                        ).hexdigest(),
+                    }
+                )
         return accepted
 
     # The user-specified floor is a hard gate.  Only after N itself passes do
@@ -1867,7 +1926,12 @@ def _design_exact_reused_secondary_rdl(
         maximum_secondary = next_copy
         best_secondary = next_result
     if maximum_secondary == exact_route_capacity:
-        search_reason = "exact_route_capacity_reached"
+        search_reason = (
+            "user_bounded_secondary_limit_reached"
+            if request.maximum_secondary_copies is not None
+            and exact_route_capacity < physical_exact_route_capacity
+            else "exact_route_capacity_reached"
+        )
     else:
         suffix = (
             f"failed_after_{request.max_idt_feedback_rounds}_feedback_rounds"
@@ -1877,7 +1941,9 @@ def _design_exact_reused_secondary_rdl(
         search_reason = f"copy_{maximum_secondary + 1}_{suffix}"
     result.maximum_secondary_evidence = {
         "mathematical_capacity_copies": int(capacity),
+        "physical_exact_route_capacity_copies": int(physical_exact_route_capacity),
         "exact_route_capacity_copies": int(exact_route_capacity),
+        "requested_maximum_secondary_copies": request.maximum_secondary_copies,
         "required_minimum_copies": minimum_secondary,
         "maximum_verified_copies": int(maximum_secondary),
         "validation_mode": request.validation_mode,
@@ -2010,6 +2076,7 @@ def _design_exact_reused_secondary_rdl(
             "strategy": "exact_reused_secondary_rdl",
             "target_repeat_copies": target_copies,
             "minimum_secondary_copies": minimum_secondary,
+            "maximum_secondary_copies": request.maximum_secondary_copies,
             "minimum_secondary_satisfied": int(secondary_copies) >= minimum_secondary,
             "minimum_secondary_bypassed_by_single_purchase": False,
             "minimum_primary_copies_for_selected_geometry": minimum_primary,
@@ -2085,6 +2152,7 @@ def design_construct_v2(
     plasmid_reference_path: str | Path | None = None,
     idt_scorer: ComplexityScorer | None = None,
     progress_callback: ProgressCallback | None = None,
+    checkpoint_callback: CheckpointCallback | None = None,
 ) -> DesignResultV2:
     started = time.monotonic()
     emit_progress(
@@ -2118,6 +2186,7 @@ def design_construct_v2(
                 candidate,
                 idt_scorer=idt_scorer,
                 progress_callback=progress_callback,
+                checkpoint_callback=checkpoint_callback,
             )
         except IDTScoringError as exc:
             result.status = exc.code
@@ -2319,6 +2388,10 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
     paths: dict[str, str] = {}
+    if result.final_plasmid:
+        from .design_artifacts import write_assembly_artifacts
+
+        paths.update(write_assembly_artifacts(result, destination))
     summary = destination / "design_summary.json"
     write_json_atomic(result.to_dict(), summary)
     paths["design_summary_json"] = str(summary)
@@ -2335,6 +2408,7 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         ("ga_parameter_history.csv", result.ga_parameter_history),
         ("idt_feedback_history.csv", result.idt_feedback_history),
         ("rdl_intermediate_validations.csv", result.intermediate_validations),
+        ("assembly_steps.csv", result.assembly_steps),
     ):
         path = destination / name
         columns = sorted({key for row in rows for key in row})
@@ -2383,40 +2457,21 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
             })
         paths["rdl_plan_csv"] = str(rdl_csv)
     if result.final_plasmid:
-        from Bio.Seq import Seq
-        from Bio.SeqFeature import FeatureLocation, SeqFeature
-        from Bio.SeqRecord import SeqRecord
-        from Bio import SeqIO
-
         plasmid_fasta = destination / "final_plasmid.fasta"
         plasmid_fasta.write_text(
             f">{result.request['query']['sequence_id']}_final_circular_plasmid\n"
             f"{result.final_plasmid['final_plasmid_sequence']}\n"
         )
         paths["final_plasmid_fasta"] = str(plasmid_fasta)
-        record = SeqRecord(
-            Seq(str(result.final_plasmid["final_plasmid_sequence"])),
-            id=f"{result.request['query']['sequence_id']}_v2",
-            name="HURDLER_v2",
-            description="annotation-aware HURDLER design; design files only",
-        )
-        record.annotations.update({"molecule_type": "DNA", "topology": "circular"})
-        record.features.append(
-            SeqFeature(
-                FeatureLocation(
-                    int(result.final_plasmid["cds_start_0based"]),
-                    int(result.final_plasmid["cds_end_0based_exclusive"]),
-                    strand=1,
-                ),
-                type="CDS",
-                qualifiers={
-                    "label": ["optimized_repeat_protein_CDS"],
-                    "translation": [result.final_protein_sequence],
-                },
-            )
-        )
         plasmid_genbank = destination / "final_plasmid.gb"
-        SeqIO.write(record, plasmid_genbank, "genbank")
+        final_step_paths = sorted(
+            Path(value)
+            for key, value in paths.items()
+            if key.startswith("step") and key.endswith("_plasmid_gb")
+        )
+        if not final_step_paths:
+            raise AssertionError("Accepted design did not produce a stepwise plasmid GenBank")
+        plasmid_genbank.write_bytes(final_step_paths[-1].read_bytes())
         paths["final_plasmid_genbank"] = str(plasmid_genbank)
     all_fragments = [*result.primary_fragments, *result.secondary_fragments]
     if all_fragments and result.status in {"optimized_unvalidated_batch", "idt_accepted"}:
@@ -2431,6 +2486,14 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
         "max_restoration_length_bp": result.request.get("query", {}).get(
             "max_restoration_length_bp"
         ),
+        "minimum_secondary_copies": result.request.get("minimum_secondary_copies"),
+        "maximum_secondary_copies": result.request.get("maximum_secondary_copies"),
+        "query_fingerprint": hashlib.sha256(
+            json.dumps(result.request.get("query", {}), sort_keys=True).encode()
+        ).hexdigest(),
+        "route_fingerprint": hashlib.sha256(
+            json.dumps(result.selected_route or {}, sort_keys=True).encode()
+        ).hexdigest(),
         "protein_index_version": PROTEIN_INDEX_VERSION,
         "plasmid_reference_version": PLASMID_REFERENCE_VERSION,
         "credentials_persisted": False,

@@ -10,8 +10,9 @@ Exact DNA and regulatory-element arrays: [![Open exact-DNA designer in Colab](ht
 
 - **Colab:** use the badge above to open the review branch immediately. The
   notebook clones that exact branch, installs the locked project extras, and
-  exposes the protein defaults as native Colab Forms. Choose **Runtime → Run
-  all** once to install the package and reveal separate individual-enzyme,
+  opens as an English step-by-step tutorial. Choose **Runtime → Run all** once
+  to install the package and reveal mutually exclusive split/full-protein input,
+  opt-in Drive storage, separate individual-enzyme,
   plasmid, RE-solution, and cut-scheme selectors. Review the route table and
   explicitly select Site I, Site II, Site III, plasmid, and cut scheme. GA/IDT
   controls appear only after that route is confirmed. Full-protein inputs without confirmed boundaries
@@ -84,10 +85,9 @@ primary and one reusable secondary, then proves
 `primary + rounds × secondary = target` at every RDL intermediate. Live
 progress reports fragment, copy count, GA→IDT feedback round, generation,
 population/mutation/crossover settings, GA score, IDT score, and elapsed time.
-The bundled 25-copy example requires a reusable secondary of at least 12
-modules by default. Unless the whole target fits one accepted primary, the
-search must first pass that floor and will never silently fall back to a shorter
-donor. Each live-IDT rejection warm-starts from the ten best distinct GA
+The default secondary search starts at one repeat and continues to the
+IDT/3,000-bp/exact-route limit; a bounded mode exposes an inclusive minimum and
+maximum repeat-copy range. Each live-IDT rejection warm-starts from the ten best distinct GA
 candidates; score tiers automatically increase population and mutation/
 crossover settings within documented caps. The default limit is 100 feedback
 rounds of 10 GA generations per tested copy count. Missing or non-numeric IDT
@@ -98,7 +98,14 @@ drive coding-core hotspot mutation and a repeat-aware synonymous warm start
 that jointly reduces repeated-8-mer coverage and duplicated 13/14-mers;
 adapter-only failures are kept separate from mutable coding coordinates.
 Every successful bundle also contains IDT Bulk Input
-CSV/TSV/FASTA. It never uses IDT codon optimization and never submits an order.
+CSV/TSV/FASTA, a UTC-stamped final ZIP, and a complete molecular timeline:
+`step00_plasmid.gb`, each purchase `stepXX_insert.gb`, each assembled
+`stepXX_plasmid.gb`, translation/QC tables, and circular plus linear PNG/SVG
+maps. The Colab viewer switches step and molecule, focuses the cloning region,
+and displays bases and codon translation when zoomed. The longest live-IDT-
+accepted secondary is checkpointed immediately and refreshed every 180 seconds;
+Google Drive is mounted only after an explicit click and receives ZIP files,
+not working files or credentials. It never uses IDT codon optimization and never submits an order.
 Run the local page with `hurdler web`.
 
 This repository implements and validates the HURDLER three-site cloning

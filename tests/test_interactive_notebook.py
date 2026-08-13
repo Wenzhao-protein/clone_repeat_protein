@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,8 +38,6 @@ def _colab_cell_source(cell_id: str) -> str:
 def colab_runtime_namespace():
     namespace: dict[str, object] = {}
     for cell_id in (
-        "hurdler-protein-form",
-        "hurdler-selector-policy-form",
         "hurdler-test-defaults",
         "hurdler-imports",
     ):
@@ -90,34 +89,18 @@ def test_colab_cells_are_named_hidden_forms():
     assert len(ids) == len(set(ids))
 
 
-def test_colab_user_inputs_are_native_params_visible_before_execution():
+def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
     payload = _colab_payload()
-    form_ids = {
-        "hurdler-protein-form",
-        "hurdler-selector-policy-form",
-    }
-    sources = {
-        cell["metadata"]["id"]: "".join(cell["source"])
-        for cell in payload["cells"]
-        if cell.get("metadata", {}).get("id") in form_ids
-    }
-    assert set(sources) == form_ids
-    expected_fields = {
-        "input_mode", "sequence_id", "n_cap_aa", "repeat_module_aa",
-        "initial_repeat_copies", "c_cap_aa", "full_protein_or_fasta",
-        "repeat_region_start_1based", "repeat_region_end_1based", "repeat_period_aa",
-        "allow_left_cutter_in_hurdler_pair", "allow_right_cutter_in_hurdler_pair",
-    }
-    observed = set()
-    for source in sources.values():
-        assert '{ display-mode: "form", run: "auto" }' in source.splitlines()[0]
-        assert "#@markdown" in source
-        observed.update(
-            match.group(1)
-            for match in re.finditer(r"^([A-Za-z_]\w*)\s*=.*#@param", source, re.MULTILINE)
-        )
-    assert observed == expected_fields
-    assert "widgets.Text(" not in "\n".join(sources.values())
+    intro = "".join(next(cell for cell in payload["cells"] if cell["id"] == "hurdler-introduction")["source"])
+    controller = _colab_cell_source("hurdler-controller-v2")
+    assert "Tutorial workflow" in intro
+    assert "Site I" in intro and "Site II" in intro and "Site III" in intro
+    assert "Google Drive" in intro and "RDL" in intro and "IDT" in intro
+    assert 'options=(("N-cap / module / C-cap", "split"), ("Complete protein / FASTA", "full"))' in controller
+    assert 'value="split"' in controller
+    assert 'full_input_panel.layout.display = "" if input_mode_widget.value == "full" else "none"' in controller
+    assert "_help_card" in controller
+    assert "hurdler-storage-panel" in {cell["id"] for cell in payload["cells"]}
     assert "widgets.Password(" not in COLAB_NOTEBOOK.read_text()
     for secret in (
         "IDT_ACCESS_TOKEN", "IDT_CLIENT_ID", "IDT_CLIENT_SECRET",
@@ -150,17 +133,23 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert 'assembly_strategy="exact_reused_secondary_rdl"' in controller
     assert "widgets.BoundedIntText" in controller
     assert "widgets.BoundedFloatText" in controller
-    assert '"Minimum secondary modules (N)", 12' in controller
+    assert '"Minimum secondary copies", 12' in controller
+    assert '"Maximum secondary copies", 20' in controller
+    assert 'options=(("Automatic to limit", "automatic"), ("Bounded copy range", "bounded"))' in controller
     assert '"Maximum GA→IDT feedback rounds", 100' in controller
     assert '"GA generations per feedback round", 10' in controller
     assert '"Warm-start top candidates", 10' in controller
-    assert "minimum_secondary_copies=int(minimum_secondary_number.value)" in controller
+    assert "minimum_secondary_copies=minimum_secondary" in controller
+    assert "maximum_secondary_copies=maximum_secondary" in controller
     assert "max_idt_feedback_rounds=int(feedback_round_number.value)" in controller
     assert "auto_adjust_ga_parameters_from_idt=bool(auto_parameter_feedback.value)" in controller
     assert "feedback={event.feedback_round" in controller
     assert 'ga_panel.layout.display = "none"' in controller
     assert "credential_upload.value = ()" not in controller
     assert "_clear_credential_upload()" in controller
+    assert "write_secondary_checkpoint" in _colab_cell_source("hurdler-imports")
+    assert "timestamped_results_archive" in _colab_cell_source("hurdler-imports")
+    assert "CircularGraphicRecord" in _colab_cell_source("hurdler-imports")
 
 
 def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
@@ -189,6 +178,39 @@ def test_colab_run_all_queries_but_never_auto_confirms_rank_one(colab_runtime_na
     assert colab_runtime_namespace["pair_choice"].value is None
     assert colab_runtime_namespace["site_iii_choice"].value is None
     assert colab_runtime_namespace["design_button"].disabled is True
+    assert colab_runtime_namespace["storage_mode_widget"].value == "runtime"
+    assert colab_runtime_namespace["storage_state"]["drive_mounted"] is False
+    assert colab_runtime_namespace["input_mode_widget"].value == "split"
+    assert colab_runtime_namespace["split_input_panel"].layout.display == ""
+    assert colab_runtime_namespace["full_input_panel"].layout.display == "none"
+
+
+def test_colab_input_buttons_switch_visibility_and_invalidate_routes(colab_runtime_namespace):
+    namespace = colab_runtime_namespace
+    assert namespace["state"]["route_universe"] is not None
+    namespace["input_mode_widget"].value = "full"
+    assert namespace["split_input_panel"].layout.display == "none"
+    assert namespace["full_input_panel"].layout.display == ""
+    assert namespace["state"]["route_universe"] is None
+    assert namespace["state"]["confirmed_route"] is None
+
+
+def test_colab_secondary_search_supports_automatic_and_bounded_copy_ranges(
+    colab_runtime_namespace,
+):
+    namespace = colab_runtime_namespace
+    assert namespace["secondary_search_mode_widget"].value == "automatic"
+    assert namespace["_secondary_bounds"]() == (1, None)
+    assert namespace["minimum_secondary_number"].disabled is True
+    namespace["secondary_search_mode_widget"].value = "bounded"
+    namespace["minimum_secondary_number"].value = 4
+    namespace["maximum_secondary_number"].value = 9
+    assert namespace["_secondary_bounds"]() == (4, 9)
+    assert "core" in namespace["secondary_length_status"].value
+    assert "purchase" in namespace["secondary_length_status"].value
+    namespace["maximum_secondary_number"].value = 3
+    with pytest.raises(ValueError, match="cannot be smaller"):
+        namespace["_secondary_bounds"]()
 
 
 def test_colab_complete_fasta_preserves_header_and_requires_boundary_confirmation(
@@ -196,12 +218,12 @@ def test_colab_complete_fasta_preserves_header_and_requires_boundary_confirmatio
 ):
     namespace = colab_runtime_namespace
     unit = "ACDEFGHIKLMNPQRSTVWY"
-    namespace["input_mode"] = "Complete exact protein / FASTA"
-    namespace["sequence_id"] = ""
-    namespace["full_protein_or_fasta"] = f">header_from_fasta details\nM{unit * 3}G"
-    namespace["repeat_region_start_1based"] = 0
-    namespace["repeat_region_end_1based"] = 0
-    namespace["repeat_period_aa"] = 0
+    namespace["input_mode_widget"].value = "full"
+    namespace["sequence_id_widget"].value = ""
+    namespace["full_protein_widget"].value = f">header_from_fasta details\nM{unit * 3}G"
+    namespace["repeat_start_widget"].value = 0
+    namespace["repeat_end_widget"].value = 0
+    namespace["repeat_period_widget"].value = 0
     query = namespace["_current_query"]()
     assert query.sequence_id == "header_from_fasta"
     namespace["_run_query"]()
@@ -215,8 +237,7 @@ def test_colab_form_edit_invalidates_confirmed_route(colab_runtime_namespace):
     assert namespace["state"]["confirmed_route"] is not None
     assert namespace["design_button"].disabled is False
     assert namespace["ga_panel"].layout.display == ""
-    namespace["n_cap_aa"] = "MM"
-    namespace["_confirm_route"]()
+    namespace["n_cap_widget"].value = "MM"
     assert namespace["state"]["confirmed_route"] is None
     assert namespace["design_button"].disabled is True
 
@@ -365,7 +386,7 @@ def test_colab_incompatible_queries_never_enable_optimization(
     colab_runtime_namespace, module, expected_status
 ):
     namespace = colab_runtime_namespace
-    namespace["repeat_module_aa"] = module
+    namespace["repeat_module_widget"].value = module
     namespace["_run_query"]()
     assert namespace["state"]["query_result"].status == expected_status
     assert namespace["state"]["confirmed_route"] is None
@@ -393,6 +414,9 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
     namespace["generation_schedule_widget"].value = "10,100"
     namespace["output_directory_widget"].value = str(tmp_path / "batch")
     namespace["auto_download_widget"].value = False
+    namespace["storage_mode_widget"].value = "drive"
+    namespace["drive_root_widget"].value = str(tmp_path / "mock_drive")
+    namespace["storage_state"]["drive_mounted"] = True
 
     class MustNotBeConstructed:
         def __init__(self, *_args, **_kwargs):
@@ -417,7 +441,30 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
     assert (tmp_path / "batch" / "ga_elite_candidates.fasta").is_file()
     assert (tmp_path / "batch" / "ga_parameter_history.csv").is_file()
     assert (tmp_path / "batch" / "idt_feedback_history.csv").is_file()
+    assert (tmp_path / "batch" / "step00_plasmid.gb").is_file()
+    assert (tmp_path / "batch" / "step01_insert.gb").is_file()
+    assert (tmp_path / "batch" / "step01_plasmid.gb").is_file()
+    assert (tmp_path / "batch" / "assembly_step_manifest.json").is_file()
+    assert (tmp_path / "batch" / "step_translations.csv").is_file()
     assert Path(namespace["state"]["archive"]).is_file()
+    assert re.fullmatch(
+        r"hurdler_interactive_design_\d{8}T\d{6}Z_results\.zip",
+        Path(namespace["state"]["archive"]).name,
+    )
+    assert (tmp_path / "mock_drive" / Path(namespace["state"]["archive"]).name).is_file()
+    assert namespace["viewer_panel"].layout.display == ""
+    final_step = max(value for _label, value in namespace["viewer_step_widget"].options)
+    namespace["viewer_step_widget"].value = final_step
+    namespace["viewer_molecule_widget"].value = "insert"
+    assert namespace["viewer_view_widget"].value == "linear"
+    assert namespace["viewer_view_widget"].disabled is True
+    namespace["viewer_molecule_widget"].value = "plasmid"
+    assert namespace["viewer_view_widget"].disabled is False
+    namespace["_viewer_focus"]()
+    assert namespace["viewer_view_widget"].value == "linear"
+    assert namespace["viewer_range_widget"].value != (
+        0, namespace["viewer_range_widget"].max
+    )
 
 
 def test_colab_mock_secrets_api_flow_clears_credentials(
@@ -463,6 +510,13 @@ def test_colab_mock_secrets_api_flow_clears_credentials(
     assert (tmp_path / "api" / "idt_bulk_input.csv").is_file()
     assert (tmp_path / "api" / "idt_bulk_input.tsv").is_file()
     assert (tmp_path / "api" / "idt_bulk_input.fasta").is_file()
+    checkpoint = Path(namespace["state"]["checkpoint_archive"])
+    assert checkpoint.is_file()
+    with zipfile.ZipFile(checkpoint) as archive:
+        assert "checkpoint.json" in archive.namelist()
+        assert "best_secondary_core.fasta" in archive.namelist()
+        assert "best_secondary_purchase.fasta" in archive.namelist()
+        assert "temporary-token" not in b"".join(archive.read(name) for name in archive.namelist()).decode()
     assert "IDT_ACCESS_TOKEN" not in os.environ
 
 
