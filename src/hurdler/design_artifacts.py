@@ -400,6 +400,88 @@ def _fragment_record(
     }
 
 
+def build_step00_plasmid_record(
+    route: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    site_iii_enzyme: str,
+    *,
+    plasmid_reference_path: str | Path | None = None,
+) -> tuple[SeqRecord, dict[str, Any]]:
+    """Build the selected starting-plasmid record before GA is run.
+
+    This powers the route-confirmation preview and uses the same coordinate
+    transform, protected features, and RE annotations as the final assembly
+    timeline.  It intentionally contains no predicted insert or translation.
+    """
+    database = load_plasmid_reference(plasmid_reference_path)
+    profile = database.profile(str(route["profile_id"]))
+    reference = database.reference(profile.reference_id)
+    scheme = next(row for row in database.schemes if row.scheme_id == route["scheme_id"])
+    if scheme.left_cutter is None or scheme.right_cutter is None:
+        raise ValueError("Selected cut scheme has no vector cutters")
+    enzymes = [
+        {"enzyme": scheme.left_cutter.canonical_enzyme, "role": "vector left cutter", "recognition_site": scheme.left_cutter.recognition_site},
+        {"enzyme": scheme.right_cutter.canonical_enzyme, "role": "vector right cutter", "recognition_site": scheme.right_cutter.recognition_site},
+        {"enzyme": str(candidate["site_i_enzyme"]), "role": "Site I", "recognition_site": str(candidate["site_i_recognition_site"])},
+        {"enzyme": str(candidate["site_ii_enzyme"]), "role": "Site II", "recognition_site": str(candidate["site_ii_recognition_site"])},
+        {"enzyme": str(site_iii_enzyme), "role": "Site III", "recognition_site": ""},
+    ]
+    unique_enzymes: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for enzyme in enzymes:
+        key = (enzyme["enzyme"], enzyme["role"])
+        if key not in seen:
+            unique_enzymes.append(enzyme)
+            seen.add(key)
+
+    reference_length = len(reference.sequence)
+    oriented = (
+        reference.sequence
+        if profile.expression_strand == 1
+        else reverse_complement(reference.sequence)
+    )
+    origin = int(scheme.right_cutter.top_cut_oriented)
+    initial = oriented[origin:] + oriented[:origin]
+    record = _base_record(
+        initial,
+        "step00_plasmid",
+        f"Initial {profile.profile_id} plasmid, rotated to cloning origin",
+        circular=True,
+    )
+    record.features[0].qualifiers.update({
+        "profile_id": [profile.profile_id],
+        "source_sha256": _hash_parts(reference.sequence_sha256),
+        "rotation_origin_bp": [str(origin)],
+        "correctness_qc": ["circular rotation of the complete source plasmid"],
+    })
+    for feature in reference.features:
+        mapped = _source_feature(
+            feature,
+            reference_length=reference_length,
+            expression_strand=profile.expression_strand,
+            origin=origin,
+            retained_length=None,
+        )
+        if mapped is not None:
+            record.features.append(mapped)
+    site_audit = _annotate_enzyme_sites(
+        record, unique_enzymes, circular=True, step_role="initial_plasmid"
+    )
+    manifest = {
+        "step": 0,
+        "molecule": "plasmid",
+        "file": "step00_plasmid.gb",
+        "length_bp": len(record),
+        "sequence_sha256": _sha(str(record.seq)),
+        "copy_count": 0,
+        "translation_exact": True,
+        "site_audit": site_audit,
+        "cloning_region_start_0based": len(scheme.retained_backbone_sequence),
+        "cloning_region_end_0based_exclusive": len(record),
+    }
+    return record, manifest
+
+
 def build_assembly_records(
     result: "DesignResultV2",
     *,
@@ -657,9 +739,23 @@ def write_assembly_artifacts(
         map_dir = destination / "maps"
         map_dir.mkdir(exist_ok=True)
         for filename, record in records:
-            translator = BiopythonTranslator(features_filters=(lambda feature: feature.type != "source",))
             views = ("circular", "linear") if record.annotations.get("topology") == "circular" else ("linear",)
             for view in views:
+                def feature_filter(feature: SeqFeature) -> bool:
+                    if feature.type == "source":
+                        return False
+                    if view != "circular":
+                        return True
+                    qualifiers = feature.qualifiers
+                    if qualifiers.get("feature_kind", [""])[0] == "restriction_site":
+                        return True
+                    if feature.type == "CDS":
+                        return True
+                    return qualifiers.get("feature_class", [""])[0] in {
+                        "antibiotic_resistance", "origin", "replication_origin",
+                        "promoter", "terminator", "operator",
+                    }
+                translator = BiopythonTranslator(features_filters=(feature_filter,))
                 if view == "circular":
                     graphic = translator.translate_record(record, record_class=CircularGraphicRecord)
                     figure, axis = plt.subplots(figsize=(8, 8))

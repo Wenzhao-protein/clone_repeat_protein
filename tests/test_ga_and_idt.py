@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 
 import pandas as pd
 import pytest
@@ -19,6 +21,7 @@ from hurdler.ga_optimization import (
 )
 from hurdler.idt import summarize_complexity_response, write_cached_response
 from hurdler.optimization import translate_dna
+from hurdler.progress import DesignRunControl, DesignRunStopped
 
 
 def test_repeated_re_site_is_an_explicit_ga_score_term():
@@ -51,6 +54,51 @@ def test_ga_refinement_preserves_translation_and_selected_site_limits():
     assert metrics["selected_re_site_excess"] == 0
     assert "ga_initial_repeated_re_site_excess" in metrics
     assert metrics["ga_repeated_re_site_excess_removed"] >= 0
+
+
+def test_cooperative_pause_resume_is_deterministic_and_stop_raises_at_safe_point():
+    original = "GCA" * 18
+    weights = {"GCG": 1.0, "GCC": 1.0, "GCA": 1.0, "GCT": 1.0}
+    kwargs = dict(
+        locked_positions={0, 17},
+        selected_site_limits={"GCAGCA": 0},
+        recognition_sites=("GCAGCA", "GCGGCG"),
+        codon_weights=weights,
+        seed=2026,
+        population_size=12,
+        generations=5,
+        mutation_rate=0.08,
+        crossover_rate=0.75,
+    )
+    expected, expected_metrics = genetic_refine_dna(original, **kwargs)
+    control = DesignRunControl()
+    resumed = threading.Event()
+
+    def resume_after_pause():
+        time.sleep(0.05)
+        control.resume()
+        resumed.set()
+
+    pause_started = False
+
+    def progress(event):
+        nonlocal pause_started
+        if event.stage == "ga" and event.status == "running" and not pause_started:
+            pause_started = True
+            control.pause()
+            threading.Thread(target=resume_after_pause, daemon=True).start()
+
+    observed, observed_metrics = genetic_refine_dna(
+        original, **kwargs, progress_callback=progress, run_control=control
+    )
+    assert resumed.wait(1)
+    assert observed == expected
+    assert observed_metrics["ga_score"] == expected_metrics["ga_score"]
+
+    stopped = DesignRunControl()
+    stopped.stop()
+    with pytest.raises(DesignRunStopped, match="stopped by the user"):
+        genetic_refine_dna(original, **kwargs, run_control=stopped)
 
 
 def test_spawn_parallel_fitness_is_deterministic_for_1_2_4_and_16_workers():

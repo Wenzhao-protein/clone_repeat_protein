@@ -2,8 +2,62 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Mapping
+
+
+class DesignRunStopped(RuntimeError):
+    """Raised at a cooperative safe point after a user requests Stop."""
+
+
+class DesignRunControl:
+    """Thread-safe cooperative pause/resume/stop control for long design runs.
+
+    A pause never mutates the GA state: the worker waits at the next explicit
+    safe point and resumes from the same population and RNG state.  Stop is
+    deliberately cooperative as well, so an in-flight HTTP request or one
+    process-pool fitness batch is allowed to finish before this class raises.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._paused = False
+        self._stopped = False
+
+    @property
+    def paused(self) -> bool:
+        with self._condition:
+            return self._paused and not self._stopped
+
+    @property
+    def stopped(self) -> bool:
+        with self._condition:
+            return self._stopped
+
+    def pause(self) -> None:
+        with self._condition:
+            if not self._stopped:
+                self._paused = True
+
+    def resume(self) -> None:
+        with self._condition:
+            self._paused = False
+            self._condition.notify_all()
+
+    def stop(self) -> None:
+        with self._condition:
+            self._stopped = True
+            self._paused = False
+            self._condition.notify_all()
+
+    def safe_point(self) -> None:
+        """Wait while paused and raise once Stop has been requested."""
+        with self._condition:
+            while self._paused and not self._stopped:
+                self._condition.wait(timeout=0.25)
+            if self._stopped:
+                raise DesignRunStopped("GA run stopped by the user at a safe point")
 
 
 @dataclass(frozen=True)

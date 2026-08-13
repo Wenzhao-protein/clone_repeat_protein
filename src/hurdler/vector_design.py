@@ -53,7 +53,7 @@ from .protein_index import (
     ProteinPatternIndex,
     enumerate_protein_solutions,
 )
-from .progress import ProgressCallback, emit_progress
+from .progress import DesignRunControl, ProgressCallback, emit_progress
 
 
 DESIGN_SCHEMA_VERSION_V2 = "vector-aware-hurdler-designer-v2"
@@ -759,6 +759,7 @@ def _evaluate_split_copy_count(
     idt_scorer: ComplexityScorer | None,
     aggregate_audit: list[dict[str, Any]],
     progress_callback: ProgressCallback | None = None,
+    run_control: DesignRunControl | None = None,
 ) -> dict[str, Any]:
     query = replace(request.query, repeat_copies=int(copy_count))
     _analysis, boundary, _units = _query_boundary(query)
@@ -792,6 +793,7 @@ def _evaluate_split_copy_count(
         progress_callback=progress_callback,
         progress_context={"fragment_kind": "legacy_whole_construct", "copies": copy_count},
         ga_workers=request.ga_workers,
+        run_control=run_control,
     )
     if translate_dna(refined) != protein:
         raise AssertionError("Adaptive GA changed the exact target protein")
@@ -810,7 +812,11 @@ def _evaluate_split_copy_count(
     if local_pass and request.validation_mode == "api":
         if idt_scorer is None:
             raise RuntimeError("API validation mode requires a configured scorer")
-        idt_pass, scored_fragments, audits = _score_fragments(fragments, idt_scorer)
+        idt_pass, scored_fragments, audits = _score_fragments(
+            fragments,
+            idt_scorer,
+            safe_point=run_control.safe_point if run_control is not None else None,
+        )
         for row in audits:
             row.update({"repeat_copies": copy_count, "ga_generations": generations})
         aggregate_audit.extend(audits)
@@ -1244,6 +1250,7 @@ def _rdl_fragment_attempt(
     excluded_idt_sha256: set[str] | None = None,
     idt_feedback_guidance: dict[str, Any] | None = None,
     progress_callback: ProgressCallback | None = None,
+    run_control: DesignRunControl | None = None,
 ) -> dict[str, Any]:
     """Optimize one exact primary or reusable secondary purchase sequence."""
     started = time.monotonic()
@@ -1310,6 +1317,7 @@ def _rdl_fragment_attempt(
             "crossover_rate": active_crossover,
         },
         ga_workers=request.ga_workers,
+        run_control=run_control,
     )
     if translate_dna(refined) != protein:
         raise AssertionError("RDL fragment GA changed the exact target protein")
@@ -1380,7 +1388,11 @@ def _rdl_fragment_attempt(
             crossover_rate=active_crossover,
             elapsed_seconds=time.monotonic() - started,
         )
-        idt_pass, scored_fragments, audits = _score_fragments(fragments, idt_scorer)
+        idt_pass, scored_fragments, audits = _score_fragments(
+            fragments,
+            idt_scorer,
+            safe_point=run_control.safe_point if run_control is not None else None,
+        )
         for row in audits:
             row.update({
                 "fragment_kind": fragment_kind,
@@ -1477,6 +1489,7 @@ def _run_fragment_schedule(
     feedback_history: list[dict[str, Any]],
     secondary_adapters: tuple[str, str],
     progress_callback: ProgressCallback | None,
+    run_control: DesignRunControl | None = None,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     attempts: list[dict[str, Any]] = []
     population_state: GAPopulationState | None = None
@@ -1491,6 +1504,8 @@ def _run_fragment_schedule(
         **{str(key): float(value) for key, value in request.score_weights.items()},
     }
     for feedback_round in range(1, rounds + 1):
+        if run_control is not None:
+            run_control.safe_point()
         audit_start = len(aggregate_audit)
         result = _rdl_fragment_attempt(
             request,
@@ -1513,6 +1528,7 @@ def _run_fragment_schedule(
             excluded_idt_sha256=scored_hashes,
             idt_feedback_guidance=guidance,
             progress_callback=progress_callback,
+            run_control=run_control,
         )
         population_state = result["population_state"]
         compact = {
@@ -1672,6 +1688,7 @@ def _design_exact_reused_secondary_rdl(
     idt_scorer: ComplexityScorer | None,
     progress_callback: ProgressCallback | None,
     checkpoint_callback: CheckpointCallback | None,
+    run_control: DesignRunControl | None = None,
 ) -> DesignResultV2:
     """Build an exact target from one primary and one reusable secondary."""
     started = time.monotonic()
@@ -1703,6 +1720,8 @@ def _design_exact_reused_secondary_rdl(
         copies=target_copies,
         elapsed_seconds=0.0,
     )
+    if run_control is not None:
+        run_control.safe_point()
 
     prefix_length = len(str(route.get("left_restoration_sequence", ""))) + len(str(route.get("left_cutter_site", "")))
     suffix_length = len(str(route.get("right_restoration_sequence", ""))) + len(str(route.get("right_cutter_site", "")))
@@ -1727,6 +1746,7 @@ def _design_exact_reused_secondary_rdl(
             feedback_history=result.idt_feedback_history,
             secondary_adapters=("", ""),
             progress_callback=progress_callback,
+            run_control=run_control,
         )
         result.optimization_attempts.extend(
             [{**row, "component": "direct_primary"} for row in direct_attempts]
@@ -1843,6 +1863,7 @@ def _design_exact_reused_secondary_rdl(
             feedback_history=result.idt_feedback_history,
             secondary_adapters=(left_adapter, right_adapter),
             progress_callback=progress_callback,
+            run_control=run_control,
         )
         result.optimization_attempts.extend(
             [
@@ -1918,6 +1939,8 @@ def _design_exact_reused_secondary_rdl(
     low = minimum_secondary
     high = exact_route_capacity
     while low < high:
+        if run_control is not None:
+            run_control.safe_point()
         midpoint = (low + high + 1) // 2
         if evaluate_secondary(midpoint) is not None:
             low = midpoint
@@ -1926,6 +1949,8 @@ def _design_exact_reused_secondary_rdl(
     maximum_secondary = low
     best_secondary = secondary_cache[maximum_secondary]
     while maximum_secondary < exact_route_capacity:
+        if run_control is not None:
+            run_control.safe_point()
         next_copy = maximum_secondary + 1
         next_result = evaluate_secondary(next_copy)
         if next_result is None:
@@ -1993,6 +2018,8 @@ def _design_exact_reused_secondary_rdl(
             equations.append((rounds, secondary_copies, primary_copies))
 
     for rounds, secondary_copies, primary_copies in equations:
+        if run_control is not None:
+            run_control.safe_point()
         equation_context = {
             "rdl_candidate_rounds": int(rounds),
             "rdl_candidate_secondary_copies": int(secondary_copies),
@@ -2020,6 +2047,7 @@ def _design_exact_reused_secondary_rdl(
             feedback_history=result.idt_feedback_history,
             secondary_adapters=(left_adapter, right_adapter),
             progress_callback=progress_callback,
+            run_control=run_control,
         )
         result.optimization_attempts.extend(
             [
@@ -2160,6 +2188,7 @@ def design_construct_v2(
     idt_scorer: ComplexityScorer | None = None,
     progress_callback: ProgressCallback | None = None,
     checkpoint_callback: CheckpointCallback | None = None,
+    run_control: DesignRunControl | None = None,
 ) -> DesignResultV2:
     started = time.monotonic()
     emit_progress(
@@ -2169,6 +2198,8 @@ def design_construct_v2(
         message="Validating the confirmed HURDLER route",
         elapsed_seconds=0.0,
     )
+    if run_control is not None:
+        run_control.safe_point()
     result = design_query(request.query, protein_index_dir=protein_index_dir, plasmid_reference_path=plasmid_reference_path)
     result.request = asdict(request)
     if result.status != "compatible_unoptimized":
@@ -2194,6 +2225,7 @@ def design_construct_v2(
                 idt_scorer=idt_scorer,
                 progress_callback=progress_callback,
                 checkpoint_callback=checkpoint_callback,
+                run_control=run_control,
             )
         except IDTScoringError as exc:
             result.status = exc.code
@@ -2252,9 +2284,11 @@ def design_construct_v2(
                 idt_scorer=idt_scorer,
                 aggregate_audit=result.idt_audit,
                 progress_callback=progress_callback,
+                run_control=run_control,
             ),
             progress_callback=progress_callback,
             progress_context={"fragment_kind": "legacy_whole_construct"},
+            run_control=run_control,
         )
         result.optimization_attempts = trace
         result.termination_reason = reason
@@ -2322,6 +2356,8 @@ def design_construct_v2(
     profile = {**GA_SCORE_PROFILE, **{str(key): float(value) for key, value in request.score_weights.items()}}
     fragments: list[dict[str, Any]] = []
     for generations in request.generation_schedule:
+        if run_control is not None:
+            run_control.safe_point()
         refined, metrics = genetic_refine_dna(
             dna,
             locked_positions=locked_positions,
@@ -2336,6 +2372,7 @@ def design_construct_v2(
             crossover_rate=request.crossover_rate,
             elite_fraction=request.elite_fraction,
             ga_workers=request.ga_workers,
+            run_control=run_control,
         )
         if translate_dna(refined) != protein:
             raise AssertionError("GA changed the exact target protein")
@@ -2346,7 +2383,11 @@ def design_construct_v2(
         if local_pass and request.validation_mode == "api":
             if idt_scorer is None:
                 raise RuntimeError("API validation mode requires a configured live or explicit mock IDT scorer")
-            idt_pass, fragments, audit = _score_fragments(fragments, idt_scorer)
+            idt_pass, fragments, audit = _score_fragments(
+                fragments,
+                idt_scorer,
+                safe_point=run_control.safe_point if run_control is not None else None,
+            )
             result.idt_audit.extend(audit)
             if not idt_pass and request.auto_adjust_weights_from_idt:
                 for row in audit:

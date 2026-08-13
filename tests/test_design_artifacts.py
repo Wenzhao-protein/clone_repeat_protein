@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from Bio import SeqIO
 
 from hurdler.design_artifacts import (
+    build_step00_plasmid_record,
     timestamped_results_archive,
     write_secondary_checkpoint,
 )
@@ -75,6 +76,19 @@ def test_step_genbanks_roundtrip_translation_annotations_and_final_identity(tmp_
     assert (tmp_path / "maps" / "step00_plasmid.circular.png").stat().st_size > 0
     assert (tmp_path / "maps" / "step00_plasmid.linear.svg").stat().st_size > 0
     assert (tmp_path / "maps" / "step01_insert.linear.png").stat().st_size > 0
+
+    candidate = next(
+        row for row in result.protein_candidates
+        if row["candidate_id"] == result.selected_route["candidate_id"]
+    )
+    preview, preview_row = build_step00_plasmid_record(
+        result.selected_route,
+        candidate,
+        result.request["selection"]["site_iii_enzyme"],
+    )
+    assert str(preview.seq) == str(step00.seq)
+    assert preview_row["sequence_sha256"] == hashlib.sha256(str(step00.seq).encode()).hexdigest()
+    assert preview_row["site_audit"] == result.assembly_steps[0]["site_audit"]
 
 
 def test_checkpoint_never_emits_fake_accepted_fasta_and_final_zip_is_timestamped(tmp_path):

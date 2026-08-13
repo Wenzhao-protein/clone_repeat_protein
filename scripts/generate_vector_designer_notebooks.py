@@ -455,12 +455,13 @@ COLAB_PROTEIN_FORM = r'''display(protein_input_panel)'''
 COLAB_SELECTOR_POLICY_FORM = r'''display(cutter_policy_panel)'''
 
 
-COLAB_IMPORTS = r'''import getpass
-import hashlib
+COLAB_IMPORTS = r'''import hashlib
 import json
 import os
 import shutil
 import subprocess
+import tempfile
+import threading
 import time
 import traceback
 from dataclasses import asdict, replace
@@ -471,27 +472,26 @@ import pandas as pd
 import ipywidgets as widgets
 from Bio import SeqIO
 from dna_features_viewer import BiopythonTranslator, CircularGraphicRecord
-from IPython.display import Markdown, clear_output, display
+from IPython.display import Javascript, Markdown, clear_output, display
 import matplotlib.pyplot as plt
 
 from hurdler.design import parse_protein_input
 from hurdler.idt import (
-    IDT_CREDENTIAL_PATH,
     IDTComplexityScorer,
     clear_idt_secret_environment,
-    configure_idt_credentials,
     configure_idt_credentials_from_bytes,
     configure_idt_credentials_from_values,
 )
 from hurdler.design import role_enzyme_options
 from hurdler.optimization import translate_dna
 from hurdler.design_artifacts import (
+    build_step00_plasmid_record,
     timestamped_results_archive,
     write_secondary_checkpoint,
 )
 from hurdler.external_ga import ExternalGAResources, create_external_ga_bundle
 from hurdler.protein_index import ProteinPatternIndex
-from hurdler.progress import DesignProgressEvent
+from hurdler.progress import DesignProgressEvent, DesignRunControl, DesignRunStopped
 from hurdler.vector_design import (
     DESIGN_SCHEMA_VERSION_V2,
     CompatibilityQuery,
@@ -1123,7 +1123,28 @@ state = {
     "external_bundle": None,
     "external_bundle_fingerprint": None,
     "external_bundle_error": None,
+    "credential_payload": None,
+    "credential_auth_method": None,
+    "run_control": None,
+    "run_thread": None,
+    "run_active": False,
+    "run_terminal_status": None,
+    "viewer_rows": [],
+    "viewer_directory": None,
+    "checkpoint_lock": threading.Lock(),
 }
+
+
+def _runtime_scratch_path(name, fallback):
+    content = Path("/content")
+    if content.is_dir() and os.access(content, os.W_OK):
+        return content / name
+    fallback = Path(fallback)
+    try:
+        fallback.relative_to(content)
+    except ValueError:
+        return fallback
+    return Path(tempfile.gettempdir()) / name
 
 query_button = widgets.Button(description="Run / re-run HURDLER query", button_style="primary")
 query_output = widgets.Output()
@@ -1262,7 +1283,7 @@ def _invalidate_confirmation(message=""):
     if "export_bundle_button" in globals():
         export_bundle_button.disabled = True
     if "viewer_panel" in globals():
-        viewer_panel.layout.display = "none"
+        _reset_viewer_placeholder()
     if message:
         with route_output:
             clear_output(wait=True)
@@ -1389,13 +1410,26 @@ def _support_summary(routes):
         default=None,
     )
     minimum_text = "—" if minimum is None else f"{minimum} bp"
-    return (
-        "<div style='border:1px solid #ddd;padding:7px;margin:5px 0'>"
-        f"<b>Supported RE pairs:</b> {len(pairs):,} &nbsp;·&nbsp; "
-        f"<b>Available Site III:</b> {len(site_iii):,} &nbsp;·&nbsp; "
-        f"<b>Supported plasmids:</b> {len(plasmids):,} &nbsp;·&nbsp; "
-        f"<b>Minimum restore:</b> {minimum_text}"
+    zero = not routes
+    border = "#b31b1b" if zero else "#4b2e83"
+    background = "#fff2f2" if zero else "#f4f0fa"
+    color = "#b31b1b" if zero else "#4b2e83"
+    cards = (
+        ("Supported RE pairs", f"{len(pairs):,}"),
+        ("Available Site III", f"{len(site_iii):,}"),
+        ("Supported plasmids", f"{len(plasmids):,}"),
+        ("Minimum restore", minimum_text),
+    )
+    body = "".join(
+        "<div style='min-width:145px;padding:10px 14px'>"
+        f"<div style='font-size:12px;color:#555'><b>{label}:</b></div>"
+        f"<div style='font-size:27px;line-height:1.15;font-weight:800;color:{color}'>{value}</div>"
         "</div>"
+        for label, value in cards
+    )
+    return (
+        f"<div style='display:flex;flex-wrap:wrap;border:2px solid {border};"
+        f"background:{background};border-radius:8px;margin:8px 0'>{body}</div>"
     )
 
 
@@ -1407,7 +1441,8 @@ def _set_support_summary(routes):
 
 def _set_support_error(message):
     summary = (
-        "<div style='border:1px solid #b31b1b;padding:7px;margin:5px 0'>"
+        "<div style='border:2px solid #b31b1b;background:#fff2f2;border-radius:8px;"
+        "padding:12px;margin:8px 0;font-size:16px'>"
         f"<b>Route filter error:</b> {message}"
         "</div>"
     )
@@ -1595,6 +1630,13 @@ def _confirm_route(_button=None):
         design_button.disabled = False
         export_bundle_button.disabled = False
         _update_secondary_lengths()
+        try:
+            _prepare_route_preview()
+        except Exception as exc:
+            viewer_status.value = (
+                f"<div style='color:#b31b1b'><b>Preview unavailable:</b> "
+                f"{type(exc).__name__}: {str(exc)[:300]}. GA controls remain usable.</div>"
+            )
         display(Markdown(
             f"**Confirmed:** {route['site_i_enzyme']} / {route['site_ii_enzyme']} / "
             f"{site_iii_choice.value} → {route['profile_id']} · {route['cut_scheme']}. "
@@ -1656,18 +1698,32 @@ settings_mode = widgets.ToggleButtons(
     options=[("Keep recommended defaults", "basic"), ("Advanced settings", "advanced")],
     value="basic", description="Settings",
 )
-validation_mode_widget = widgets.ToggleButtons(
-    options=[("Live IDT API", "api"), ("IDT Bulk files (unvalidated)", "batch"), ("Compatibility only", "none")],
-    value="api", description="Validation",
+idt_setup_mode_widget = widgets.ToggleButtons(
+    options=(
+        ("Create Credentials", "create"),
+        ("Upload idt.env", "upload"),
+        ("Do not use IDT API — export batch input", "batch"),
+    ),
+    value="create",
+    description="IDT setup",
+    layout=widgets.Layout(width="100%"),
 )
-credential_source = widgets.Dropdown(
-    options=[("Automatic local env / Colab upload", "auto"), ("Colab Secrets", "secrets"), ("Hidden runtime prompt", "prompt")],
-    value="auto", description="Credentials", layout=widgets.Layout(width="98%"),
+idt_auth_method_widget = widgets.ToggleButtons(
+    options=(("Client credentials", "password"), ("Access token", "access_token")),
+    value="password", description="Authentication",
 )
-credential_path = widgets.Text(
-    value=str(IDT_CREDENTIAL_PATH), description="Local env", layout=widgets.Layout(width="98%"),
+idt_client_id_widget = widgets.Password(description="Client ID", layout=widgets.Layout(width="49%"))
+idt_client_secret_widget = widgets.Password(description="Client secret", layout=widgets.Layout(width="49%"))
+idt_username_widget = widgets.Password(description="IDT username", layout=widgets.Layout(width="49%"))
+idt_password_widget = widgets.Password(description="IDT password", layout=widgets.Layout(width="49%"))
+idt_access_token_widget = widgets.Password(description="Access token", layout=widgets.Layout(width="98%"))
+credential_upload = widgets.FileUpload(
+    accept=".env,text/plain", multiple=False, description="Upload idt.env"
 )
-credential_upload = widgets.FileUpload(accept=".env,text/plain", multiple=False, description="Upload temporary idt.env")
+credential_test_button = widgets.Button(description="Test credentials", icon="check", button_style="info")
+credential_upload_test_button = widgets.Button(description="Test uploaded credentials", icon="check", button_style="info")
+credential_download_button = widgets.Button(description="Download idt.env", icon="download")
+credential_status = widgets.HTML("<b>IDT status:</b> credentials not configured")
 output_directory_widget = widgets.Text(value="/content/hurdler_runs/current", description="Runtime work folder", layout=widgets.Layout(width="98%"))
 auto_download_widget = widgets.Checkbox(value=True, description="Auto-download ZIP after success")
 verbose_generations = widgets.Checkbox(value=False, description="Show every GA generation in Advanced log")
@@ -1681,27 +1737,34 @@ external_qos = widgets.Text(value="", description="QoS")
 external_constraint = widgets.Text(value="", description="Constraint")
 external_conda_environment = widgets.Text(value="hurdler", description="Conda env")
 external_result_directory = widgets.Text(value="results", description="Results folder")
-external_idt_credential_path = widgets.Text(
-    value="~/.config/hurdler/idt.env", description="External IDT env",
-    layout=widgets.Layout(width="98%"),
-)
-external_idt_auth = widgets.Dropdown(
-    options=(("Auto-detect", "auto"), ("Password grant", "password"), ("Access token", "access_token")),
-    value="auto", description="External IDT auth",
-)
+EXTERNAL_IDT_CREDENTIAL_PATH = "~/.config/hurdler/idt.env"
 
 population_card, population_number = _numeric_control("Population", 16, 4, 256, 4, integer=True, help_text="Candidates per GA generation; larger values improve exploration but cost time.")
 mutation_card, mutation_number = _numeric_control("Mutation rate", 0.08, 0.001, 0.5, 0.001, help_text="Probability of synonymous codon mutation; higher values explore more aggressively.")
 crossover_card, crossover_number = _numeric_control("Crossover rate", 0.75, 0.0, 1.0, 0.01, help_text="Probability of recombining parent DNA candidates while preserving translation.")
 elite_card, elite_number = _numeric_control("Elite fraction", 0.15, 0.01, 0.5, 0.01, help_text="Best fraction retained each generation; high values reduce diversity.")
-minimum_secondary_card, minimum_secondary_number = _numeric_control(
-    "Minimum secondary copies", 12, 1, 1000, 1, integer=True,
-    help_text="Bounded-mode lower repeat count. Automatic mode always starts at one copy."
+secondary_copy_range_widget = widgets.IntRangeSlider(
+    value=(12, 20), min=1, max=50, step=1, description="Copy range",
+    continuous_update=False, readout=True,
+    layout=widgets.Layout(width="98%"),
 )
-maximum_secondary_card, maximum_secondary_number = _numeric_control(
-    "Maximum secondary copies", 20, 1, 1000, 1, integer=True,
-    help_text="Bounded-mode inclusive upper repeat count; it must not be below the minimum."
+minimum_secondary_number = widgets.BoundedIntText(
+    value=12, min=1, max=50, step=1, description="Minimum",
+    layout=widgets.Layout(width="48%"),
 )
+maximum_secondary_number = widgets.BoundedIntText(
+    value=20, min=1, max=50, step=1, description="Maximum",
+    layout=widgets.Layout(width="48%"),
+)
+secondary_range_card = widgets.VBox([
+    widgets.HTML(
+        "<b>Bounded secondary-copy range</b> <span style='color:#666'>[repeat copies]</span><br>"
+        "<small>Default 12–20; allowed 1–50. Drag either handle on the shared axis or type both bounds manually. "
+        "Automatic mode ignores this range and explores to the physical/route limit.</small>"
+    ),
+    secondary_copy_range_widget,
+    widgets.HBox([minimum_secondary_number, maximum_secondary_number]),
+], layout=widgets.Layout(border="1px solid #ddd", padding="7px", margin="3px 0"))
 feedback_round_card, feedback_round_number = _numeric_control(
     "Maximum GA→IDT feedback rounds", 100, 1, 1000, 1, integer=True,
     help_text="Retries per copy count. Positive IDT rules adjust weights before the next retry."
@@ -1728,13 +1791,46 @@ max_crossover_card, max_crossover_number = _numeric_control(
 )
 secondary_search_mode_widget = widgets.ToggleButtons(
     options=(("Automatic to limit", "automatic"), ("Bounded copy range", "bounded")),
-    value="automatic", description="Secondary search",
+    value="bounded", description="Secondary search",
 )
 secondary_length_status = widgets.HTML()
 seed_number = widgets.IntText(value=42, description="Random seed")
 generation_schedule_widget = widgets.Text(value="10,20,40,60,80,100", description="Generations")
 auto_weight_feedback = widgets.Checkbox(value=True, description="Adjust weights from IDT positive rules")
 auto_parameter_feedback = widgets.Checkbox(value=True, description="Adapt population / mutation / crossover from IDT score")
+
+_secondary_range_sync = {"active": False}
+
+
+def _range_slider_changed(change):
+    if _secondary_range_sync["active"]:
+        return
+    _secondary_range_sync["active"] = True
+    try:
+        minimum_secondary_number.value, maximum_secondary_number.value = map(int, change["new"])
+    finally:
+        _secondary_range_sync["active"] = False
+    _update_secondary_lengths()
+
+
+def _range_number_changed(change):
+    if _secondary_range_sync["active"]:
+        return
+    minimum = int(minimum_secondary_number.value)
+    maximum = int(maximum_secondary_number.value)
+    _secondary_range_sync["active"] = True
+    try:
+        if minimum > maximum:
+            if change.get("owner") is minimum_secondary_number:
+                maximum = minimum
+                maximum_secondary_number.value = maximum
+            else:
+                minimum = maximum
+                minimum_secondary_number.value = minimum
+        secondary_copy_range_widget.value = (minimum, maximum)
+    finally:
+        _secondary_range_sync["active"] = False
+    _update_secondary_lengths()
 
 
 def _secondary_bounds():
@@ -1749,6 +1845,7 @@ def _secondary_bounds():
 
 def _update_secondary_lengths(_change=None):
     bounded = secondary_search_mode_widget.value == "bounded"
+    secondary_copy_range_widget.disabled = not bounded
     minimum_secondary_number.disabled = not bounded
     maximum_secondary_number.disabled = not bounded
     module_bp = len("".join(str(repeat_module_widget.value).split())) * 3
@@ -1839,8 +1936,12 @@ external_resource_panel = widgets.Accordion(children=[widgets.VBox([
         _help_card("Conda environment", external_conda_environment, unit="name", default="hurdler", purpose="Environment created/activated by run_ga.sh.", allowed="safe environment name", effect="setup uses the bundled YAML."),
     ]),
     _help_card("External results folder", external_result_directory, unit="path", default="results", purpose="Stores progress, checkpoint and final archives.", allowed="relative bundle path or absolute shared path", effect="Compute nodes must be able to write it."),
-    _help_card("External IDT env path", external_idt_credential_path, unit="path", default="~/.config/hurdler/idt.env", purpose="Credential file on the target machine; its contents are never copied.", allowed="repo-external owner-only file", effect="Required only for Live API requests."),
-    _help_card("External authentication", external_idt_auth, unit="method", default="auto-detect", purpose="Tells the external preflight which env-file format to require.", allowed="auto, password, access token", effect="Auto accepts exactly one complete credential format."),
+    widgets.HTML(
+        "<div style='border-left:5px solid #b7a57a;background:#fffaf0;padding:10px'>"
+        "<b>External IDT credentials:</b> Live-API bundles always read "
+        "<code>~/.config/hurdler/idt.env</code> on the target machine and auto-detect its format. "
+        "Colab credentials are never copied into the bundle. Batch bundles omit all IDT arguments.</div>"
+    ),
 ])])
 external_resource_panel.set_title(0, "External Local / Slurm resources")
 external_resource_panel.selected_index = None
@@ -1853,22 +1954,88 @@ def _sync_settings(_change=None):
 settings_mode.observe(_sync_settings, names="value")
 _sync_settings()
 
-credential_help = widgets.HTML(
-    "<b>IDT env format</b> (choose one method; never mix them):<br>"
-    "<code>IDT_ACCESS_TOKEN=...</code><br>or<br>"
-    "<code>IDT_CLIENT_ID=...</code><br><code>IDT_CLIENT_SECRET=...</code><br>"
-    "<code>IDT_USERNAME=...</code><br><code>IDT_PASSWORD=...</code><br>"
-    "Local setup: <code>mkdir -p ~/.config/hurdler &amp;&amp; chmod 700 ~/.config/hurdler</code>, "
-    "save as <code>~/.config/hurdler/idt.env</code>, then <code>chmod 600</code>. "
-    "Hosted Colab cannot read your local home directory; upload the env file temporarily."
+credential_registration_help = widgets.HTML(
+    "<div style='border-left:5px solid #4b2e83;background:#f4f0fa;padding:12px'>"
+    "<b>Create an IDT SciTools API client</b><ol>"
+    "<li><a href='https://www.idtdna.com/page/tools/scitools-plus-api-overview' target='_blank'>"
+    "Sign in or create an IDT account</a>.</li>"
+    "<li>Open <b>My Account → API access → Request new API key</b>.</li>"
+    "<li>Choose a unique Client ID, accept the API terms, and securely copy the generated Client secret.</li>"
+    "<li>Enter the four password-grant fields below, or choose Access token.</li></ol>"
+    "<b>Password-grant file</b><pre>IDT_CLIENT_ID=your_client_id\nIDT_CLIENT_SECRET=your_client_secret\n"
+    "IDT_USERNAME=your_idt_username\nIDT_PASSWORD=your_idt_password</pre>"
+    "<b>Access-token file</b><pre>IDT_ACCESS_TOKEN=your_current_access_token</pre></div>"
 )
+credential_security_notice = widgets.HTML(
+    "<div style='border:2px solid #2d6a4f;background:#effaf4;border-radius:8px;padding:10px'>"
+    "<b>Credential handling:</b> this notebook does not write secrets to notebook output, the repository, "
+    "logs, Drive, checkpoints, or result bundles. Values remain only in this Colab kernel and are sent only "
+    "to IDT OAuth/API endpoints. Colab is still a third-party runtime; use a temporary access token if that is preferred."
+    "</div>"
+)
+idt_password_fields_panel = widgets.VBox([
+    widgets.HBox([idt_client_id_widget, idt_client_secret_widget]),
+    widgets.HBox([idt_username_widget, idt_password_widget]),
+])
+idt_token_field_panel = widgets.VBox([idt_access_token_widget])
+credential_create_panel = widgets.VBox([
+    credential_registration_help,
+    idt_auth_method_widget,
+    idt_password_fields_panel,
+    idt_token_field_panel,
+    widgets.HBox([credential_test_button, credential_download_button]),
+])
+credential_upload_panel = widgets.VBox([
+    widgets.HTML(
+        "<b>Upload one UTF-8 <code>idt.env</code>.</b> It must contain exactly one of the two formats shown above. "
+        "The uploaded bytes are parsed in memory and are never included in any output archive."
+    ),
+    credential_registration_help,
+    widgets.HBox([credential_upload, credential_upload_test_button]),
+])
+back_to_ga_button = widgets.Button(description="Back to GA settings", icon="arrow-up")
+credential_batch_panel = widgets.VBox([
+    widgets.HTML(
+        "<div style='border-left:5px solid #b7a57a;background:#fffaf0;padding:12px'>"
+        "<b>No live API calls will be made.</b> GA exports IDT Bulk Input CSV, TSV and FASTA plus elite candidates. "
+        "This mode is unvalidated and never claims IDT acceptance. If IDT finds no orderable candidate, return here, "
+        "adjust GA settings, and run again.</div>"
+    ),
+    back_to_ga_button,
+])
+idt_credential_panel = widgets.VBox([
+    _help_card(
+        "IDT scoring setup", idt_setup_mode_widget, unit="mode", default="Create Credentials",
+        purpose="Chooses live complexity scoring from an in-memory credential or an offline Bulk Input export.",
+        allowed="create, upload, or no API", effect="Only the two live modes may report IDT score-sum <10 acceptance.",
+    ),
+    credential_security_notice,
+    credential_create_panel,
+    credential_upload_panel,
+    credential_batch_panel,
+    credential_status,
+])
 
-stage_html = widgets.HTML("<b>Status:</b> waiting for route confirmation")
+stage_html = widgets.HTML(
+    "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
+    "<b>Status:</b> waiting for route confirmation</div>"
+)
 generation_progress = widgets.IntProgress(value=0, min=0, max=1, description="GA")
 current_html = widgets.HTML("")
-attempt_log_html = widgets.HTML("<pre>No attempts yet.</pre>")
+attempt_log_html = widgets.HTML(
+    "<pre>No attempts yet.</pre>",
+    layout=widgets.Layout(height="230px", overflow="auto", border="1px solid #ccc", padding="8px"),
+)
 design_output = widgets.Output()
-design_button = widgets.Button(description="Run GA in Colab", button_style="success", disabled=True)
+design_button = widgets.Button(
+    description="Run GA in Colab", icon="play", disabled=True,
+    layout=widgets.Layout(width="230px", height="44px"),
+)
+design_button.style.button_color = "#4b2e83"
+design_button.style.font_weight = "bold"
+pause_button = widgets.Button(description="Pause GA", icon="pause", disabled=True)
+pause_button.style.button_color = "#b7a57a"
+stop_button = widgets.Button(description="Stop GA", icon="stop", disabled=True, button_style="danger")
 export_bundle_button = widgets.Button(
     description="Export local / Slurm GA bundle", button_style="info", icon="archive", disabled=True
 )
@@ -1885,9 +2052,22 @@ def _generation_schedule():
     return values
 
 
-def _progress_update(event: DesignProgressEvent):
-    state["progress_events"].append(event.to_dict())
-    stage_html.value = f"<b>Status:</b> {event.stage} · {event.status}"
+def _dispatch_ui(callback, *args):
+    """Marshal background-worker updates onto the notebook I/O loop."""
+    try:
+        shell = get_ipython()
+        io_loop = shell.kernel.io_loop
+    except Exception:
+        callback(*args)
+    else:
+        io_loop.add_callback(callback, *args)
+
+
+def _render_progress(event: DesignProgressEvent):
+    stage_html.value = (
+        "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
+        f"<b>Status:</b> {event.stage} · {event.status}</div>"
+    )
     if event.generations:
         generation_progress.max = max(1, int(event.generations))
         generation_progress.value = min(generation_progress.max, int(event.generation or 0))
@@ -1924,12 +2104,17 @@ def _progress_update(event: DesignProgressEvent):
             or (verbose_generations.value and row["stage"] == "ga")
         ]
         attempt_log_html.value = "<pre>" + "\n".join(lines[-12:]) + "</pre>"
+
+
+def _progress_update(event: DesignProgressEvent):
+    state["progress_events"].append(event.to_dict())
     _persist_checkpoint(force=False)
+    _dispatch_ui(_render_progress, event)
 
 
 def _checkpoint_local_path():
     run_directory = Path(state.get("run_directory") or output_directory_widget.value)
-    root = Path("/content/hurdler_checkpoints") if Path("/content").is_dir() else run_directory.parent / "checkpoints"
+    root = _runtime_scratch_path("hurdler_checkpoints", run_directory.parent / "checkpoints")
     root.mkdir(parents=True, exist_ok=True)
     safe_id = "".join(character if character.isalnum() or character in "._-" else "_" for character in str(sequence_id_widget.value or "interactive_design"))
     return root / f"hurdler_{safe_id}_checkpoint_latest.zip"
@@ -1947,7 +2132,7 @@ def _copy_archive_to_drive(path):
     return copied
 
 
-def _persist_checkpoint(payload=None, *, force=False):
+def _persist_checkpoint_unlocked(payload=None, *, force=False):
     now = time.monotonic()
     if payload is not None:
         score = payload.get("idt_complexity_score")
@@ -1978,6 +2163,8 @@ def _persist_checkpoint(payload=None, *, force=False):
         }),
         "failure_reason": "No live-IDT-accepted secondary has been obtained yet",
     }
+    public_payload = dict(public_payload)
+    public_payload["run_status"] = state.get("run_terminal_status") or "running"
     checkpoint = write_secondary_checkpoint(public_payload, _checkpoint_local_path())
     state["checkpoint_archive"] = checkpoint
     state["last_checkpoint_write"] = now
@@ -1986,35 +2173,64 @@ def _persist_checkpoint(payload=None, *, force=False):
     return checkpoint
 
 
+def _persist_checkpoint(payload=None, *, force=False):
+    with state["checkpoint_lock"]:
+        return _persist_checkpoint_unlocked(payload, force=force)
+
+
 def _checkpoint_update(payload):
     _persist_checkpoint(payload, force=False)
     checkpoint = state.get("best_checkpoint")
     if checkpoint:
-        stage_html.value = (
+        message = (
+            "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
             f"<b>Checkpoint saved:</b> {checkpoint['repeat_copies']} secondary copies · "
-            f"IDT {checkpoint['idt_complexity_score']} · {Path(state['checkpoint_archive']).name}"
+            f"IDT {checkpoint['idt_complexity_score']} · {Path(state['checkpoint_archive']).name}</div>"
         )
+        _dispatch_ui(setattr, stage_html, "value", message)
 
 
-def _secret_value(reader, name):
-    try:
-        return str(reader(name) or "").strip()
-    except Exception:
-        return ""
+def _validation_mode():
+    return "batch" if idt_setup_mode_widget.value == "batch" else "api"
 
 
-def _configure_colab_secrets(reader=None):
-    if reader is None:
-        from google.colab import userdata
-        reader = userdata.get
-    token = _secret_value(reader, "IDT_ACCESS_TOKEN")
-    if token:
-        return configure_idt_credentials_from_values({"IDT_ACCESS_TOKEN": token}, auth_method="access_token")
-    values = {name: _secret_value(reader, name) for name in ("IDT_CLIENT_ID", "IDT_CLIENT_SECRET", "IDT_USERNAME", "IDT_PASSWORD")}
-    try:
-        return configure_idt_credentials_from_values(values, auth_method="password")
-    finally:
-        values.clear()
+def _wipe_bytearray(payload):
+    if isinstance(payload, bytearray):
+        for index in range(len(payload)):
+            payload[index] = 0
+
+
+def _wipe_cached_credentials():
+    _wipe_bytearray(state.get("credential_payload"))
+    state["credential_payload"] = None
+    state["credential_auth_method"] = None
+    clear_idt_secret_environment()
+
+
+def _clear_create_secret_widgets():
+    idt_client_secret_widget.value = ""
+    idt_password_widget.value = ""
+    idt_access_token_widget.value = ""
+
+
+def _create_credential_values():
+    if idt_auth_method_widget.value == "access_token":
+        return {"IDT_ACCESS_TOKEN": str(idt_access_token_widget.value).strip()}
+    return {
+        "IDT_CLIENT_ID": str(idt_client_id_widget.value).strip(),
+        "IDT_CLIENT_SECRET": str(idt_client_secret_widget.value).strip(),
+        "IDT_USERNAME": str(idt_username_widget.value).strip(),
+        "IDT_PASSWORD": str(idt_password_widget.value).strip(),
+    }
+
+
+def _dotenv_payload(values):
+    ordered = (
+        ("IDT_ACCESS_TOKEN",)
+        if "IDT_ACCESS_TOKEN" in values
+        else ("IDT_CLIENT_ID", "IDT_CLIENT_SECRET", "IDT_USERNAME", "IDT_PASSWORD")
+    )
+    return ("\n".join(f"{name}={values.get(name, '')}" for name in ordered) + "\n").encode()
 
 
 def _uploaded_payload():
@@ -2031,9 +2247,13 @@ def _clear_credential_upload():
     previous = credential_upload
     credential_upload = widgets.FileUpload(
         accept=".env,text/plain", multiple=False,
-        description="Upload temporary idt.env",
+        description="Upload idt.env",
     )
-    credential_upload_row.children = (credential_path, credential_upload)
+    credential_upload_panel.children = (
+        credential_upload_panel.children[0],
+        credential_upload_panel.children[1],
+        widgets.HBox([credential_upload, credential_upload_test_button]),
+    )
     try:
         previous.close()
     except Exception:
@@ -2043,24 +2263,129 @@ def _clear_credential_upload():
 
 
 def _configure_api_credentials():
-    if credential_source.value == "secrets":
-        return _configure_colab_secrets()
-    if credential_source.value == "prompt":
-        return configure_idt_credentials(mode="manual", auth_method="access_token", prompt=getpass.getpass)
-    local_path = Path(credential_path.value).expanduser()
-    if local_path.is_file():
-        return configure_idt_credentials(mode="path", path=local_path, include_path_in_status=False)
+    if _validation_mode() != "api":
+        raise RuntimeError("IDT credentials are not used in Bulk Input mode")
+    cached = state.get("credential_payload")
+    if isinstance(cached, bytearray) and cached:
+        return configure_idt_credentials_from_bytes(bytes(cached))
+    if idt_setup_mode_widget.value == "create":
+        values = _create_credential_values()
+        try:
+            status = configure_idt_credentials_from_values(
+                values, auth_method=str(idt_auth_method_widget.value)
+            )
+            payload = _dotenv_payload(values)
+            state["credential_payload"] = bytearray(payload)
+            state["credential_auth_method"] = status["auth_method"]
+            return status
+        finally:
+            values.clear()
+            _clear_create_secret_widgets()
     payload = _uploaded_payload()
     if payload is None:
-        raise FileNotFoundError(
-            "No external IDT env file is available. Hosted Colab cannot access ~/.config on your computer; "
-            "upload idt.env above or choose Colab Secrets."
-        )
+        raise FileNotFoundError("Upload one idt.env file before testing or running Live IDT scoring")
     try:
-        return configure_idt_credentials_from_bytes(payload)
+        status = configure_idt_credentials_from_bytes(payload)
+        state["credential_payload"] = bytearray(payload)
+        state["credential_auth_method"] = status["auth_method"]
+        return status
     finally:
         payload = b""
         _clear_credential_upload()
+
+
+def _sync_idt_auth_fields(_change=None):
+    password = idt_auth_method_widget.value == "password"
+    idt_password_fields_panel.layout.display = "" if password else "none"
+    idt_token_field_panel.layout.display = "none" if password else ""
+
+
+def _sync_idt_setup(change=None):
+    if change is not None:
+        _wipe_cached_credentials()
+        _clear_create_secret_widgets()
+    mode = idt_setup_mode_widget.value
+    credential_create_panel.layout.display = "" if mode == "create" else "none"
+    credential_upload_panel.layout.display = "" if mode == "upload" else "none"
+    credential_batch_panel.layout.display = "" if mode == "batch" else "none"
+    credential_status.value = (
+        "<b>IDT status:</b> offline Bulk Input mode; no credentials or API calls"
+        if mode == "batch"
+        else "<b>IDT status:</b> credentials remain only in this kernel and have not been tested"
+    )
+    if "_invalidate_external_bundle" in globals():
+        _invalidate_external_bundle()
+
+
+def _test_idt_credentials(_button=None):
+    credential_test_button.disabled = True
+    credential_upload_test_button.disabled = True
+    credential_status.value = "<b>IDT status:</b> testing OAuth and one 125-bp complexity request…"
+    try:
+        status = _configure_api_credentials()
+        with tempfile.TemporaryDirectory(prefix="hurdler_idt_test_") as temporary:
+            scorer = IDTComplexityScorer(Path(temporary) / "audit.jsonl")
+            summary = scorer.score("hurdler_credential_test", "ACGT" * 31 + "A")
+        score = summary.get("idt_complexity_score")
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
+            raise RuntimeError("IDT returned no finite numeric complexity score")
+        credential_status.value = (
+            f"<div style='color:#2d6a4f'><b>IDT status: verified.</b> "
+            f"Authentication method: {status['auth_method']}; numeric response parsed successfully.</div>"
+        )
+    except Exception as exc:
+        credential_status.value = (
+            f"<div style='color:#b31b1b'><b>IDT test failed safely:</b> {type(exc).__name__}: "
+            f"{str(exc)[:300]}</div>"
+        )
+    finally:
+        clear_idt_secret_environment()
+        credential_test_button.disabled = False
+        credential_upload_test_button.disabled = False
+
+
+def _download_credential_env(_button=None):
+    try:
+        if state.get("credential_payload") is None:
+            if idt_setup_mode_widget.value != "create":
+                raise RuntimeError("Create credentials in the hidden form before downloading idt.env")
+            values = _create_credential_values()
+            try:
+                configure_idt_credentials_from_values(
+                    values, auth_method=str(idt_auth_method_widget.value)
+                )
+                state["credential_payload"] = bytearray(_dotenv_payload(values))
+                state["credential_auth_method"] = str(idt_auth_method_widget.value)
+            finally:
+                values.clear()
+                clear_idt_secret_environment()
+                _clear_create_secret_widgets()
+        from google.colab import files as colab_files
+        handle = tempfile.NamedTemporaryFile(
+            prefix="hurdler_idt_", suffix=".env", dir="/tmp", delete=False
+        )
+        temporary_path = Path(handle.name)
+        try:
+            handle.write(bytes(state["credential_payload"]))
+            handle.close()
+            temporary_path.chmod(0o600)
+            colab_files.download(str(temporary_path))
+        finally:
+            temporary_path.unlink(missing_ok=True)
+        credential_status.value = "<b>IDT status:</b> idt.env sent to your browser; no copy was retained on the runtime filesystem"
+    except ImportError:
+        credential_status.value = "<b>IDT status:</b> browser download is available in hosted Colab only"
+    except Exception as exc:
+        credential_status.value = f"<b>IDT download failed safely:</b> {type(exc).__name__}: {str(exc)[:300]}"
+
+
+idt_auth_method_widget.observe(_sync_idt_auth_fields, names="value")
+idt_setup_mode_widget.observe(_sync_idt_setup, names="value")
+credential_test_button.on_click(_test_idt_credentials)
+credential_upload_test_button.on_click(_test_idt_credentials)
+credential_download_button.on_click(_download_credential_env)
+_sync_idt_auth_fields()
+_sync_idt_setup()
 
 
 def _build_design_request(*, ga_workers):
@@ -2080,7 +2405,7 @@ def _build_design_request(*, ga_workers):
             route["candidate_id"], route["profile_id"], route["scheme_id"],
             str(state["confirmed_site_iii"]),
         ),
-        validation_mode=validation_mode_widget.value,
+        validation_mode=_validation_mode(),
         assembly_strategy="exact_reused_secondary_rdl",
         population_size=int(population_number.value),
         mutation_rate=float(mutation_number.value),
@@ -2107,8 +2432,8 @@ def _bundle_fingerprint(request, resources):
     payload = {
         "request": asdict(request),
         "resources": asdict(resources),
-        "credential_path": external_idt_credential_path.value if request.validation_mode == "api" else None,
-        "auth_method": external_idt_auth.value if request.validation_mode == "api" else None,
+        "credential_path": EXTERNAL_IDT_CREDENTIAL_PATH if request.validation_mode == "api" else None,
+        "auth_method": "auto" if request.validation_mode == "api" else None,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
@@ -2136,20 +2461,20 @@ def _export_external_bundle(_button=None):
                 result_directory=str(external_result_directory.value).strip(),
             )
             request = _build_design_request(ga_workers=resources.worker_cpus)
-            if request.validation_mode == "api" and not external_idt_credential_path.value.strip():
-                raise ValueError("Live IDT mode requires the credential path that will exist on the target machine")
             commit = subprocess.check_output(
                 ["git", "-C", str(project_root), "rev-parse", "HEAD"], text=True
             ).strip()
-            bundle_root = Path("/content/hurdler_bundles") if Path("/content").is_dir() else Path(output_directory_widget.value).parent / "bundles"
+            bundle_root = _runtime_scratch_path(
+                "hurdler_bundles", Path(output_directory_widget.value).parent / "bundles"
+            )
             bundle = create_external_ga_bundle(
                 request,
                 bundle_root,
                 repository_commit=commit,
                 environment_file=project_root / "envs" / "hurdler.yml",
                 resources=resources,
-                idt_credential_path=str(external_idt_credential_path.value).strip(),
-                auth_method=str(external_idt_auth.value),
+                idt_credential_path=EXTERNAL_IDT_CREDENTIAL_PATH,
+                auth_method="auto",
             )
             state["external_bundle"] = bundle
             state["external_bundle_fingerprint"] = _bundle_fingerprint(request, resources)
@@ -2184,83 +2509,215 @@ def _download_design(_button=None):
     colab_files.download(str(archive))
 
 
+def _set_run_active(active):
+    state["run_active"] = bool(active)
+    for widget in ga_request_widgets:
+        widget.disabled = bool(active)
+    credential_upload.disabled = bool(active)
+    design_button.disabled = bool(active) or state.get("confirmed_route") is None
+    export_bundle_button.disabled = bool(active) or state.get("confirmed_route") is None
+    pause_button.disabled = not active
+    stop_button.disabled = not active
+    if not active:
+        pause_button.description = "Pause GA"
+        pause_button.icon = "pause"
+        design_button.description = "Run GA in Colab"
+        design_button.icon = "play"
+
+
+def _finish_design_success(result, files, archive, output_directory, drive_archive):
+    state["design_files"] = files
+    state["archive"] = archive
+    state["design_result"] = result
+    state["run_terminal_status"] = result.status
+    download_button.disabled = False
+    _prepare_viewer(result, output_directory)
+    stage_html.value = (
+        "<div style='border:2px solid #2d6a4f;background:#effaf4;border-radius:8px;padding:10px'>"
+        f"<b>Status:</b> {result.status}</div>"
+    )
+    with design_output:
+        display(Markdown(f"**Design status:** `{result.status}` — {result.message}"))
+        if result.rdl_plan:
+            display(Markdown("### Exact-copy RDL equation"))
+            display(pd.DataFrame([result.rdl_plan]))
+        fragments = [*result.primary_fragments, *result.secondary_fragments]
+        if fragments:
+            display(Markdown("### Unique purchase fragments"))
+            display(pd.DataFrame(fragments))
+        if result.cloning_steps:
+            display(Markdown("### Cloning plan"))
+            display(pd.DataFrame(result.cloning_steps))
+        if result.status == "optimized_unvalidated_batch":
+            display(Markdown(
+                "### IDT Bulk Input ready\nThis result has **not** been scored by the IDT API. "
+                "Use `idt_bulk_input.csv`, `.tsv`, or `.fasta` from the ZIP, then return to the GA settings if no candidate is orderable."
+            ))
+            display(back_to_ga_button)
+        drive_text = f" Drive copy: `{drive_archive}`." if drive_archive else ""
+        display(Markdown(f"ZIP prepared: `{archive.name}`.{drive_text} No order was submitted."))
+    _set_run_active(False)
+    state["run_control"] = None
+    if auto_download_widget.value and result.status in {"idt_accepted", "optimized_unvalidated_batch"}:
+        _download_design()
+
+
+def _finish_design_stopped():
+    state["run_terminal_status"] = "stopped_by_user"
+    stage_html.value = (
+        "<div style='border:2px solid #b31b1b;background:#fff2f2;border-radius:8px;padding:10px'>"
+        "<b>Status:</b> stopped_by_user · checkpoint preserved</div>"
+    )
+    with design_output:
+        display(Markdown(
+            "**GA stopped by the user at a safe point.** The current audit and checkpoint were preserved; "
+            "no unfinished candidate is reported as accepted."
+        ))
+    _set_run_active(False)
+    state["run_control"] = None
+
+
+def _finish_design_error(error_type, message):
+    stage_html.value = (
+        "<div style='border:2px solid #b31b1b;background:#fff2f2;border-radius:8px;padding:10px'>"
+        f"<b>Status:</b> failed · {error_type}</div>"
+    )
+    with design_output:
+        display(Markdown(f"**Design failed safely:** `{error_type}: {message[:500]}`"))
+    _set_run_active(False)
+    state["run_control"] = None
+
+
+def _run_design_worker(request, query, output_directory, control):
+    try:
+        scorer = (
+            IDTComplexityScorer(output_directory / "idt_audit.jsonl")
+            if request.validation_mode == "api"
+            else None
+        )
+        result = design_construct_v2(
+            request,
+            idt_scorer=scorer,
+            progress_callback=_progress_update,
+            checkpoint_callback=_checkpoint_update,
+            run_control=control,
+        )
+        files = write_design_outputs_v2(result, output_directory)
+        archive_root = _runtime_scratch_path(
+            "hurdler_archives", output_directory.parent / "archives"
+        )
+        archive = timestamped_results_archive(
+            output_directory, archive_root, sequence_id=query.sequence_id,
+        )
+        drive_archive = (
+            _copy_archive_to_drive(archive)
+            if storage_mode_widget.value == "drive"
+            else None
+        )
+        _dispatch_ui(
+            _finish_design_success,
+            result, files, archive, output_directory, drive_archive,
+        )
+    except DesignRunStopped:
+        state["run_terminal_status"] = "stopped_by_user"
+        _persist_checkpoint(force=True)
+        _dispatch_ui(_finish_design_stopped)
+    except Exception as exc:
+        _dispatch_ui(_finish_design_error, type(exc).__name__, str(exc))
+    finally:
+        clear_idt_secret_environment()
+
+
 def _run_design(_button=None):
+    if state.get("run_active"):
+        return
     route = state.get("confirmed_route")
     if route is None:
         with design_output:
             clear_output(wait=True)
             display(Markdown("**Confirm the RE/plasmid route before optimization.**"))
         return
-    design_button.disabled = True
-    design_button.description = "Running GA / IDT…"
-    download_button.disabled = True
     state["progress_events"] = []
     state["archive"] = None
     state["design_result"] = None
     state["best_checkpoint"] = None
     state["last_checkpoint_write"] = 0.0
+    state["run_terminal_status"] = "running"
     generation_progress.value = 0
-    stage_html.value = "<b>Status:</b> starting"
+    stage_html.value = (
+        "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
+        "<b>Status:</b> starting GA worker</div>"
+    )
     with design_output:
         clear_output(wait=True)
     try:
         query = _current_query()
-        mode = validation_mode_widget.value
-        scorer = None
         output_directory = Path(output_directory_widget.value)
         output_directory.mkdir(parents=True, exist_ok=True)
         state["run_directory"] = output_directory
         if storage_mode_widget.value == "drive" and not storage_state.get("drive_mounted"):
             raise RuntimeError("Google Drive was selected but is not mounted; click Mount Google Drive in Step 0")
-        if mode == "api":
-            _configure_api_credentials()
-            scorer = IDTComplexityScorer(output_directory / "idt_audit.jsonl")
+        if _validation_mode() == "api":
+            status = _configure_api_credentials()
+            credential_status.value = (
+                f"<b>IDT status:</b> configured in memory via {status['auth_method']}; values are hidden"
+            )
         request = _build_design_request(ga_workers=1)
-        result = design_construct_v2(
-            request,
-            idt_scorer=scorer,
-            progress_callback=_progress_update,
-            checkpoint_callback=_checkpoint_update,
+        control = DesignRunControl()
+        state["run_control"] = control
+        _set_run_active(True)
+        worker = threading.Thread(
+            target=_run_design_worker,
+            args=(request, query, output_directory, control),
+            name="hurdler-ga-worker",
+            daemon=True,
         )
-        files = write_design_outputs_v2(result, output_directory)
-        archive_root = Path("/content/hurdler_archives") if Path("/content").is_dir() else output_directory.parent / "archives"
-        archive = timestamped_results_archive(
-            output_directory,
-            archive_root,
-            sequence_id=query.sequence_id,
-        )
-        drive_archive = _copy_archive_to_drive(archive) if storage_mode_widget.value == "drive" else None
-        state["design_files"] = files
-        state["archive"] = archive
-        state["design_result"] = result
-        download_button.disabled = False
-        _prepare_viewer(result, output_directory)
-        with design_output:
-            display(Markdown(f"**Design status:** `{result.status}` — {result.message}"))
-            if result.rdl_plan:
-                display(Markdown("### Exact-copy RDL equation"))
-                display(pd.DataFrame([result.rdl_plan]))
-            fragments = [*result.primary_fragments, *result.secondary_fragments]
-            if fragments:
-                display(Markdown("### Unique purchase fragments"))
-                display(pd.DataFrame(fragments))
-            if result.cloning_steps:
-                display(Markdown("### Cloning plan"))
-                display(pd.DataFrame(result.cloning_steps))
-            drive_text = f" Drive copy: `{drive_archive}`." if drive_archive else ""
-            display(Markdown(f"ZIP prepared: `{archive.name}`.{drive_text} No order was submitted."))
-        if auto_download_widget.value and result.status in {"idt_accepted", "optimized_unvalidated_batch"}:
-            _download_design()
+        state["run_thread"] = worker
+        worker.start()
     except Exception as exc:
-        stage_html.value = f"<b>Status:</b> failed · {type(exc).__name__}"
-        with design_output:
-            display(Markdown(f"**Design failed safely:** `{type(exc).__name__}: {exc}`"))
-            if settings_mode.value == "advanced":
-                display(widgets.HTML("<details><summary>Sanitized traceback</summary><pre>" + traceback.format_exc() + "</pre></details>"))
-    finally:
         clear_idt_secret_environment()
-        design_button.description = "Run GA in Colab"
-        design_button.disabled = state.get("confirmed_route") is None
+        _finish_design_error(type(exc).__name__, str(exc))
+
+
+def _pause_or_resume(_button=None):
+    control = state.get("run_control")
+    if control is None or not state.get("run_active"):
+        return
+    if control.paused:
+        control.resume()
+        pause_button.description = "Pause GA"
+        pause_button.icon = "pause"
+        stage_html.value = "<b>Status:</b> resume requested; continuing from the same GA population"
+    else:
+        control.pause()
+        _persist_checkpoint(force=True)
+        pause_button.description = "Resume GA"
+        pause_button.icon = "play"
+        stage_html.value = "<b>Status:</b> pause requested; waiting for the next safe point"
+
+
+def _stop_design(_button=None):
+    control = state.get("run_control")
+    if control is None or not state.get("run_active"):
+        return
+    state["run_terminal_status"] = "stopped_by_user"
+    control.stop()
+    _persist_checkpoint(force=True)
+    pause_button.disabled = True
+    stop_button.disabled = True
+    stage_html.value = "<b>Status:</b> stop requested; finishing the current safe unit"
+
+
+def _back_to_ga_settings(_button=None):
+    settings_mode.value = "advanced"
+    display(Javascript(
+        "document.getElementById('hurdler-ga-settings')?.scrollIntoView({behavior:'smooth', block:'start'});"
+    ))
+
+
+pause_button.on_click(_pause_or_resume)
+stop_button.on_click(_stop_design)
+back_to_ga_button.on_click(_back_to_ga_settings)
 
 
 viewer_step_widget = widgets.Dropdown(description="Assembly step", layout=widgets.Layout(width="48%"))
@@ -2277,6 +2734,10 @@ viewer_range_widget = widgets.IntRangeSlider(
 viewer_focus_button = widgets.Button(description="Focus cloning region", icon="search-plus")
 viewer_reset_button = widgets.Button(description="Reset full view", icon="expand")
 viewer_render_button = widgets.Button(description="Render selected molecule", button_style="info")
+viewer_status = widgets.HTML(
+    "<div style='border:2px dashed #4b2e83;border-radius:8px;padding:12px'>"
+    "Confirm an RE/plasmid route to preview its annotated step00 plasmid before GA.</div>"
+)
 viewer_output = widgets.Output()
 viewer_translation_output = widgets.Output()
 viewer_panel = widgets.VBox([
@@ -2285,17 +2746,39 @@ viewer_panel = widgets.VBox([
         "<p>Select a step and molecule. Plasmids support circular and linear maps; inserts are linear. "
         "Use Focus cloning region or the range slider to zoom. At ≤300 bp the exact bases and per-codon translation are shown.</p>"
     ),
+    viewer_status,
     widgets.HBox([viewer_step_widget, viewer_molecule_widget, viewer_view_widget]),
     viewer_range_widget,
     widgets.HBox([viewer_focus_button, viewer_reset_button, viewer_render_button]),
     viewer_output, viewer_translation_output,
 ])
-viewer_panel.layout.display = "none"
+viewer_panel.layout.display = ""
 
 
 def _viewer_rows():
-    result = state.get("design_result")
-    return list(result.assembly_steps) if result is not None else []
+    return list(state.get("viewer_rows") or [])
+
+
+def _viewer_record_path(row):
+    directory = state.get("viewer_directory")
+    if directory is None:
+        raise ValueError("No plasmid preview or assembly output is available")
+    return Path(directory) / row["file"]
+
+
+def _reset_viewer_placeholder():
+    state["viewer_rows"] = []
+    state["viewer_directory"] = None
+    viewer_step_widget.options = (("Confirm a route first", None),)
+    viewer_step_widget.value = None
+    viewer_status.value = (
+        "<div style='border:2px dashed #4b2e83;border-radius:8px;padding:12px'>"
+        "Confirm an RE/plasmid route to preview its annotated step00 plasmid before GA.</div>"
+    )
+    with viewer_output:
+        clear_output(wait=True)
+    with viewer_translation_output:
+        clear_output(wait=True)
 
 
 def _viewer_selected_row():
@@ -2328,7 +2811,7 @@ def _viewer_reset(_button=None):
         row = _viewer_selected_row()
     except (ValueError, TypeError):
         return
-    record = SeqIO.read(Path(state["run_directory"]) / row["file"], "genbank")
+    record = SeqIO.read(_viewer_record_path(row), "genbank")
     viewer_range_widget.max = max(1, len(record))
     viewer_range_widget.value = (0, len(record))
     viewer_view_widget.disabled = row["molecule"] == "insert"
@@ -2353,10 +2836,25 @@ def _render_viewer(_button=None):
         clear_output(wait=True)
         try:
             row = _viewer_selected_row()
-            record = SeqIO.read(Path(state["run_directory"]) / row["file"], "genbank")
+            record = SeqIO.read(_viewer_record_path(row), "genbank")
             start, end = map(int, viewer_range_widget.value)
-            translator = BiopythonTranslator(features_filters=(lambda feature: feature.type != "source",))
             circular = row["molecule"] == "plasmid" and viewer_view_widget.value == "circular" and (start, end) == (0, len(record))
+            def feature_filter(feature):
+                if feature.type == "source":
+                    return False
+                if not circular:
+                    return True
+                qualifiers = feature.qualifiers
+                if qualifiers.get("feature_kind", [""])[0] == "restriction_site":
+                    return True
+                if feature.type == "CDS":
+                    return True
+                feature_class = qualifiers.get("feature_class", [""])[0]
+                return feature_class in {
+                    "antibiotic_resistance", "origin", "replication_origin",
+                    "promoter", "terminator", "operator",
+                }
+            translator = BiopythonTranslator(features_filters=(feature_filter,))
             if circular:
                 graphic = translator.translate_record(record, record_class=CircularGraphicRecord)
                 figure, axis = plt.subplots(figsize=(8, 8))
@@ -2411,13 +2909,52 @@ def _render_viewer(_button=None):
 def _prepare_viewer(result, output_directory):
     rows = list(result.assembly_steps)
     if not rows:
-        viewer_panel.layout.display = "none"
+        _reset_viewer_placeholder()
         return
+    state["viewer_rows"] = rows
+    state["viewer_directory"] = Path(output_directory)
     steps = sorted({int(row["step"]) for row in rows})
     viewer_step_widget.options = tuple((f"Step {step:02d}", step) for step in steps)
     viewer_step_widget.value = steps[-1]
-    viewer_panel.layout.display = ""
+    viewer_status.value = "<b>Complete assembly timeline loaded.</b> The final plasmid is selected by default."
     _viewer_update_molecules()
+    _render_viewer()
+
+
+def _prepare_route_preview():
+    result = state.get("query_result")
+    route = state.get("confirmed_route")
+    site_iii = state.get("confirmed_site_iii")
+    if result is None or route is None or not site_iii:
+        _reset_viewer_placeholder()
+        return
+    candidates = [
+        row for row in result.protein_candidates
+        if row["candidate_id"] == route["candidate_id"]
+    ]
+    if len(candidates) != 1:
+        raise ValueError("Confirmed route does not resolve to one protein candidate")
+    preview_root = _runtime_scratch_path(
+        "hurdler_route_preview", Path(output_directory_widget.value).parent / "route_preview"
+    )
+    preview_root.mkdir(parents=True, exist_ok=True)
+    record, row = build_step00_plasmid_record(route, candidates[0], str(site_iii))
+    SeqIO.write(record, preview_root / row["file"], "genbank")
+    state["viewer_rows"] = [row]
+    state["viewer_directory"] = preview_root
+    viewer_step_widget.options = (("Step 00", 0),)
+    viewer_step_widget.value = 0
+    viewer_molecule_widget.options = (("Plasmid", "plasmid"),)
+    viewer_molecule_widget.value = "plasmid"
+    viewer_view_widget.disabled = False
+    viewer_view_widget.value = "circular"
+    viewer_status.value = (
+        f"<div style='border:2px solid #2d6a4f;background:#effaf4;border-radius:8px;padding:10px'>"
+        f"<b>Route preview ready:</b> {route['profile_id']} · {route['site_i_enzyme']} / "
+        f"{route['site_ii_enzyme']} / {site_iii}. Full annotations remain in GenBank; the circular map "
+        "shows only key vector functions and selected RE sites to prevent label overlap.</div>"
+    )
+    _viewer_reset()
     _render_viewer()
 
 
@@ -2433,8 +2970,8 @@ export_bundle_button.on_click(_export_external_bundle)
 download_button.on_click(_download_design)
 
 for ga_bundle_widget in (
-    validation_mode_widget, secondary_search_mode_widget,
-    minimum_secondary_number, maximum_secondary_number,
+    idt_setup_mode_widget, idt_auth_method_widget, secondary_search_mode_widget,
+    secondary_copy_range_widget, minimum_secondary_number, maximum_secondary_number,
     population_number, mutation_number, crossover_number, elite_number,
     feedback_round_number, generations_per_round_number, elite_seed_number,
     max_population_number, max_mutation_number, max_crossover_number,
@@ -2442,39 +2979,69 @@ for ga_bundle_widget in (
     auto_parameter_feedback, external_worker_cpus, external_memory_gb,
     external_walltime, external_partition, external_account, external_qos,
     external_constraint, external_conda_environment, external_result_directory,
-    external_idt_credential_path, external_idt_auth,
     *weight_widgets.values(),
 ):
     ga_bundle_widget.observe(_invalidate_external_bundle, names="value")
 
-credential_upload_row = widgets.HBox([credential_path, credential_upload])
 basic_panel = widgets.VBox([
+    widgets.HTML("<div id='hurdler-ga-settings'></div>"),
     _help_card("Settings level", settings_mode, unit="mode", default="recommended", purpose="Shows or hides low-level GA controls.", allowed="recommended or advanced", effect="Recommended mode still uses the displayed frozen defaults."),
-    _help_card("Validation", validation_mode_widget, unit="mode", default="Live IDT API", purpose="Chooses live complexity scoring, unvalidated Bulk Input export, or molecular compatibility only.", allowed="API, batch, none", effect="Only API mode can claim IDT-accepted secondary DNA."),
+    idt_credential_panel,
     auto_download_widget,
-    _help_card("Secondary-copy search", secondary_search_mode_widget, unit="mode", default="automatic", purpose="Explores secondary donor repeat count.", allowed="automatic from 1 or bounded min/max", effect="Automatic proves the physical/route limit; bounded stops at the user ceiling."),
-    _two_per_row([minimum_secondary_card, maximum_secondary_card]),
+    _help_card("Secondary-copy search", secondary_search_mode_widget, unit="mode", default="bounded copy range", purpose="Explores secondary donor repeat count.", allowed="bounded 1–50 or automatic to physical limit", effect="Bounded is the tutorial default; automatic proves the physical/route limit."),
+    secondary_range_card,
     secondary_length_status,
     feedback_round_card,
-    _help_card("Credential source", credential_source, unit="authentication", default="automatic external env/upload", purpose="Provides the live IDT scoring token only when API mode starts.", allowed="external path/upload, Colab Secrets, hidden prompt", effect="Secrets remain in memory/environment and are cleared after the run."),
-    credential_upload_row,
-    credential_help,
     _help_card("Runtime work folder", output_directory_widget, unit="path", default="/content/hurdler_runs/current", purpose="Stores active computation and complete uncompressed outputs.", allowed="runtime path", effect="Drive mode still computes here and copies only ZIP archives."),
 ])
+ga_request_widgets = (
+    input_mode_widget, sequence_id_widget, n_cap_widget, repeat_module_widget,
+    initial_copies_widget, c_cap_widget, full_protein_widget,
+    repeat_start_widget, repeat_end_widget, repeat_period_widget,
+    allow_left_cutter_widget, allow_right_cutter_widget,
+    enzyme_bulk_control, plasmid_bulk_control, max_restoration_length_widget,
+    query_button, pair_choice, site_iii_choice, profile_choice, scheme_choice, confirm_button,
+    storage_mode_widget, drive_root_widget, mount_drive_button,
+    settings_mode, idt_setup_mode_widget, idt_auth_method_widget,
+    idt_client_id_widget, idt_client_secret_widget, idt_username_widget,
+    idt_password_widget, idt_access_token_widget, credential_upload,
+    credential_test_button, credential_upload_test_button, credential_download_button,
+    secondary_search_mode_widget, secondary_copy_range_widget,
+    minimum_secondary_number, maximum_secondary_number,
+    population_number, mutation_number, crossover_number, elite_number,
+    feedback_round_number, generations_per_round_number, elite_seed_number,
+    max_population_number, max_mutation_number, max_crossover_number,
+    seed_number, generation_schedule_widget, auto_weight_feedback,
+    auto_parameter_feedback, output_directory_widget, auto_download_widget,
+    external_worker_cpus, external_memory_gb, external_walltime,
+    external_partition, external_account, external_qos, external_constraint,
+    external_conda_environment, external_result_directory,
+    *enzyme_checkboxes.values(), *plasmid_checkboxes.values(),
+    *weight_widgets.values(),
+)
 ga_panel = widgets.VBox([
     basic_panel, advanced_panel, external_resource_panel,
-    widgets.HTML("<h3>Live progress</h3>"), stage_html, generation_progress,
-    current_html, attempt_log_html,
-    widgets.HBox([design_button, export_bundle_button, download_button]),
-    external_bundle_output, design_output, viewer_panel,
+    widgets.HTML("<h3>Run optimization</h3>"),
+    widgets.HBox([design_button, pause_button, stop_button]),
+    widgets.HBox([export_bundle_button, download_button]),
+    widgets.HTML("<h3>Live GA / IDT log</h3>"),
+    stage_html, generation_progress, current_html, attempt_log_html,
+    external_bundle_output, design_output,
 ])
 ga_panel.layout.display = "none"
 secondary_search_mode_widget.observe(_update_secondary_lengths, names="value")
-minimum_secondary_number.observe(_update_secondary_lengths, names="value")
-maximum_secondary_number.observe(_update_secondary_lengths, names="value")
+secondary_copy_range_widget.observe(_range_slider_changed, names="value")
+minimum_secondary_number.observe(_range_number_changed, names="value")
+maximum_secondary_number.observe(_range_number_changed, names="value")
 repeat_module_widget.observe(_update_secondary_lengths, names="value")
 _update_secondary_lengths()
-_refresh_live_support()
+_reset_viewer_placeholder()
+_ = _refresh_live_support()
+display(widgets.HTML(
+    "<div style='border:1px solid #2d6a4f;background:#effaf4;padding:8px;border-radius:6px'>"
+    "<b>Interactive controls ready.</b> Continue with the tutorial cells below.</div>"
+))
+None
 '''
 
 
@@ -2524,7 +3091,7 @@ COLAB_VECTOR_ROUTE_PANEL = r'''display(widgets.VBox([
 COLAB_GA_PANEL = r'''display(widgets.VBox([
     widgets.HTML("<h2>7. Run in Colab or export a Local / Slurm GA bundle</h2>"),
     widgets.HTML("This panel remains hidden until an RE/plasmid route is confirmed."),
-    ga_panel,
+    ga_panel, viewer_panel,
 ]))'''
 
 

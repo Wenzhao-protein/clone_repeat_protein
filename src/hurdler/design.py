@@ -13,7 +13,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Callable, Iterable, Mapping, Protocol
 
 import pandas as pd
 from Bio import Restriction, SeqIO
@@ -658,11 +658,15 @@ def plan_purchase_fragments(
 def _score_fragments(
     fragments: list[dict[str, object]],
     scorer: ComplexityScorer,
+    *,
+    safe_point: Callable[[], None] | None = None,
 ) -> tuple[bool, list[dict[str, object]], list[dict[str, object]]]:
     scored: list[dict[str, object]] = []
     audit: list[dict[str, object]] = []
     all_passed = True
     for fragment in fragments:
+        if safe_point is not None:
+            safe_point()
         sequence = str(fragment["purchase_sequence"])
         expected_sha = hashlib.sha256(sequence.encode()).hexdigest()
         try:
@@ -680,6 +684,8 @@ def _score_fragments(
                 "idt_response_sha256": "",
                 "idt_error_type": type(exc).__name__,
             }
+        if safe_point is not None:
+            safe_point()
         observed_sha = str(summary.get("idt_scored_sequence_sha256") or expected_sha)
         if observed_sha != expected_sha:
             raise ValueError("IDT response DNA hash does not match the exact purchase fragment")

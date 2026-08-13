@@ -36,7 +36,7 @@ from .optimization import (
     reverse_complement,
     translate_dna,
 )
-from .progress import ProgressCallback, emit_progress
+from .progress import DesignRunControl, ProgressCallback, emit_progress
 
 
 GA_SCORE_PROFILE = {
@@ -654,6 +654,7 @@ def genetic_refine_dna(
     progress_callback: ProgressCallback | None = None,
     progress_context: dict[str, Any] | None = None,
     ga_workers: int = 1,
+    run_control: DesignRunControl | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Refine synonymous codons with the RE-repeat term in every fitness call."""
     if translate_dna(dna) == "":
@@ -701,6 +702,8 @@ def genetic_refine_dna(
         elapsed_seconds=0.0,
         **context,
     )
+    if run_control is not None:
+        run_control.safe_point()
 
     def metrics(sequence: str) -> dict[str, Any]:
         if sequence not in cache:
@@ -794,7 +797,11 @@ def genetic_refine_dna(
     def run_generations(evaluate_many: Callable[[Sequence[str]], None]) -> None:
         nonlocal population, best
         for _generation in range(generations):
+            if run_control is not None:
+                run_control.safe_point()
             evaluate_many([*population, best])
+            if run_control is not None:
+                run_control.safe_point()
             population = sorted(
                 set(population),
                 key=lambda sequence: (metrics(sequence)["ga_score"], sequence),
@@ -832,6 +839,8 @@ def genetic_refine_dna(
                 elapsed_seconds=time.monotonic() - started,
                 **context,
             )
+            if run_control is not None:
+                run_control.safe_point()
 
     if ga_workers == 1:
         run_generations(serial_metrics_many)
@@ -956,6 +965,7 @@ def adaptive_copy_search(
     evaluate: Callable[[int, int], dict[str, Any]],
     progress_callback: ProgressCallback | None = None,
     progress_context: dict[str, Any] | None = None,
+    run_control: DesignRunControl | None = None,
 ) -> tuple[int, dict[str, Any] | None, list[dict[str, Any]], str]:
     """Find the longest passing repeat count using the requested two-stage route.
 
@@ -980,6 +990,8 @@ def adaptive_copy_search(
     started = time.monotonic()
 
     def run(copies: int, generations: int, phase: str) -> dict[str, Any]:
+        if run_control is not None:
+            run_control.safe_point()
         key = (copies, generations)
         cached = key in cache
         emit_progress(
@@ -996,6 +1008,8 @@ def adaptive_copy_search(
         )
         if not cached:
             cache[key] = evaluate(copies, generations)
+        if run_control is not None:
+            run_control.safe_point()
         result = cache[key]
         trace.append(
             {

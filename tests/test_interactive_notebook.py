@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import threading
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -101,7 +103,10 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
     assert 'full_input_panel.layout.display = "" if input_mode_widget.value == "full" else "none"' in controller
     assert "_help_card" in controller
     assert "hurdler-storage-panel" in {cell["id"] for cell in payload["cells"]}
-    assert "widgets.Password(" not in COLAB_NOTEBOOK.read_text()
+    assert "widgets.Password(" in COLAB_NOTEBOOK.read_text()
+    assert "Create Credentials" in controller
+    assert "Upload idt.env" in controller
+    assert "Do not use IDT API — export batch input" in controller
     for secret in (
         "IDT_ACCESS_TOKEN", "IDT_CLIENT_ID", "IDT_CLIENT_SECRET",
         "IDT_USERNAME", "IDT_PASSWORD",
@@ -129,12 +134,12 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert "hurdler-vector-route-panel" in sources
     assert "hurdler-ga-panel" in sources
     controller = sources["hurdler-controller-v2"]
-    assert 'value="api"' in controller
+    assert 'value="create"' in controller
     assert 'assembly_strategy="exact_reused_secondary_rdl"' in controller
     assert "widgets.BoundedIntText" in controller
     assert "widgets.BoundedFloatText" in controller
-    assert '"Minimum secondary copies", 12' in controller
-    assert '"Maximum secondary copies", 20' in controller
+    assert "widgets.IntRangeSlider" in controller
+    assert 'value=(12, 20), min=1, max=50' in controller
     assert 'options=(("Automatic to limit", "automatic"), ("Bounded copy range", "bounded"))' in controller
     assert '"Maximum GA→IDT feedback rounds", 100' in controller
     assert '"GA generations per feedback round", 10' in controller
@@ -156,7 +161,10 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert 'value=32, min=1, max=1_048_576, description="Total memory (GB)"' in controller
     assert 'value="24:00:00", description="Walltime"' in controller
     assert 'value="cpu", description="Partition"' in controller
-    assert 'value="~/.config/hurdler/idt.env"' in controller
+    assert 'EXTERNAL_IDT_CREDENTIAL_PATH = "~/.config/hurdler/idt.env"' in controller
+    assert "external_idt_credential_path" not in controller
+    assert 'description="Pause GA"' in controller
+    assert 'description="Stop GA"' in controller
     assert "CircularGraphicRecord" in _colab_cell_source("hurdler-imports")
 
 
@@ -207,18 +215,25 @@ def test_colab_secondary_search_supports_automatic_and_bounded_copy_ranges(
     colab_runtime_namespace,
 ):
     namespace = colab_runtime_namespace
-    assert namespace["secondary_search_mode_widget"].value == "automatic"
-    assert namespace["_secondary_bounds"]() == (1, None)
-    assert namespace["minimum_secondary_number"].disabled is True
-    namespace["secondary_search_mode_widget"].value = "bounded"
+    assert namespace["secondary_search_mode_widget"].value == "bounded"
+    assert namespace["_secondary_bounds"]() == (12, 20)
+    assert namespace["secondary_copy_range_widget"].value == (12, 20)
+    assert namespace["secondary_copy_range_widget"].min == 1
+    assert namespace["secondary_copy_range_widget"].max == 50
     namespace["minimum_secondary_number"].value = 4
     namespace["maximum_secondary_number"].value = 9
     assert namespace["_secondary_bounds"]() == (4, 9)
+    assert namespace["secondary_copy_range_widget"].value == (4, 9)
+    namespace["secondary_copy_range_widget"].value = (6, 11)
+    assert namespace["minimum_secondary_number"].value == 6
+    assert namespace["maximum_secondary_number"].value == 11
     assert "core" in namespace["secondary_length_status"].value
     assert "purchase" in namespace["secondary_length_status"].value
-    namespace["maximum_secondary_number"].value = 3
-    with pytest.raises(ValueError, match="cannot be smaller"):
-        namespace["_secondary_bounds"]()
+    namespace["minimum_secondary_number"].value = 15
+    assert namespace["maximum_secondary_number"].value == 15
+    namespace["secondary_search_mode_widget"].value = "automatic"
+    assert namespace["_secondary_bounds"]() == (1, None)
+    assert namespace["secondary_copy_range_widget"].disabled is True
 
 
 def test_colab_complete_fasta_preserves_header_and_requires_boundary_confirmation(
@@ -248,6 +263,22 @@ def test_colab_form_edit_invalidates_confirmed_route(colab_runtime_namespace):
     namespace["n_cap_widget"].value = "MM"
     assert namespace["state"]["confirmed_route"] is None
     assert namespace["design_button"].disabled is True
+    assert namespace["state"]["viewer_rows"] == []
+
+
+def test_colab_route_confirmation_previews_step00_before_ga(colab_runtime_namespace):
+    namespace = colab_runtime_namespace
+    assert namespace["viewer_panel"].layout.display == ""
+    assert namespace["state"]["viewer_rows"] == []
+    _confirm_first_colab_route(namespace)
+    rows = namespace["state"]["viewer_rows"]
+    assert len(rows) == 1
+    assert rows[0]["file"] == "step00_plasmid.gb"
+    assert Path(namespace["state"]["viewer_directory"], rows[0]["file"]).is_file()
+    assert namespace["viewer_step_widget"].value == 0
+    assert namespace["viewer_molecule_widget"].value == "plasmid"
+    assert namespace["viewer_view_widget"].value == "circular"
+    assert "Route preview ready" in namespace["viewer_status"].value
 
 
 def test_colab_external_bundle_freezes_request_and_is_invalidated_by_ga_edits(
@@ -257,7 +288,7 @@ def test_colab_external_bundle_freezes_request_and_is_invalidated_by_ga_edits(
     assert namespace["export_bundle_button"].disabled is True
     _confirm_first_colab_route(namespace)
     assert namespace["export_bundle_button"].disabled is False
-    namespace["validation_mode_widget"].value = "batch"
+    namespace["idt_setup_mode_widget"].value = "batch"
     namespace["output_directory_widget"].value = str(tmp_path / "runtime")
     namespace["external_worker_cpus"].value = 4
     namespace["external_memory_gb"].value = 12
@@ -285,18 +316,17 @@ def test_colab_external_bundle_freezes_request_and_is_invalidated_by_ga_edits(
     assert namespace["state"]["external_bundle"] is None
 
 
-def test_colab_secrets_prefers_access_token_and_clears_environment(colab_runtime_namespace):
+def test_colab_create_credentials_uses_hidden_fields_and_clears_secret_widgets(colab_runtime_namespace):
     namespace = colab_runtime_namespace
-    requested: list[str] = []
-
-    def reader(name: str) -> str:
-        requested.append(name)
-        return "temporary-token" if name == "IDT_ACCESS_TOKEN" else "must-not-be-read"
-
-    status = namespace["_configure_colab_secrets"](reader)
+    namespace["idt_setup_mode_widget"].value = "create"
+    namespace["idt_auth_method_widget"].value = "access_token"
+    namespace["idt_access_token_widget"].value = "temporary-token"
+    status = namespace["_configure_api_credentials"]()
     assert status["auth_method"] == "access_token"
-    assert requested == ["IDT_ACCESS_TOKEN"]
     assert os.environ["IDT_ACCESS_TOKEN"] == "temporary-token"
+    assert namespace["idt_access_token_widget"].value == ""
+    assert isinstance(namespace["state"]["credential_payload"], bytearray)
+    assert b"temporary-token" in bytes(namespace["state"]["credential_payload"])
     clear_idt_secret_environment()
     assert "IDT_ACCESS_TOKEN" not in os.environ
 
@@ -317,8 +347,7 @@ def test_colab_uploaded_env_clears_read_only_value_by_replacing_widget(
     value_trait = upload.traits()["value"]
     original_read_only = value_trait.read_only
     value_trait.read_only = True
-    namespace["credential_source"].value = "auto"
-    namespace["credential_path"].value = str(tmp_path / "not-present.env")
+    namespace["idt_setup_mode_widget"].value = "upload"
     try:
         status = namespace["_configure_api_credentials"]()
     finally:
@@ -327,7 +356,7 @@ def test_colab_uploaded_env_clears_read_only_value_by_replacing_widget(
     assert status["upload_retained"] is False
     assert namespace["credential_upload"] is not upload
     assert namespace["credential_upload"].value == ()
-    assert namespace["credential_upload_row"].children[1] is namespace["credential_upload"]
+    assert namespace["credential_upload_panel"].children[2].children[0] is namespace["credential_upload"]
     clear_idt_secret_environment()
 
 
@@ -378,10 +407,14 @@ def test_colab_live_support_cards_match_joint_filtered_routes(colab_runtime_name
     routes = result.vector_routes
     summary = namespace["enzyme_route_support"].value
     assert summary == namespace["plasmid_route_support"].value
-    assert f"Supported RE pairs:</b> {len({(row['site_i_enzyme'], row['site_ii_enzyme']) for row in routes}):,}" in summary
-    assert f"Available Site III:</b> {len({enzyme for row in routes for enzyme in row['site_iii_options']}):,}" in summary
-    assert f"Supported plasmids:</b> {len({row['profile_id'] for row in routes}):,}" in summary
-    assert f"Minimum restore:</b> {min(row['restoration_length_bp'] for row in routes)} bp" in summary
+    assert "Supported RE pairs:" in summary
+    assert f">{len({(row['site_i_enzyme'], row['site_ii_enzyme']) for row in routes}):,}</div>" in summary
+    assert "Available Site III:" in summary
+    assert f">{len({enzyme for row in routes for enzyme in row['site_iii_options']}):,}</div>" in summary
+    assert "Supported plasmids:" in summary
+    assert f">{len({row['profile_id'] for row in routes}):,}</div>" in summary
+    assert "Minimum restore:" in summary
+    assert f">{min(row['restoration_length_bp'] for row in routes)} bp</div>" in summary
 
 
 def test_colab_restore_limit_refilters_cache_and_invalidates_confirmation(
@@ -415,10 +448,10 @@ def test_colab_joint_re_pair_and_unsupported_plasmid_reports_zero(
     assert namespace["state"]["query_result"].status == "no_vector_route"
     summary = namespace["enzyme_route_support"].value
     assert summary == namespace["plasmid_route_support"].value
-    assert "Supported RE pairs:</b> 0" in summary
-    assert "Available Site III:</b> 0" in summary
-    assert "Supported plasmids:</b> 0" in summary
-    assert "Minimum restore:</b> —" in summary
+    assert "Supported RE pairs:" in summary and ">0</div>" in summary
+    assert "Available Site III:" in summary
+    assert "Supported plasmids:" in summary
+    assert "Minimum restore:" in summary and ">—</div>" in summary
 
 
 @pytest.mark.parametrize(
@@ -447,12 +480,19 @@ def _confirm_first_colab_route(namespace):
     assert namespace["state"]["confirmed_route"] is not None
 
 
+def _wait_for_colab_worker(namespace, timeout: float = 30.0):
+    worker = namespace["state"].get("run_thread")
+    assert worker is not None
+    worker.join(timeout=timeout)
+    assert not worker.is_alive(), "Colab GA worker did not finish"
+
+
 def test_colab_manual_route_batch_export_never_builds_an_idt_client(
     tmp_path, colab_runtime_namespace
 ):
     namespace = colab_runtime_namespace
     _confirm_first_colab_route(namespace)
-    namespace["validation_mode_widget"].value = "batch"
+    namespace["idt_setup_mode_widget"].value = "batch"
     namespace["population_number"].value = 4
     namespace["generation_schedule_widget"].value = "10,100"
     namespace["output_directory_widget"].value = str(tmp_path / "batch")
@@ -467,6 +507,7 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
 
     namespace["IDTComplexityScorer"] = MustNotBeConstructed
     namespace["_run_design"]()
+    _wait_for_colab_worker(namespace)
     summary = json.loads((tmp_path / "batch" / "design_summary.json").read_text())
     assert summary["status"] == "optimized_unvalidated_batch"
     assert summary["idt_audit"] == []
@@ -515,7 +556,8 @@ def test_colab_mock_secrets_api_flow_clears_credentials(
 ):
     namespace = colab_runtime_namespace
     _confirm_first_colab_route(namespace)
-    namespace["validation_mode_widget"].value = "api"
+    namespace["idt_setup_mode_widget"].value = "create"
+    namespace["idt_auth_method_widget"].value = "access_token"
     namespace["population_number"].value = 4
     namespace["generation_schedule_widget"].value = "10,100"
     namespace["output_directory_widget"].value = str(tmp_path / "api")
@@ -538,13 +580,17 @@ def test_colab_mock_secrets_api_flow_clears_credentials(
             }
 
     def configure_mock_secret():
-        return namespace["_configure_colab_secrets"](
-            lambda name: "temporary-token" if name == "IDT_ACCESS_TOKEN" else ""
-        )
+        os.environ["IDT_ACCESS_TOKEN"] = "temporary-token"
+        return {
+            "credential_mode": "manual",
+            "auth_method": "access_token",
+            "required_fields_complete": True,
+        }
 
     namespace["_configure_api_credentials"] = configure_mock_secret
     namespace["IDTComplexityScorer"] = lambda _audit_path: PassingScorer()
     namespace["_run_design"]()
+    _wait_for_colab_worker(namespace)
     summary = json.loads((tmp_path / "api" / "design_summary.json").read_text())
     assert summary["status"] == "idt_accepted"
     assert summary["idt_audit"]
@@ -561,6 +607,51 @@ def test_colab_mock_secrets_api_flow_clears_credentials(
         assert "best_secondary_purchase.fasta" in archive.namelist()
         assert "temporary-token" not in b"".join(archive.read(name) for name in archive.namelist()).decode()
     assert "IDT_ACCESS_TOKEN" not in os.environ
+
+
+def test_colab_pause_resume_and_stop_use_cooperative_background_control(
+    tmp_path, colab_runtime_namespace
+):
+    namespace = colab_runtime_namespace
+    _confirm_first_colab_route(namespace)
+    namespace["idt_setup_mode_widget"].value = "batch"
+    namespace["output_directory_widget"].value = str(tmp_path / "stopped")
+    namespace["auto_download_widget"].value = False
+    started = threading.Event()
+    iterations: list[int] = []
+
+    def slow_design(_request, *, run_control, **_kwargs):
+        started.set()
+        for index in range(10_000):
+            run_control.safe_point()
+            iterations.append(index)
+            time.sleep(0.002)
+        raise AssertionError("test run should have been stopped")
+
+    namespace["design_construct_v2"] = slow_design
+    namespace["_run_design"]()
+    assert started.wait(2)
+    namespace["_pause_or_resume"]()
+    time.sleep(0.08)
+    paused_count = len(iterations)
+    time.sleep(0.08)
+    assert len(iterations) == paused_count
+    assert namespace["pause_button"].description == "Resume GA"
+    namespace["_pause_or_resume"]()
+    deadline = time.time() + 2
+    while len(iterations) == paused_count and time.time() < deadline:
+        time.sleep(0.01)
+    assert len(iterations) > paused_count
+    namespace["_stop_design"]()
+    _wait_for_colab_worker(namespace)
+    assert namespace["state"]["run_terminal_status"] == "stopped_by_user"
+    assert namespace["state"]["run_active"] is False
+    checkpoint = Path(namespace["state"]["checkpoint_archive"])
+    assert checkpoint.is_file()
+    with zipfile.ZipFile(checkpoint) as archive:
+        payload = json.loads(archive.read("checkpoint.json"))
+    assert payload["run_status"] == "stopped_by_user"
+    assert "best_secondary_core.fasta" not in zipfile.ZipFile(checkpoint).namelist()
 
 
 def test_readme_notebook_links_resolve():
