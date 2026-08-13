@@ -31,6 +31,7 @@ from .ga_optimization import (
 )
 from .dna_assembly import IDT_FRIENDLY_CLAMP, _type_iis_flank, load_enzyme_catalog
 from .io import sha256_file, utc_now, write_json_atomic
+from .idt_trajectory import write_idt_score_trajectory
 from .optimization import (
     diversify_codons,
     load_codon_weights,
@@ -819,7 +820,16 @@ def _evaluate_split_copy_count(
         )
         for row in audits:
             row.update({"repeat_copies": copy_count, "ga_generations": generations})
+        first_evaluation_index = len(aggregate_audit) + 1
         aggregate_audit.extend(audits)
+        _emit_idt_audit_progress(
+            audits,
+            progress_callback=progress_callback,
+            first_evaluation_index=first_evaluation_index,
+            fragment_kind="legacy_whole_construct",
+            copies=int(copy_count),
+            generations=int(generations),
+        )
         if not idt_pass and request.auto_adjust_weights_from_idt:
             for row in audits:
                 updated, _changes = adjust_ga_score_profile_from_idt(score_profile, row)
@@ -971,6 +981,90 @@ def _strict_idt_audit(audits: Sequence[Mapping[str, Any]]) -> None:
                 response_sha256=response_sha,
                 invalid_rules=tuple(str(value) for value in invalid),
             )
+
+
+def _json_mapping(value: Any) -> dict[str, Any]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
+def _json_list(value: Any) -> list[Any]:
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return list(parsed) if isinstance(parsed, list) else []
+
+
+def _emit_idt_audit_progress(
+    audits: Sequence[Mapping[str, Any]],
+    *,
+    progress_callback: ProgressCallback | None,
+    first_evaluation_index: int,
+    fragment_kind: str,
+    copies: int | None,
+    generations: int | None,
+    feedback_round: int | None = None,
+    max_feedback_rounds: int | None = None,
+    elapsed_seconds: float | None = None,
+) -> None:
+    """Emit one credential-free event for every scored purchase fragment."""
+    for offset, audit in enumerate(audits):
+        raw_scores = _json_mapping(audit.get("idt_rule_scores_json"))
+        rule_scores = {
+            str(name): float(score)
+            for name, score in raw_scores.items()
+            if _finite_number(score) is not None
+        }
+        reasons: dict[str, str] = {}
+        for detail in _json_list(audit.get("idt_rule_details_json")):
+            if not isinstance(detail, dict):
+                continue
+            score = _finite_number(detail.get("score"))
+            if not (bool(detail.get("is_violated")) or (score is not None and score > 0)):
+                continue
+            name = str(detail.get("name") or "unnamed_rule")
+            reason = str(detail.get("display_text") or "").strip()
+            reasons[name] = reason or "positive IDT rule score"
+        score = _finite_number(audit.get("idt_complexity_score"))
+        if audit.get("idt_explicit_pass") is True and score is not None and score < 10:
+            classification = "passed"
+        elif bool(audit.get("idt_score_complete")) and score is not None:
+            classification = "rejected"
+        else:
+            classification = "unclassified"
+        positive_rules = tuple(
+            sorted(name for name, value in rule_scores.items() if value > 0)
+        )
+        emit_progress(
+            progress_callback,
+            stage="idt",
+            status="fragment_scored",
+            event_name="idt_fragment_scored",
+            fragment_kind=fragment_kind,
+            copies=copies,
+            generations=generations,
+            feedback_round=feedback_round,
+            max_feedback_rounds=max_feedback_rounds,
+            idt_score=score,
+            idt_positive_rules=positive_rules,
+            idt_evaluation_index=int(first_evaluation_index + offset),
+            idt_fragment_name=str(audit.get("fragment_id") or "fragment"),
+            idt_rule_scores=rule_scores,
+            idt_rule_reasons=reasons,
+            idt_response_sha256=str(audit.get("response_sha256") or ""),
+            idt_cache_hit=bool(audit.get("idt_cache_hit", False)),
+            idt_classification=classification,
+            elapsed_seconds=elapsed_seconds,
+            details={
+                "request_length_bp": audit.get("request_length_bp"),
+                "idt_status": str(audit.get("idt_status") or "unknown"),
+                "score_complete": bool(audit.get("idt_score_complete")),
+            },
+        )
 
 
 def _adapt_ga_parameters_from_idt(
@@ -1400,7 +1494,19 @@ def _rdl_fragment_attempt(
                 "ga_generations": int(generations),
                 "feedback_round": int(feedback_round),
             })
+        first_evaluation_index = len(aggregate_audit) + 1
         aggregate_audit.extend(audits)
+        _emit_idt_audit_progress(
+            audits,
+            progress_callback=progress_callback,
+            first_evaluation_index=first_evaluation_index,
+            fragment_kind=fragment_kind,
+            copies=int(copies),
+            generations=int(generations),
+            feedback_round=int(feedback_round),
+            max_feedback_rounds=int(request.max_idt_feedback_rounds),
+            elapsed_seconds=time.monotonic() - started,
+        )
         _strict_idt_audit(audits)
         positive_rules: list[str] = []
         for row in audits:
@@ -2388,7 +2494,23 @@ def design_construct_v2(
                 idt_scorer,
                 safe_point=run_control.safe_point if run_control is not None else None,
             )
+            for row in audit:
+                row.update(
+                    {
+                        "fragment_kind": "single_exact",
+                        "ga_generations": int(generations),
+                    }
+                )
+            first_evaluation_index = len(result.idt_audit) + 1
             result.idt_audit.extend(audit)
+            _emit_idt_audit_progress(
+                audit,
+                progress_callback=progress_callback,
+                first_evaluation_index=first_evaluation_index,
+                fragment_kind="single_exact",
+                copies=None,
+                generations=int(generations),
+            )
             if not idt_pass and request.auto_adjust_weights_from_idt:
                 for row in audit:
                     profile, _ = adjust_ga_score_profile_from_idt(profile, row)
@@ -2528,6 +2650,7 @@ def write_design_outputs_v2(result: DesignResultV2, output_dir: str | Path) -> d
     audit = destination / "idt_audit.jsonl"
     audit.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in result.idt_audit))
     paths["idt_audit_jsonl"] = str(audit)
+    paths.update(write_idt_score_trajectory(result.idt_audit, destination))
     manifest = {
         "schema_version": DESIGN_SCHEMA_VERSION_V2,
         "created_at": utc_now(),

@@ -56,20 +56,23 @@ boundary while Site II is re-silenced after ligation.
 
 ## Tutorial workflow
 
-1. Choose temporary Colab storage or explicitly mount Google Drive. Computation
-   always runs under `/content`; Drive receives only checkpoint/final ZIP files.
+1. Configure temporary or Google Drive storage and choose one credential-safe IDT mode.
+   Computation always runs under `/content`; Drive receives only checkpoint/final ZIP files.
 2. Choose exactly one protein input mode. The supplied split example is visible
    by default; the complete-protein/FASTA box stays hidden until selected.
-3. Select individual RE enzymes and plasmids. The live cards count only routes
+3. Select individual RE enzymes and plasmids, then run the molecular query. The live cards count only routes
    jointly supported by the current RE, plasmid and restore-length filters.
-4. Run the molecular query, then explicitly choose Site I/II, Site III,
+4. Explicitly choose Site I/II, Site III,
    plasmid and cut scheme. Changing an upstream field invalidates confirmation.
-5. Choose automatic secondary exploration (from one repeat to the physical
+5. Inspect the independent plasmid/insert viewer. Route confirmation immediately
+   loads the annotated circular step00 plasmid; completed GA runs add every step.
+6. Choose automatic secondary exploration (from one repeat to the physical
    limit) or a bounded repeat-copy range. The GA preserves translation and uses
    repeated RE sites, GC, repeated k-mers, hairpin proxies and codon usage in
    its score. In Live API mode every completed candidate is sent to IDT for
    **complexity scoring only**; HURDLER never uses an IDT optimization result.
-6. Either run GA inside Colab or export a reproducible Local + Slurm bundle.
+   A live trajectory plots every IDT fragment score and all returned rule components.
+   Either run GA inside Colab or export a reproducible Local + Slurm bundle.
    The external bundle freezes the complete request, exact Git commit, Conda
    YAML, 16-CPU/32-GB/24-hour defaults, checkpoint commands and an external
    mode-600 IDT credential path; it never copies credential values.
@@ -402,32 +405,44 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+def _run_hidden(command):
+    completed = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if completed.returncode:
+        tail = (completed.stdout or "")[-4000:]
+        raise RuntimeError(f"Initialization command failed ({completed.returncode}): {tail}")
+    return completed
+
+
 repository_dir = Path("/content/clone_repeat_protein")
 try:
     import google.colab  # noqa: F401
 except ImportError:
-    running_in_colab = repository_dir.parent.is_dir()
+    running_in_colab = False
 else:
     running_in_colab = True
 
 if running_in_colab:
     if (repository_dir / ".git").is_dir():
-        subprocess.run(
+        _run_hidden(
             ["git", "-C", str(repository_dir), "fetch", "--depth=1", "origin", repository_ref],
-            check=True,
         )
-        subprocess.run(
+        _run_hidden(
             ["git", "-C", str(repository_dir), "checkout", "--detach", "FETCH_HEAD"],
-            check=True,
         )
     else:
-        subprocess.run([
+        _run_hidden([
             "git", "clone", "--branch", repository_ref, "--single-branch",
             "https://github.com/Wenzhao-protein/clone_repeat_protein",
             str(repository_dir),
-        ], check=True)
+        ])
     os.chdir(repository_dir)
-    subprocess.run([sys.executable, "-m", "pip", "install", "-e", ".[notebooks,optimization]"], check=True)
+    _run_hidden([sys.executable, "-m", "pip", "install", "-e", ".[notebooks,optimization]"])
     source_dir = str(repository_dir / "src")
     if source_dir not in sys.path:
         sys.path.insert(0, source_dir)
@@ -442,7 +457,7 @@ elif importlib.util.find_spec("hurdler") is None:
     )
 
 hurdler_package = importlib.import_module("hurdler")
-print(f"HURDLER ready: {Path(hurdler_package.__file__).resolve()}")
+hurdler_initialization_message = f"HURDLER ready: {Path(hurdler_package.__file__).resolve()}"
 '''
 
 
@@ -455,9 +470,12 @@ COLAB_PROTEIN_FORM = r'''display(protein_input_panel)'''
 COLAB_SELECTOR_POLICY_FORM = r'''display(cutter_policy_panel)'''
 
 
-COLAB_IMPORTS = r'''import hashlib
+COLAB_IMPORTS = r'''import asyncio
+import hashlib
+import html
 import json
 import os
+import queue
 import shutil
 import subprocess
 import tempfile
@@ -472,6 +490,7 @@ import pandas as pd
 import ipywidgets as widgets
 from Bio import SeqIO
 from dna_features_viewer import BiopythonTranslator, CircularGraphicRecord
+from IPython import get_ipython
 from IPython.display import Javascript, Markdown, clear_output, display
 import matplotlib.pyplot as plt
 
@@ -482,6 +501,7 @@ from hurdler.idt import (
     configure_idt_credentials_from_bytes,
     configure_idt_credentials_from_values,
 )
+from hurdler.idt_trajectory import idt_score_history_rows, plot_idt_score_trajectory
 from hurdler.design import role_enzyme_options
 from hurdler.optimization import translate_dna
 from hurdler.design_artifacts import (
@@ -895,12 +915,12 @@ COLAB_CONTROLLER_V2 = r'''PLASMID_OPTIONS = (
 def _help_card(title, widget, *, unit, default, purpose, allowed, effect):
     return widgets.VBox([
         widgets.HTML(
-            f"<b>{title}</b> <span style='color:#666'>[{unit}]</span><br>"
+            f"<b style='color:#111827'>{title}</b> <span style='color:#4b5563'>[{unit}]</span><br>"
             f"<small><b>Default:</b> {default} · <b>Allowed:</b> {allowed}<br>"
             f"<b>Purpose:</b> {purpose}<br><b>Effect:</b> {effect}</small>"
         ),
         widget,
-    ], layout=widgets.Layout(border="1px solid #ddd", padding="7px", margin="3px 0"))
+    ], layout=widgets.Layout(border="1px solid #d1d5db", padding="7px", margin="3px 0"))
 
 
 # Storage is opt-in. Merely choosing Drive does not authenticate or mount it.
@@ -952,7 +972,7 @@ def _storage_mode_changed(_change=None):
 
 storage_mode_widget.observe(_storage_mode_changed, names="value")
 storage_panel = widgets.VBox([
-    widgets.HTML("<h2>0. Choose result storage</h2>"),
+    widgets.HTML("<h3>Result storage</h3>"),
     _help_card(
         "Storage destination", storage_mode_widget, unit="mode", default="Colab temporary storage",
         purpose="Controls whether recovery/final ZIP files are also copied to Google Drive.",
@@ -1016,7 +1036,7 @@ def _sync_input_panel(_change=None):
 
 _sync_input_panel()
 protein_input_panel = widgets.VBox([
-    widgets.HTML("<h2>1. Enter the repeat protein</h2><p>Use the two buttons to switch input methods; only the active method is read.</p>"),
+    widgets.HTML("<p>Use the two buttons to switch input methods; only the active method is read.</p>"),
     _help_card("Protein input method", input_mode_widget, unit="mode", default="split tutorial example", purpose="Chooses explicit cap/module/copy input or one complete protein.", allowed="one of two buttons", effect="Switching invalidates cached routes and confirmed designs."),
     _help_card("Sequence identifier", sequence_id_widget, unit="text", default="interactive_design or FASTA header", purpose="Names result records and ZIP files.", allowed="short text", effect="Does not change molecular compatibility."),
     split_input_panel, full_input_panel,
@@ -1129,6 +1149,14 @@ state = {
     "run_thread": None,
     "run_active": False,
     "run_terminal_status": None,
+    "run_id": 0,
+    "progress_queue": queue.Queue(),
+    "progress_lock": threading.Lock(),
+    "ui_pump_task": None,
+    "visible_log_lines": [],
+    "idt_score_events": [],
+    "run_started_monotonic": None,
+    "last_progress_monotonic": None,
     "viewer_rows": [],
     "viewer_directory": None,
     "checkpoint_lock": threading.Lock(),
@@ -1274,7 +1302,6 @@ def _invalidate_confirmation(message=""):
     state["confirmed_site_iii"] = None
     state["confirmed_fingerprint"] = None
     confirm_button.disabled = True
-    ga_panel.layout.display = "none"
     design_button.disabled = True
     download_button.disabled = True
     state["design_result"] = None
@@ -1284,6 +1311,18 @@ def _invalidate_confirmation(message=""):
         export_bundle_button.disabled = True
     if "viewer_panel" in globals():
         _reset_viewer_placeholder()
+    if "results_status" in globals():
+        results_status.value = (
+            "<div style='border:2px dashed #4b2e83;background:#ffffff;color:#111827;"
+            "border-radius:8px;padding:12px'>No current result. Confirm a route and start a new run.</div>"
+        )
+    if "design_output" in globals():
+        with design_output:
+            clear_output(wait=True)
+    if "idt_plot_status" in globals() and not state.get("run_active"):
+        _set_idt_plot_placeholder(
+            "No IDT scores yet. The trajectory updates after each scored purchase fragment."
+        )
     if message:
         with route_output:
             clear_output(wait=True)
@@ -1626,9 +1665,7 @@ def _confirm_route(_button=None):
         state["confirmed_route"] = route
         state["confirmed_site_iii"] = str(site_iii_choice.value)
         state["confirmed_fingerprint"] = current
-        ga_panel.layout.display = ""
-        design_button.disabled = False
-        export_bundle_button.disabled = False
+        _sync_execution_target()
         _update_secondary_lengths()
         try:
             _prepare_route_preview()
@@ -1943,7 +1980,7 @@ external_resource_panel = widgets.Accordion(children=[widgets.VBox([
         "Colab credentials are never copied into the bundle. Batch bundles omit all IDT arguments.</div>"
     ),
 ])])
-external_resource_panel.set_title(0, "External Local / Slurm resources")
+external_resource_panel.set_title(0, "Resource request")
 external_resource_panel.selected_index = None
 
 
@@ -1955,19 +1992,22 @@ settings_mode.observe(_sync_settings, names="value")
 _sync_settings()
 
 credential_registration_help = widgets.HTML(
-    "<div style='border-left:5px solid #4b2e83;background:#f4f0fa;padding:12px'>"
-    "<b>Create an IDT SciTools API client</b><ol>"
+    "<div style='border:2px solid #4b2e83;border-left-width:6px;background:#ffffff;"
+    "color:#111827;padding:14px;border-radius:8px;line-height:1.45'>"
+    "<b style='color:#3b1f69;font-size:16px'>Create an IDT SciTools API client</b><ol style='color:#111827'>"
     "<li><a href='https://www.idtdna.com/page/tools/scitools-plus-api-overview' target='_blank'>"
     "Sign in or create an IDT account</a>.</li>"
     "<li>Open <b>My Account → API access → Request new API key</b>.</li>"
     "<li>Choose a unique Client ID, accept the API terms, and securely copy the generated Client secret.</li>"
     "<li>Enter the four password-grant fields below, or choose Access token.</li></ol>"
-    "<b>Password-grant file</b><pre>IDT_CLIENT_ID=your_client_id\nIDT_CLIENT_SECRET=your_client_secret\n"
+    "<b style='color:#111827'>Password-grant file</b><pre style='background:#f9fafb;color:#111827;"
+    "border:1px solid #d1d5db;padding:8px'>IDT_CLIENT_ID=your_client_id\nIDT_CLIENT_SECRET=your_client_secret\n"
     "IDT_USERNAME=your_idt_username\nIDT_PASSWORD=your_idt_password</pre>"
-    "<b>Access-token file</b><pre>IDT_ACCESS_TOKEN=your_current_access_token</pre></div>"
+    "<b style='color:#111827'>Access-token file</b><pre style='background:#f9fafb;color:#111827;"
+    "border:1px solid #d1d5db;padding:8px'>IDT_ACCESS_TOKEN=your_current_access_token</pre></div>"
 )
 credential_security_notice = widgets.HTML(
-    "<div style='border:2px solid #2d6a4f;background:#effaf4;border-radius:8px;padding:10px'>"
+    "<div style='border:2px solid #2d6a4f;background:#effaf4;color:#111827;border-radius:8px;padding:10px'>"
     "<b>Credential handling:</b> this notebook does not write secrets to notebook output, the repository, "
     "logs, Drive, checkpoints, or result bundles. Values remain only in this Colab kernel and are sent only "
     "to IDT OAuth/API endpoints. Colab is still a third-party runtime; use a temporary access token if that is preferred."
@@ -2017,16 +2057,32 @@ idt_credential_panel = widgets.VBox([
 ])
 
 stage_html = widgets.HTML(
-    "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
+    "<div style='border:2px solid #4b2e83;background:#f4f0fa;color:#111827;border-radius:8px;padding:10px'>"
     "<b>Status:</b> waiting for route confirmation</div>"
 )
 generation_progress = widgets.IntProgress(value=0, min=0, max=1, description="GA")
 current_html = widgets.HTML("")
 attempt_log_html = widgets.HTML(
-    "<pre>No attempts yet.</pre>",
+    "<pre style='color:#111827;background:#ffffff'>Waiting for a confirmed route and GA start.</pre>",
     layout=widgets.Layout(height="230px", overflow="auto", border="1px solid #ccc", padding="8px"),
 )
+idt_plot_status = widgets.HTML(
+    "<div style='border:2px dashed #4b2e83;background:#ffffff;color:#111827;"
+    "border-radius:8px;padding:12px'>No IDT scores yet. The trajectory updates after each scored purchase fragment.</div>"
+)
+idt_plot_output = widgets.Output()
+idt_score_table_output = widgets.Output()
 design_output = widgets.Output()
+results_status = widgets.HTML(
+    "<div style='border:2px dashed #4b2e83;background:#ffffff;color:#111827;"
+    "border-radius:8px;padding:12px'>No optimization result yet. Confirm a route, then run in Colab or export the external bundle.</div>"
+)
+execution_target_widget = widgets.ToggleButtons(
+    options=(("Run in Colab", "colab"), ("Local / Slurm bundle", "external")),
+    value="colab",
+    description="Execution target",
+    layout=widgets.Layout(width="100%"),
+)
 design_button = widgets.Button(
     description="Run GA in Colab", icon="play", disabled=True,
     layout=widgets.Layout(width="230px", height="44px"),
@@ -2037,9 +2093,9 @@ pause_button = widgets.Button(description="Pause GA", icon="pause", disabled=Tru
 pause_button.style.button_color = "#b7a57a"
 stop_button = widgets.Button(description="Stop GA", icon="stop", disabled=True, button_style="danger")
 export_bundle_button = widgets.Button(
-    description="Export local / Slurm GA bundle", button_style="info", icon="archive", disabled=True
+    description="Download Local / Slurm bundle", button_style="info", icon="archive", disabled=True
 )
-download_button = widgets.Button(description="Download design ZIP", icon="download", disabled=True)
+download_button = widgets.Button(description="Download results ZIP", icon="download", disabled=True)
 external_bundle_output = widgets.Output()
 
 
@@ -2052,21 +2108,78 @@ def _generation_schedule():
     return values
 
 
-def _dispatch_ui(callback, *args):
-    """Marshal background-worker updates onto the notebook I/O loop."""
-    try:
-        shell = get_ipython()
-        io_loop = shell.kernel.io_loop
-    except Exception:
-        callback(*args)
-    else:
-        io_loop.add_callback(callback, *args)
+def _set_idt_plot_placeholder(message):
+    idt_plot_status.value = (
+        "<div style='border:2px dashed #4b2e83;background:#ffffff;color:#111827;"
+        f"border-radius:8px;padding:12px'>{html.escape(str(message))}</div>"
+    )
+    with idt_plot_output:
+        clear_output(wait=True)
+    with idt_score_table_output:
+        clear_output(wait=True)
+
+
+def _render_idt_trajectory():
+    rows = idt_score_history_rows(state["idt_score_events"])
+    if not rows:
+        _set_idt_plot_placeholder(
+            "No IDT scores yet. The trajectory updates after each scored purchase fragment."
+        )
+        return
+    idt_plot_status.value = (
+        "<div style='border:2px solid #2d6a4f;background:#effaf4;color:#111827;"
+        f"border-radius:8px;padding:10px'><b>{len(rows)} IDT evaluations received.</b> "
+        "Green points pass, red points fail, and grey points are unclassified.</div>"
+    )
+    with idt_plot_output:
+        clear_output(wait=True)
+        figure = plot_idt_score_trajectory(rows, title="Live IDT complexity score trajectory")
+        display(figure)
+        plt.close(figure)
+    with idt_score_table_output:
+        clear_output(wait=True)
+        columns = [
+            "evaluation_index", "fragment_id", "fragment_kind", "repeat_copies",
+            "feedback_round", "idt_total_score", "idt_classification",
+            "idt_cache_hit", "positive_rule_names_json",
+        ]
+        display(pd.DataFrame(rows)[columns].tail(10))
+
+
+def _should_log_progress(event):
+    if event.stage == "ga" and event.status == "running":
+        generation = int(event.generation or 0)
+        final_generation = int(event.generations or 0)
+        return bool(
+            verbose_generations.value
+            or generation == 1
+            or generation == final_generation
+            or generation % 5 == 0
+        )
+    return event.status in {
+        "started", "attempt_started", "attempt_completed", "request_started",
+        "fragment_scored", "request_completed", "completed", "failed",
+        "parameters_adjusted", "no_novel_candidate",
+    }
+
+
+def _progress_line(event):
+    return (
+        f"{event.stage:<12} {event.status:<18} {event.fragment_kind or '-':<12} "
+        f"copies={event.copies if event.copies is not None else '-'} "
+        f"feedback={event.feedback_round if event.feedback_round is not None else '-'}/"
+        f"{event.max_feedback_rounds if event.max_feedback_rounds is not None else '-'} "
+        f"gen={event.generation if event.generation is not None else '-'}/"
+        f"{event.generations if event.generations is not None else '-'} "
+        f"ga={event.ga_score if event.ga_score is not None else '-'} "
+        f"idt={event.idt_score if event.idt_score is not None else '-'}"
+    )
 
 
 def _render_progress(event: DesignProgressEvent):
     stage_html.value = (
-        "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
-        f"<b>Status:</b> {event.stage} · {event.status}</div>"
+        "<div style='border:2px solid #4b2e83;background:#f4f0fa;color:#111827;border-radius:8px;padding:10px'>"
+        f"<b>Status:</b> {html.escape(event.stage)} · {html.escape(event.status)}</div>"
     )
     if event.generations:
         generation_progress.max = max(1, int(event.generations))
@@ -2084,32 +2197,108 @@ def _render_progress(event: DesignProgressEvent):
         f"{event.crossover_rate if event.crossover_rate is not None else '—'} "
         f"· elapsed={event.elapsed_seconds or 0:.1f}s"
     )
-    keep = event.status in {
-        "attempt_completed", "request_completed", "completed", "failed",
-        "parameters_adjusted", "no_novel_candidate",
-    }
-    keep = keep or (verbose_generations.value and event.stage == "ga")
-    if keep:
-        lines = [
-            f"{row['stage']:<12} {row['status']:<18} {row.get('fragment_kind') or '-':<10} "
-            f"copies={row.get('copies')} feedback={row.get('feedback_round')}/{row.get('max_feedback_rounds')} "
-            f"gen={row.get('generation')}/{row.get('generations')} score={row.get('ga_score')} "
-            f"idt={row.get('idt_score')} pop={row.get('population_size')} "
-            f"mut={row.get('mutation_rate')} xover={row.get('crossover_rate')}"
-            for row in state["progress_events"][-16:]
-            if row["status"] in {
-                "attempt_completed", "request_completed", "completed", "failed",
-                "parameters_adjusted", "no_novel_candidate",
-            }
-            or (verbose_generations.value and row["stage"] == "ga")
-        ]
-        attempt_log_html.value = "<pre>" + "\n".join(lines[-12:]) + "</pre>"
+    if _should_log_progress(event):
+        state["visible_log_lines"].append(_progress_line(event))
+        attempt_log_html.value = (
+            "<pre style='color:#111827;background:#ffffff'>"
+            + html.escape("\n".join(state["visible_log_lines"][-18:]))
+            + "</pre>"
+        )
+    if event.stage == "idt" and event.status == "fragment_scored":
+        state["idt_score_events"].append(event.to_dict())
+        _render_idt_trajectory()
 
 
-def _progress_update(event: DesignProgressEvent):
-    state["progress_events"].append(event.to_dict())
+def _progress_update(event: DesignProgressEvent, run_id=None):
+    active_run_id = int(state.get("run_id", 0))
+    run_id = active_run_id if run_id is None else int(run_id)
+    if run_id != active_run_id:
+        return
+    with state["progress_lock"]:
+        state["progress_events"].append(event.to_dict())
+        state["last_progress_monotonic"] = time.monotonic()
     _persist_checkpoint(force=False)
-    _dispatch_ui(_render_progress, event)
+    state["progress_queue"].put(("progress", run_id, event))
+
+
+def _drain_ui_events(max_items=100):
+    handled = 0
+    while handled < int(max_items):
+        try:
+            kind, run_id, payload = state["progress_queue"].get_nowait()
+        except queue.Empty:
+            break
+        handled += 1
+        if int(run_id) != int(state.get("run_id", 0)):
+            continue
+        if kind == "progress":
+            _render_progress(payload)
+        elif kind == "success":
+            _finish_design_success(*payload)
+        elif kind == "stopped":
+            _finish_design_stopped()
+        elif kind == "error":
+            _finish_design_error(*payload)
+        elif kind == "stage_html":
+            stage_html.value = str(payload)
+    return handled
+
+
+async def _ui_event_pump(run_id):
+    try:
+        while int(run_id) == int(state.get("run_id", 0)):
+            _drain_ui_events()
+            if not state.get("run_active") and state["progress_queue"].empty():
+                break
+            last = state.get("last_progress_monotonic") or state.get("run_started_monotonic")
+            if state.get("run_active") and last is not None:
+                idle = time.monotonic() - float(last)
+                elapsed = time.monotonic() - float(state["run_started_monotonic"])
+                if idle >= 2.0:
+                    stage_html.value = (
+                        "<div style='border:2px solid #4b2e83;background:#f4f0fa;color:#111827;"
+                        "border-radius:8px;padding:10px'><b>Status:</b> GA worker active inside the current "
+                        f"fitness/API unit · elapsed {elapsed:.1f}s · last event {idle:.1f}s ago</div>"
+                    )
+            worker = state.get("run_thread")
+            if state.get("run_active") and worker is not None and not worker.is_alive() and state["progress_queue"].empty():
+                _finish_design_error("WorkerExited", "GA worker ended without a terminal event")
+                break
+            await asyncio.sleep(0.2)
+    except asyncio.CancelledError:
+        return
+    except Exception as exc:
+        if int(run_id) == int(state.get("run_id", 0)) and state.get("run_active"):
+            _finish_design_error(type(exc).__name__, f"UI event pump failed: {exc}")
+
+
+def _start_ui_event_pump(run_id):
+    previous = state.get("ui_pump_task")
+    if previous is not None and not previous.done():
+        previous.cancel()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Some ipykernel/Colab releases execute widget callbacks outside the
+        # asyncio task while their Tornado IOLoop is still the authoritative
+        # UI thread. Schedule creation there instead of letting the worker
+        # thread touch widget state.
+        shell = get_ipython()
+        io_loop = getattr(getattr(shell, "kernel", None), "io_loop", None)
+        if io_loop is None:
+            state["ui_pump_task"] = None
+            return None
+
+        def _schedule_on_kernel_loop():
+            if int(run_id) != int(state.get("run_id", 0)):
+                return
+            state["ui_pump_task"] = asyncio.ensure_future(_ui_event_pump(int(run_id)))
+
+        io_loop.add_callback(_schedule_on_kernel_loop)
+        return "scheduled_on_kernel_loop"
+    task = loop.create_task(_ui_event_pump(int(run_id)))
+    state["ui_pump_task"] = task
+    return task
 
 
 def _checkpoint_local_path():
@@ -2187,7 +2376,9 @@ def _checkpoint_update(payload):
             f"<b>Checkpoint saved:</b> {checkpoint['repeat_copies']} secondary copies · "
             f"IDT {checkpoint['idt_complexity_score']} · {Path(state['checkpoint_archive']).name}</div>"
         )
-        _dispatch_ui(setattr, stage_html, "value", message)
+        state["progress_queue"].put((
+            "stage_html", int(state.get("run_id", 0)), message
+        ))
 
 
 def _validation_mode():
@@ -2313,6 +2504,15 @@ def _sync_idt_setup(change=None):
         if mode == "batch"
         else "<b>IDT status:</b> credentials remain only in this kernel and have not been tested"
     )
+    if "idt_plot_status" in globals() and not state.get("run_active"):
+        if mode == "batch":
+            _set_idt_plot_placeholder(
+                "IDT API disabled. GA will export Bulk Input files; no score trajectory is claimed."
+            )
+        else:
+            _set_idt_plot_placeholder(
+                "No IDT scores yet. The trajectory updates after each scored purchase fragment."
+            )
     if "_invalidate_external_bundle" in globals():
         _invalidate_external_bundle()
 
@@ -2514,10 +2714,11 @@ def _set_run_active(active):
     for widget in ga_request_widgets:
         widget.disabled = bool(active)
     credential_upload.disabled = bool(active)
-    design_button.disabled = bool(active) or state.get("confirmed_route") is None
-    export_bundle_button.disabled = bool(active) or state.get("confirmed_route") is None
-    pause_button.disabled = not active
-    stop_button.disabled = not active
+    confirmed = state.get("confirmed_route") is not None
+    design_button.disabled = bool(active) or not confirmed or execution_target_widget.value != "colab"
+    export_bundle_button.disabled = bool(active) or not confirmed or execution_target_widget.value != "external"
+    pause_button.disabled = not active or execution_target_widget.value != "colab"
+    stop_button.disabled = not active or execution_target_widget.value != "colab"
     if not active:
         pause_button.description = "Pause GA"
         pause_button.icon = "pause"
@@ -2532,6 +2733,11 @@ def _finish_design_success(result, files, archive, output_directory, drive_archi
     state["run_terminal_status"] = result.status
     download_button.disabled = False
     _prepare_viewer(result, output_directory)
+    results_status.value = (
+        "<div style='border:2px solid #2d6a4f;background:#effaf4;color:#111827;"
+        f"border-radius:8px;padding:10px'><b>Result ready:</b> {html.escape(result.status)} · "
+        f"{html.escape(result.message)}</div>"
+    )
     stage_html.value = (
         "<div style='border:2px solid #2d6a4f;background:#effaf4;border-radius:8px;padding:10px'>"
         f"<b>Status:</b> {result.status}</div>"
@@ -2568,6 +2774,10 @@ def _finish_design_stopped():
         "<div style='border:2px solid #b31b1b;background:#fff2f2;border-radius:8px;padding:10px'>"
         "<b>Status:</b> stopped_by_user · checkpoint preserved</div>"
     )
+    results_status.value = (
+        "<div style='border:2px solid #b7a57a;background:#fffaf0;color:#111827;"
+        "border-radius:8px;padding:10px'><b>Stopped by user.</b> The latest checkpoint and audit were preserved.</div>"
+    )
     with design_output:
         display(Markdown(
             "**GA stopped by the user at a safe point.** The current audit and checkpoint were preserved; "
@@ -2578,9 +2788,15 @@ def _finish_design_stopped():
 
 
 def _finish_design_error(error_type, message):
+    state["run_terminal_status"] = "failed"
     stage_html.value = (
         "<div style='border:2px solid #b31b1b;background:#fff2f2;border-radius:8px;padding:10px'>"
         f"<b>Status:</b> failed · {error_type}</div>"
+    )
+    results_status.value = (
+        "<div style='border:2px solid #b31b1b;background:#fff2f2;color:#111827;"
+        f"border-radius:8px;padding:10px'><b>Run failed:</b> {html.escape(str(error_type))} · "
+        f"{html.escape(str(message)[:500])}</div>"
     )
     with design_output:
         display(Markdown(f"**Design failed safely:** `{error_type}: {message[:500]}`"))
@@ -2588,7 +2804,7 @@ def _finish_design_error(error_type, message):
     state["run_control"] = None
 
 
-def _run_design_worker(request, query, output_directory, control):
+def _run_design_worker(request, query, output_directory, control, run_id):
     try:
         scorer = (
             IDTComplexityScorer(output_directory / "idt_audit.jsonl")
@@ -2598,7 +2814,7 @@ def _run_design_worker(request, query, output_directory, control):
         result = design_construct_v2(
             request,
             idt_scorer=scorer,
-            progress_callback=_progress_update,
+            progress_callback=lambda event: _progress_update(event, run_id),
             checkpoint_callback=_checkpoint_update,
             run_control=control,
         )
@@ -2614,16 +2830,18 @@ def _run_design_worker(request, query, output_directory, control):
             if storage_mode_widget.value == "drive"
             else None
         )
-        _dispatch_ui(
-            _finish_design_success,
-            result, files, archive, output_directory, drive_archive,
-        )
+        state["progress_queue"].put((
+            "success", int(run_id),
+            (result, files, archive, output_directory, drive_archive),
+        ))
     except DesignRunStopped:
         state["run_terminal_status"] = "stopped_by_user"
         _persist_checkpoint(force=True)
-        _dispatch_ui(_finish_design_stopped)
+        state["progress_queue"].put(("stopped", int(run_id), None))
     except Exception as exc:
-        _dispatch_ui(_finish_design_error, type(exc).__name__, str(exc))
+        state["progress_queue"].put((
+            "error", int(run_id), (type(exc).__name__, str(exc))
+        ))
     finally:
         clear_idt_secret_environment()
 
@@ -2637,16 +2855,44 @@ def _run_design(_button=None):
             clear_output(wait=True)
             display(Markdown("**Confirm the RE/plasmid route before optimization.**"))
         return
+    state["run_id"] = int(state.get("run_id", 0)) + 1
+    run_id = int(state["run_id"])
+    while True:
+        try:
+            state["progress_queue"].get_nowait()
+        except queue.Empty:
+            break
     state["progress_events"] = []
+    state["visible_log_lines"] = []
+    state["idt_score_events"] = []
     state["archive"] = None
     state["design_result"] = None
     state["best_checkpoint"] = None
     state["last_checkpoint_write"] = 0.0
     state["run_terminal_status"] = "running"
+    state["run_started_monotonic"] = time.monotonic()
+    state["last_progress_monotonic"] = state["run_started_monotonic"]
     generation_progress.value = 0
     stage_html.value = (
         "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
         "<b>Status:</b> starting GA worker</div>"
+    )
+    attempt_log_html.value = (
+        "<pre style='color:#111827;background:#ffffff'>"
+        + html.escape(f"run_requested  run_id={run_id}  preparing credentials and GA request")
+        + "</pre>"
+    )
+    if _validation_mode() == "batch":
+        _set_idt_plot_placeholder(
+            "IDT API disabled. GA will export Bulk Input files; no score trajectory is claimed."
+        )
+    else:
+        _set_idt_plot_placeholder(
+            "GA started. Waiting for the first locally valid fragment to be scored by IDT."
+        )
+    results_status.value = (
+        "<div style='border:2px solid #4b2e83;background:#f4f0fa;color:#111827;"
+        f"border-radius:8px;padding:10px'><b>Run {run_id} started.</b> Live progress appears above.</div>"
     )
     with design_output:
         clear_output(wait=True)
@@ -2668,12 +2914,19 @@ def _run_design(_button=None):
         _set_run_active(True)
         worker = threading.Thread(
             target=_run_design_worker,
-            args=(request, query, output_directory, control),
+            args=(request, query, output_directory, control, run_id),
             name="hurdler-ga-worker",
             daemon=True,
         )
         state["run_thread"] = worker
         worker.start()
+        state["visible_log_lines"].append(f"worker_started run_id={run_id} thread={worker.name}")
+        attempt_log_html.value = (
+            "<pre style='color:#111827;background:#ffffff'>"
+            + html.escape("\n".join(state["visible_log_lines"]))
+            + "</pre>"
+        )
+        _start_ui_event_pump(run_id)
     except Exception as exc:
         clear_idt_secret_environment()
         _finish_design_error(type(exc).__name__, str(exc))
@@ -2986,7 +3239,6 @@ for ga_bundle_widget in (
 basic_panel = widgets.VBox([
     widgets.HTML("<div id='hurdler-ga-settings'></div>"),
     _help_card("Settings level", settings_mode, unit="mode", default="recommended", purpose="Shows or hides low-level GA controls.", allowed="recommended or advanced", effect="Recommended mode still uses the displayed frozen defaults."),
-    idt_credential_panel,
     auto_download_widget,
     _help_card("Secondary-copy search", secondary_search_mode_widget, unit="mode", default="bounded copy range", purpose="Explores secondary donor repeat count.", allowed="bounded 1–50 or automatic to physical limit", effect="Bounded is the tutorial default; automatic proves the physical/route limit."),
     secondary_range_card,
@@ -3002,6 +3254,7 @@ ga_request_widgets = (
     enzyme_bulk_control, plasmid_bulk_control, max_restoration_length_widget,
     query_button, pair_choice, site_iii_choice, profile_choice, scheme_choice, confirm_button,
     storage_mode_widget, drive_root_widget, mount_drive_button,
+    execution_target_widget,
     settings_mode, idt_setup_mode_widget, idt_auth_method_widget,
     idt_client_id_widget, idt_client_secret_widget, idt_username_widget,
     idt_password_widget, idt_access_token_widget, credential_upload,
@@ -3019,16 +3272,53 @@ ga_request_widgets = (
     *enzyme_checkboxes.values(), *plasmid_checkboxes.values(),
     *weight_widgets.values(),
 )
-ga_panel = widgets.VBox([
-    basic_panel, advanced_panel, external_resource_panel,
-    widgets.HTML("<h3>Run optimization</h3>"),
+colab_execution_panel = widgets.VBox([
+    widgets.HTML(
+        "<div style='border-left:6px solid #4b2e83;background:#f4f0fa;color:#111827;"
+        "padding:10px'><b>Run inside this Colab runtime.</b> Pause and Stop act at safe points.</div>"
+    ),
     widgets.HBox([design_button, pause_button, stop_button]),
-    widgets.HBox([export_bundle_button, download_button]),
-    widgets.HTML("<h3>Live GA / IDT log</h3>"),
-    stage_html, generation_progress, current_html, attempt_log_html,
-    external_bundle_output, design_output,
 ])
-ga_panel.layout.display = "none"
+external_execution_panel = widgets.VBox([
+    external_resource_panel,
+    export_bundle_button,
+    external_bundle_output,
+])
+
+
+def _sync_execution_target(_change=None):
+    colab = execution_target_widget.value == "colab"
+    colab_execution_panel.layout.display = "" if colab else "none"
+    external_execution_panel.layout.display = "none" if colab else ""
+    confirmed = state.get("confirmed_route") is not None
+    active = bool(state.get("run_active"))
+    design_button.disabled = active or not confirmed or not colab
+    export_bundle_button.disabled = active or not confirmed or colab
+    pause_button.disabled = not active or not colab
+    stop_button.disabled = not active or not colab
+
+
+execution_target_widget.observe(_sync_execution_target, names="value")
+ga_panel = widgets.VBox([
+    basic_panel,
+    advanced_panel,
+    _help_card(
+        "Execution target", execution_target_widget, unit="mode", default="Run in Colab",
+        purpose="Chooses either the interactive Colab worker or one portable Local/Slurm bundle.",
+        allowed="exactly one target", effect="Only controls for the selected target are shown.",
+    ),
+    colab_execution_panel,
+    external_execution_panel,
+    widgets.HTML("<h3 style='color:#3b1f69'>Live GA / IDT log</h3>"),
+    stage_html, generation_progress, current_html, attempt_log_html,
+    widgets.HTML("<h3 style='color:#3b1f69'>IDT score trajectory</h3>"),
+    idt_plot_status, idt_plot_output, idt_score_table_output,
+])
+results_panel = widgets.VBox([
+    results_status,
+    download_button,
+    design_output,
+])
 secondary_search_mode_widget.observe(_update_secondary_lengths, names="value")
 secondary_copy_range_widget.observe(_range_slider_changed, names="value")
 minimum_secondary_number.observe(_range_number_changed, names="value")
@@ -3037,10 +3327,75 @@ repeat_module_widget.observe(_update_secondary_lengths, names="value")
 _update_secondary_lengths()
 _reset_viewer_placeholder()
 _ = _refresh_live_support()
-display(widgets.HTML(
-    "<div style='border:1px solid #2d6a4f;background:#effaf4;padding:8px;border-radius:6px'>"
-    "<b>Interactive controls ready.</b> Continue with the tutorial cells below.</div>"
-))
+_sync_execution_target()
+
+setup_module = widgets.VBox([
+    widgets.HTML("<h2>1. Storage and IDT setup</h2>"),
+    storage_panel,
+    idt_credential_panel,
+])
+protein_module = widgets.VBox([
+    widgets.HTML("<h2>2. Protein sequence and repeat definition</h2>"),
+    protein_input_panel,
+])
+route_advanced_panel = widgets.Accordion(children=[widgets.VBox([
+    cutter_policy_panel,
+    advanced_route_filters.children[0],
+])])
+route_advanced_panel.set_title(0, "Advanced route filters and cutter fallback")
+route_advanced_panel.selected_index = None
+route_filter_module = widgets.VBox([
+    widgets.HTML(
+        "<h2>3. Enzyme/plasmid filters and HURDLER query</h2>"
+        "<p>RE and plasmid selections share the same filtered route universe. The cards report "
+        "jointly usable routes, not checkbox totals.</p>"
+    ),
+    widgets.HBox([enzyme_bulk_control, enzyme_selection_status]),
+    enzyme_route_support,
+    enzyme_checkbox_grid,
+    widgets.HBox([plasmid_bulk_control, plasmid_selection_status]),
+    plasmid_route_support,
+    plasmid_checkbox_grid,
+    route_advanced_panel,
+    query_button,
+    query_output,
+])
+route_selection_module = widgets.VBox([
+    widgets.HTML(
+        "<h2>4. Route selection and confirmation</h2>"
+        "<p>Select Site I/II, Site III, plasmid and cut scheme explicitly. Placeholder menus remain "
+        "visible until the preceding choice is available.</p>"
+    ),
+    pair_choice, site_iii_choice, profile_choice, scheme_choice,
+    confirm_button, route_output,
+])
+viewer_module = widgets.VBox([
+    widgets.HTML("<h2>5. Interactive plasmid and insert viewer</h2>"),
+    viewer_panel,
+])
+ga_module = widgets.VBox([
+    widgets.HTML("<h2>6. GA optimization and execution</h2>"),
+    ga_panel,
+])
+result_module = widgets.VBox([
+    widgets.HTML("<h2>7. Results and downloads</h2>"),
+    results_panel,
+])
+tutorial_app = widgets.VBox([
+    widgets.HTML(
+        "<div style='border:2px solid #2d6a4f;background:#effaf4;color:#111827;"
+        "padding:10px;border-radius:8px'><b>HURDLER initialized.</b> Work through the seven "
+        "interactive modules below; internal setup output is intentionally hidden.</div>"
+    ),
+    setup_module,
+    protein_module,
+    route_filter_module,
+    route_selection_module,
+    viewer_module,
+    ga_module,
+    result_module,
+])
+display(tutorial_app)
 None
 '''
 
@@ -3127,94 +3482,16 @@ def notebook(*, colab: bool = False):
     intro.metadata["id"] = "hurdler-introduction"
     cells = [intro]
     if colab:
-        cells.extend(
-            [
-                _code_cell(
-                    COLAB_BOOTSTRAP,
-                    colab=True,
-                    cell_id="hurdler-initialize",
-                    title='0. Initialize HURDLER { display-mode: "form" }',
-                ),
-                _code_cell(
-                    PARAMETERS,
-                    colab=True,
-                    cell_id="hurdler-test-defaults",
-                    title='Internal smoke-test defaults { display-mode: "form" }',
-                    tags=["parameters"],
-                ),
-                _code_cell(
-                    COLAB_IMPORTS,
-                    colab=True,
-                    cell_id="hurdler-imports",
-                    title='Load the HURDLER design engine { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_CONTROLLER_V2,
-                    colab=True,
-                    cell_id="hurdler-controller-v2",
-                    title='Prepare interactive controllers { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_STORAGE_PANEL,
-                    colab=True,
-                    cell_id="hurdler-storage-panel",
-                    title='0b. Storage and recovery { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_PROTEIN_FORM,
-                    colab=True,
-                    cell_id="hurdler-protein-form",
-                    title='1. Protein and repeat boundary { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_SELECTOR_POLICY_FORM,
-                    colab=True,
-                    cell_id="hurdler-selector-policy-form",
-                    title='1b. Cutter fallback policy { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_ENZYME_SELECTOR,
-                    colab=True,
-                    cell_id="hurdler-enzyme-selector",
-                    title='2. Select individual RE enzymes { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_PLASMID_SELECTOR,
-                    colab=True,
-                    cell_id="hurdler-plasmid-selector",
-                    title='3. Select plasmids { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_QUERY_PANEL,
-                    colab=True,
-                    cell_id="hurdler-query-panel",
-                    title='4. Run HURDLER query { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_RE_ROUTE_PANEL,
-                    colab=True,
-                    cell_id="hurdler-re-route-panel",
-                    title='5. Select Site I, II, and III { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_VECTOR_ROUTE_PANEL,
-                    colab=True,
-                    cell_id="hurdler-vector-route-panel",
-                    title='6. Select plasmid and cut scheme { display-mode: "form" }',
-                ),
-                _code_cell(
-                    COLAB_GA_PANEL,
-                    colab=True,
-                    cell_id="hurdler-ga-panel",
-                    title='7. Optimize exact target and export { display-mode: "form" }',
-                ),
-                _code_cell(
-                    SMOKE,
-                    colab=True,
-                    cell_id="hurdler-headless-smoke",
-                    title='Automated validation hook (normally inactive) { display-mode: "form" }',
-                ),
-            ]
+        application_source = "\n\n".join(
+            (COLAB_BOOTSTRAP, PARAMETERS, COLAB_IMPORTS, COLAB_CONTROLLER_V2, SMOKE)
+        )
+        cells.append(
+            _code_cell(
+                application_source,
+                colab=True,
+                cell_id="hurdler-initialize",
+                title='Initialize HURDLER tutorial { display-mode: "form" }',
+            )
         )
     else:
         cells.extend([

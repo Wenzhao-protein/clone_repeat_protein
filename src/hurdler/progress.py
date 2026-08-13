@@ -66,6 +66,7 @@ class DesignProgressEvent:
 
     stage: str
     status: str
+    event_name: str = ""
     message: str = ""
     fragment_kind: str = ""
     copies: int | None = None
@@ -81,6 +82,13 @@ class DesignProgressEvent:
     crossover_rate: float | None = None
     idt_score: float | None = None
     idt_positive_rules: tuple[str, ...] = ()
+    idt_evaluation_index: int | None = None
+    idt_fragment_name: str = ""
+    idt_rule_scores: Mapping[str, float] = field(default_factory=dict)
+    idt_rule_reasons: Mapping[str, str] = field(default_factory=dict)
+    idt_response_sha256: str = ""
+    idt_cache_hit: bool | None = None
+    idt_classification: str = ""
     elapsed_seconds: float | None = None
     details: Mapping[str, Any] = field(default_factory=dict)
 

@@ -36,24 +36,29 @@ def _colab_cell_source(cell_id: str) -> str:
     return "".join(cell["source"])
 
 
+def _colab_runtime_sources() -> tuple[str, str, str]:
+    """Split the single generated application cell for fast controller tests."""
+    source = _colab_cell_source("hurdler-initialize")
+    parameters_start = source.index("# Papermill parameters")
+    imports_start = source.index("import asyncio", parameters_start)
+    controller_start = source.index("PLASMID_OPTIONS = (", imports_start)
+    smoke_start = source.index("if headless_smoke or", controller_start)
+    return (
+        source[parameters_start:imports_start],
+        source[imports_start:controller_start],
+        source[controller_start:smoke_start],
+    )
+
+
 @pytest.fixture
 def colab_runtime_namespace():
     namespace: dict[str, object] = {}
-    for cell_id in (
-        "hurdler-test-defaults",
-        "hurdler-imports",
-    ):
-        exec(compile(_colab_cell_source(cell_id), cell_id, "exec"), namespace)
+    parameters, imports, controller = _colab_runtime_sources()
+    exec(compile(parameters, "hurdler-parameters", "exec"), namespace)
+    exec(compile(imports, "hurdler-imports", "exec"), namespace)
     namespace["display"] = lambda *_args, **_kwargs: None
     namespace["clear_output"] = lambda *_args, **_kwargs: None
-    exec(
-        compile(
-            _colab_cell_source("hurdler-controller-v2"),
-            "hurdler-controller-v2",
-            "exec",
-        ),
-        namespace,
-    )
+    exec(compile(controller, "hurdler-controller-v2", "exec"), namespace)
     yield namespace
     clear_idt_secret_environment()
 
@@ -94,7 +99,7 @@ def test_colab_cells_are_named_hidden_forms():
 def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
     payload = _colab_payload()
     intro = "".join(next(cell for cell in payload["cells"] if cell["id"] == "hurdler-introduction")["source"])
-    controller = _colab_cell_source("hurdler-controller-v2")
+    controller = _colab_runtime_sources()[2]
     assert "Tutorial workflow" in intro
     assert "Site I" in intro and "Site II" in intro and "Site III" in intro
     assert "Google Drive" in intro and "RDL" in intro and "IDT" in intro
@@ -102,7 +107,9 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
     assert 'value="split"' in controller
     assert 'full_input_panel.layout.display = "" if input_mode_widget.value == "full" else "none"' in controller
     assert "_help_card" in controller
-    assert "hurdler-storage-panel" in {cell["id"] for cell in payload["cells"]}
+    assert {cell["id"] for cell in payload["cells"]} == {
+        "hurdler-introduction", "hurdler-initialize"
+    }
     assert "widgets.Password(" in COLAB_NOTEBOOK.read_text()
     assert "Create Credentials" in controller
     assert "Upload idt.env" in controller
@@ -114,26 +121,27 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
         assert not re.search(rf"^{secret}\s*=.*#@param", COLAB_NOTEBOOK.read_text(), re.MULTILINE)
 
 
-def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
+def test_colab_has_one_tutorial_application_with_independent_modules():
     sources = {
         cell["metadata"]["id"]: "".join(cell["source"])
         for cell in _colab_payload()["cells"]
     }
-    assert "Select all RE" in sources["hurdler-controller-v2"]
-    assert "Select none" in sources["hurdler-controller-v2"]
-    assert "Select all plasmids" in sources["hurdler-controller-v2"]
-    assert "enzyme_checkboxes" in sources["hurdler-controller-v2"]
-    assert "plasmid_checkboxes" in sources["hurdler-controller-v2"]
-    assert "Advanced route filters" in sources["hurdler-controller-v2"]
-    assert 'value=100' in sources["hurdler-controller-v2"]
-    assert "max_restoration_length_bp=int(max_restoration_length_widget.value)" in sources["hurdler-controller-v2"]
-    assert "widgets.GridBox" in sources["hurdler-controller-v2"]
-    assert "hurdler-enzyme-selector" in sources
-    assert "hurdler-plasmid-selector" in sources
-    assert "hurdler-re-route-panel" in sources
-    assert "hurdler-vector-route-panel" in sources
-    assert "hurdler-ga-panel" in sources
-    controller = sources["hurdler-controller-v2"]
+    assert set(sources) == {"hurdler-introduction", "hurdler-initialize"}
+    controller = _colab_runtime_sources()[2]
+    assert "Select all RE" in controller
+    assert "Select none" in controller
+    assert "Select all plasmids" in controller
+    assert "enzyme_checkboxes" in controller
+    assert "plasmid_checkboxes" in controller
+    assert "Advanced route filters" in controller
+    assert 'value=100' in controller
+    assert "max_restoration_length_bp=int(max_restoration_length_widget.value)" in controller
+    assert "widgets.GridBox" in controller
+    for module in (
+        "setup_module", "protein_module", "route_filter_module",
+        "route_selection_module", "viewer_module", "ga_module", "result_module",
+    ):
+        assert module in controller
     assert 'value="create"' in controller
     assert 'assembly_strategy="exact_reused_secondary_rdl"' in controller
     assert "widgets.BoundedIntText" in controller
@@ -149,14 +157,17 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert "max_idt_feedback_rounds=int(feedback_round_number.value)" in controller
     assert "auto_adjust_ga_parameters_from_idt=bool(auto_parameter_feedback.value)" in controller
     assert "feedback={event.feedback_round" in controller
-    assert 'ga_panel.layout.display = "none"' in controller
+    assert 'ga_panel.layout.display = "none"' not in controller
     assert "credential_upload.value = ()" not in controller
     assert "_clear_credential_upload()" in controller
-    assert "write_secondary_checkpoint" in _colab_cell_source("hurdler-imports")
-    assert "timestamped_results_archive" in _colab_cell_source("hurdler-imports")
-    assert "create_external_ga_bundle" in _colab_cell_source("hurdler-imports")
+    imports = _colab_runtime_sources()[1]
+    assert "write_secondary_checkpoint" in imports
+    assert "timestamped_results_archive" in imports
+    assert "create_external_ga_bundle" in imports
     assert 'description="Run GA in Colab"' in controller
-    assert 'description="Export local / Slurm GA bundle"' in controller
+    assert 'description="Download Local / Slurm bundle"' in controller
+    assert controller.count('description="Download Local / Slurm bundle"') == 1
+    assert 'options=(("Run in Colab", "colab"), ("Local / Slurm bundle", "external"))' in controller
     assert 'value=16, min=1, max=1024, description="GA worker CPUs"' in controller
     assert 'value=32, min=1, max=1_048_576, description="Total memory (GB)"' in controller
     assert 'value="24:00:00", description="Walltime"' in controller
@@ -165,7 +176,10 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
     assert "external_idt_credential_path" not in controller
     assert 'description="Pause GA"' in controller
     assert 'description="Stop GA"' in controller
-    assert "CircularGraphicRecord" in _colab_cell_source("hurdler-imports")
+    assert "CircularGraphicRecord" in imports
+    assert "idt_plot_output" in controller
+    assert 'status="fragment_scored"' not in controller
+    assert "_ui_event_pump" in controller
 
 
 def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
@@ -259,7 +273,7 @@ def test_colab_form_edit_invalidates_confirmed_route(colab_runtime_namespace):
     _confirm_first_colab_route(namespace)
     assert namespace["state"]["confirmed_route"] is not None
     assert namespace["design_button"].disabled is False
-    assert namespace["ga_panel"].layout.display == ""
+    assert namespace["ga_module"].layout.display in (None, "")
     namespace["n_cap_widget"].value = "MM"
     assert namespace["state"]["confirmed_route"] is None
     assert namespace["design_button"].disabled is True
@@ -287,6 +301,7 @@ def test_colab_external_bundle_freezes_request_and_is_invalidated_by_ga_edits(
     namespace = colab_runtime_namespace
     assert namespace["export_bundle_button"].disabled is True
     _confirm_first_colab_route(namespace)
+    namespace["execution_target_widget"].value = "external"
     assert namespace["export_bundle_button"].disabled is False
     namespace["idt_setup_mode_widget"].value = "batch"
     namespace["output_directory_widget"].value = str(tmp_path / "runtime")
@@ -429,7 +444,8 @@ def test_colab_restore_limit_refilters_cache_and_invalidates_confirmation(
     result = namespace["state"]["query_result"]
     assert namespace["state"]["route_universe"] is universe
     assert namespace["state"]["confirmed_route"] is None
-    assert namespace["ga_panel"].layout.display == "none"
+    assert namespace["ga_module"].layout.display in (None, "")
+    assert namespace["design_button"].disabled is True
     assert result.request["max_restoration_length_bp"] == 0
     assert result.vector_routes
     assert all(row["restoration_length_bp"] == 0 for row in result.vector_routes)
@@ -483,7 +499,11 @@ def _confirm_first_colab_route(namespace):
 def _wait_for_colab_worker(namespace, timeout: float = 30.0):
     worker = namespace["state"].get("run_thread")
     assert worker is not None
-    worker.join(timeout=timeout)
+    deadline = time.monotonic() + timeout
+    while worker.is_alive() and time.monotonic() < deadline:
+        namespace["_drain_ui_events"]()
+        worker.join(timeout=0.05)
+    namespace["_drain_ui_events"]()
     assert not worker.is_alive(), "Colab GA worker did not finish"
 
 
@@ -507,7 +527,10 @@ def test_colab_manual_route_batch_export_never_builds_an_idt_client(
 
     namespace["IDTComplexityScorer"] = MustNotBeConstructed
     namespace["_run_design"]()
+    assert "worker_started" in namespace["attempt_log_html"].value
+    assert "No attempts yet" not in namespace["attempt_log_html"].value
     _wait_for_colab_worker(namespace)
+    assert namespace["generation_progress"].value > 0
     summary = json.loads((tmp_path / "batch" / "design_summary.json").read_text())
     assert summary["status"] == "optimized_unvalidated_batch"
     assert summary["idt_audit"] == []

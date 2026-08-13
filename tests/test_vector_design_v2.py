@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import asdict, replace
+from pathlib import Path
 
 import pytest
 
@@ -585,6 +586,18 @@ def test_exact_target_rdl_reuses_one_secondary_and_emits_progress(tmp_path):
     assert all(row["passed"] for row in result.intermediate_validations)
     assert events and events[0].stage == "design"
     assert any(event.stage == "ga" and event.status == "running" for event in events)
+    scored_events = [
+        event for event in events
+        if event.stage == "idt" and event.status == "fragment_scored"
+    ]
+    assert scored_events
+    assert all(event.event_name == "idt_fragment_scored" for event in scored_events)
+    assert [event.idt_evaluation_index for event in scored_events] == list(
+        range(1, len(scored_events) + 1)
+    )
+    assert all(event.idt_fragment_name for event in scored_events)
+    assert all(event.idt_classification == "passed" for event in scored_events)
+    assert all(event.idt_response_sha256 for event in scored_events)
     assert events[-1].stage == "rdl_plan" and events[-1].status == "completed"
     assert checkpoints
     assert checkpoints[-1]["repeat_copies"] == plan["secondary_repeat_copies"]
@@ -597,6 +610,9 @@ def test_exact_target_rdl_reuses_one_secondary_and_emits_progress(tmp_path):
     assert len(plasmid_files) == expected_steps + 1  # includes step00
     assert len(insert_files) == expected_steps
     assert paths["final_plasmid_genbank"].endswith("final_plasmid.gb")
+    assert Path(paths["idt_score_history_csv"]).stat().st_size > 0
+    for suffix in ("png", "pdf", "svg"):
+        assert Path(paths[f"idt_score_trajectory_{suffix}"]).stat().st_size > 0
     from Bio import SeqIO
 
     final_record = SeqIO.read(plasmid_files[-1], "genbank")
