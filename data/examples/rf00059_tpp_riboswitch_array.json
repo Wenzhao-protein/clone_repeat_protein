@@ -1,0 +1,19 @@
+{
+  "example_id": "rf00059_tpp_riboswitch_4copy",
+  "display_name": "Rfam RF00059 TPP riboswitch regulatory-element array",
+  "source_database": "Rfam",
+  "family_accession": "RF00059",
+  "source_accession": "RF00059:BA000043.1/643262-643369",
+  "source_url": "https://rfam.org/family/RF00059/alignment/fastau",
+  "source_downloaded_at": "2026-08-12",
+  "source_alignment_sha256": "be7ca460e66d79a1d56ae7f074572ab28ed6a427c989ad56d24c2087fe076c90",
+  "selection_method": "Earlier-middle exact member of the official Rfam SEED alignment",
+  "repeat_unit": "ATCATCCACTAGGGGGGCCTTTAGAAAGGCTGAGATCAAAGTGTGCCTTTGAGACCCTTAGCACCTGATCTGGGTAATGCCAGCGTAGGGAAGTGGAGGAGCAGCACA",
+  "repeat_unit_length_bp": 108,
+  "repeat_unit_sha256": "26cab46834702cbed971be52a6c47f11ad40918790ef66a9d2e11f7ab29e2565",
+  "spacer": "",
+  "repeat_copies": 4,
+  "target_length_bp": 432,
+  "target_sha256": "3d5f27c4622c389d35230dc97970c132b667ff107a301adab28b08a6ca9cd045",
+  "notes": "Derived exact tandem test array; the four-copy architecture is not asserted to occur naturally."
+}

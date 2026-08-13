@@ -6,6 +6,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,13 @@ from .complete_route import (
     finalize_complete_route_shards,
     plan_complete_route_catalog,
 )
+from .exact_dna_design import (
+    ExactDNAQuery,
+    ExactDNASelection,
+    confirm_exact_dna_route,
+    query_exact_dna,
+    write_exact_dna_outputs,
+)
 from .dna_assembly_visualization import (
     plot_complete_production_report,
     write_production_figure_manifest,
@@ -37,6 +45,7 @@ from .idt import (
     IDT_CREDENTIAL_PATH,
     IDT_SCORE_POLICY,
     IDTComplexityScorer,
+    clear_idt_secret_environment,
     configure_idt_credentials,
     load_idt_credentials,
 )
@@ -443,6 +452,22 @@ def build_parser() -> argparse.ArgumentParser:
     dna_complete_finalize.add_argument("--expected-elements", type=int)
     dna_complete_finalize.add_argument("--expected-real-targets", type=int)
     dna_complete_finalize.add_argument("--figure-dir", type=Path)
+
+    dna_interactive = dna_sub.add_parser(
+        "interactive-design",
+        help="Query or confirm one exact arbitrary-DNA/array HURDLER route",
+    )
+    dna_interactive.add_argument("--request", type=Path, required=True)
+    dna_interactive.add_argument("--output-dir", type=Path, required=True)
+    dna_interactive.add_argument(
+        "--plasmid-reference", type=Path, default=bundled_plasmid_reference_path()
+    )
+    dna_interactive.add_argument(
+        "--idt-credential-file", type=Path, default=IDT_CREDENTIAL_PATH
+    )
+    dna_interactive.add_argument(
+        "--auth-method", choices=["password", "access_token"], default=None
+    )
 
     design = subparsers.add_parser(
         "design-construct",
@@ -1083,6 +1108,48 @@ def main(argv: list[str] | None = None) -> int:
                     "rows": {name: len(frame) for name, frame in tables.items()},
                     "figures": [str(path) for path in figures],
                     "output_dir": str(args.output_dir),
+                }
+            )
+        elif args.dna_assembly_command == "interactive-design":
+            payload = json.loads(args.request.read_text())
+            query_payload = payload.get("query", payload)
+            query = ExactDNAQuery.from_dict(query_payload)
+            result = query_exact_dna(
+                query,
+                plasmid_reference_path=args.plasmid_reference,
+            )
+            credential_status = None
+            try:
+                if payload.get("selection"):
+                    selection = ExactDNASelection(**payload["selection"])
+                    scorer = None
+                    with tempfile.TemporaryDirectory(prefix="hurdler-idt-audit-") as temporary:
+                        if selection.validation_mode == "api":
+                            credential_status = configure_idt_credentials(
+                                mode="path",
+                                path=args.idt_credential_file,
+                                auth_method=args.auth_method,
+                                headless=True,
+                                include_path_in_status=False,
+                            )
+                            scorer = IDTComplexityScorer(Path(temporary) / "raw.jsonl")
+                        result = confirm_exact_dna_route(
+                            result,
+                            selection,
+                            idt_scorer=scorer,
+                            plasmid_reference_path=args.plasmid_reference,
+                        )
+            finally:
+                clear_idt_secret_environment()
+            files = write_exact_dna_outputs(result, args.output_dir)
+            _print(
+                {
+                    "schema_version": result.schema_version,
+                    "status": result.status,
+                    "message": result.message,
+                    "route_count": len(result.route_candidates),
+                    "output_files": files,
+                    "credential_status": credential_status,
                 }
             )
         else:

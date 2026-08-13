@@ -333,7 +333,7 @@ def _plasmid_options(
 
 def enumerate_active_latent_pairs(
     hits: list[RestrictionHit],
-    plasmid_compatibility: pd.DataFrame,
+    plasmid_compatibility: pd.DataFrame | None,
 ) -> list[dict[str, object]]:
     """Enumerate spatially useful Site-I/Site-II pairs with at least one latent site.
 
@@ -379,8 +379,17 @@ def enumerate_active_latent_pairs(
             ]
             if not donor_derived:
                 continue
-            plasmids = _plasmid_options(site_i.enzyme, site_ii.enzyme, plasmid_compatibility)
-            if not plasmids:
+            # Interactive exact-DNA design applies the annotation-aware
+            # plasmid filter only after molecular Site-I/Site-II pairs have
+            # been enumerated.  Production callers continue to pass the
+            # historical boolean matrix and retain byte-for-byte legacy
+            # filtering semantics.
+            plasmids = (
+                _plasmid_options(site_i.enzyme, site_ii.enzyme, plasmid_compatibility)
+                if plasmid_compatibility is not None
+                else []
+            )
+            if plasmid_compatibility is not None and not plasmids:
                 continue
             mechanism = "latent+latent" if site_i.state == site_ii.state == "latent" else "active+latent"
             key = (

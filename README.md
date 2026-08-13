@@ -1,8 +1,10 @@
 # HURDLER repeat-protein cloning
 
-**[Open the current preview in Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) · [Run the local web designer](#local-web-designer)**
+**[Repeat-protein Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) · [Exact-DNA/latent-RE Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb) · [Run the local web designer](#local-web-designer)**
 
-[![Open current preview in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb)
+Repeat protein: [![Open repeat-protein designer in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb)
+
+Exact DNA and regulatory-element arrays: [![Open exact-DNA designer in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb)
 
 ## Test in a browser
 
@@ -18,14 +20,25 @@
   After this branch is merged, the
   permanent [main-branch Colab link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb)
   provides the same entry point.
+- **Exact-DNA Colab:** accepts either one immutable DNA/FASTA target or
+  `repeat unit + optional spacer + copy number`. It preserves one-base latent
+  RE activation, requires a complete exact seed-to-target route, and evaluates
+  the same annotation-aware plasmid cut schemes. Its default RF00059 TPP
+  riboswitch four-copy array runs the molecular query offline; IDT is called
+  only after a route is confirmed and Live API is explicitly selected. The
+  [main-branch exact-DNA link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb)
+  becomes permanent after merge.
 - **Local browser:** follow the commands below. The final script starts the
   Marimo app on `127.0.0.1:2718` and opens it in your browser.
 
-Both interfaces use the same `hurdler.vector_design` implementation.
+The repeat-protein entry points share `hurdler.vector_design`; the exact-DNA
+entry point uses `hurdler.exact_dna_design` and the same annotation-aware
+plasmid reference database.
 Credentials and IDT scoring stay inside the active Colab or local process; the
 software produces design files only and never submits an order.
 
-Live IDT scoring is the Colab default. A local runtime automatically tries
+Live IDT scoring is the repeat-protein Colab default; the exact-DNA Colab
+defaults to molecular compatibility with no HTTP request. A local runtime automatically tries
 `~/.config/hurdler/idt.env`; hosted Colab instead displays a temporary env-file
 upload. The file contains either `IDT_ACCESS_TOKEN`, or all of
 `IDT_CLIENT_ID`, `IDT_CLIENT_SECRET`, `IDT_USERNAME`, and `IDT_PASSWORD`.

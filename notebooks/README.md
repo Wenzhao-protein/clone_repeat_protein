@@ -2,6 +2,8 @@
 
 Start here: **[`workflows/01_interactive_hurdler_designer.ipynb`](workflows/01_interactive_hurdler_designer.ipynb)** — the annotation-aware v2 Jupyter designer. The [current Colab preview](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) shows the protein defaults before execution, then creates separate individual-RE, plasmid, RE-solution, cut-scheme, and post-confirmation GA/IDT panels after `Runtime → Run all`. Its default 25-copy split workflow requires a secondary donor of at least 12 modules, retains ten warm-start GA candidates, and exposes the 100-round GA→IDT limit with live parameter/score progress. The [main-branch Colab entry](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb) and local `./scripts/start_hurdler_web.sh` page use the same scientific controller.
 
+For immutable nucleotide targets, use the [exact-DNA Colab preview](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb). It accepts exact DNA/FASTA or a repeat unit, optional spacer and copy count; preserves active/latent RE geometry; requires a complete exact seed-to-target route; and defaults to the RF00059 TPP riboswitch four-copy regulatory-element array. Its molecular query is offline. Live IDT or Bulk Input export becomes available only after an annotation-aware plasmid route is confirmed.
+
 The canonical notebooks are deliberately thin.
 
 | Directory | Responsibility |
