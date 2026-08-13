@@ -22,9 +22,11 @@ Exact DNA and regulatory-element arrays: [![Open exact-DNA designer in Colab](ht
   provides the same entry point.
 - **Exact-DNA Colab:** accepts either one immutable DNA/FASTA target or
   `repeat unit + optional spacer + copy number`. It preserves one-base latent
-  RE activation, requires a complete exact seed-to-target route, and evaluates
-  the same annotation-aware plasmid cut schemes. Its default RF00059 TPP
-  riboswitch four-copy array runs the molecular query offline; IDT is called
+  RE activation (`active+latent` and `latent+latent`; `active+active` is outside
+  this method), requires a complete exact seed-to-target route, and evaluates
+  the same annotation-aware plasmid cut schemes. Its default
+  [Rfam RF00059 TPP riboswitch](https://rfam.org/family/RF00059) four-copy
+  array runs the molecular query offline; IDT is called
   only after a route is confirmed and Live API is explicitly selected. The
   [main-branch exact-DNA link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb)
   becomes permanent after merge.
