@@ -356,6 +356,36 @@ def _oriented_coordinates(start: int, end: int, length: int, strand: int) -> tup
     return (start, end) if strand == 1 else (length - end, length - start)
 
 
+def cutter_is_strictly_inside_mcs(
+    database: PlasmidReferenceDatabase,
+    profile_id: str,
+    cutter: CutterSite,
+) -> bool:
+    """Return whether a declared inside cutter and both cuts lie in the MCS.
+
+    Recognition-site overlap alone is insufficient for the active exact-DNA
+    designer: a Type-IIS-like geometry can recognize bases in the MCS while
+    cutting outside it.  Coordinates are compared in expression orientation,
+    matching the cut-scheme derivation code.
+    """
+    if cutter.location != "inside":
+        return False
+    profile = database.profile(profile_id)
+    reference = database.reference(profile.reference_id)
+    mcs_start, mcs_end = _oriented_coordinates(
+        profile.mcs_start,
+        profile.mcs_end,
+        len(reference.sequence),
+        profile.expression_strand,
+    )
+    return (
+        mcs_start <= int(cutter.oriented_start)
+        and int(cutter.oriented_end) <= mcs_end
+        and mcs_start <= int(cutter.top_cut_oriented) <= mcs_end
+        and mcs_start <= int(cutter.bottom_cut_oriented) <= mcs_end
+    )
+
+
 def _physical_coordinates(start: int, end: int, length: int, strand: int) -> tuple[int, int]:
     return (start, end) if strand == 1 else (length - end, length - start)
 

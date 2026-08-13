@@ -56,6 +56,7 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
         "repeat_copies",
         "complete_exact_dna_or_fasta",
         "max_purchase_bp",
+        "max_restoration_length_bp",
         "max_search_states",
         "search_timeout_seconds",
         "maximum_complete_routes_per_group",
@@ -99,6 +100,11 @@ def test_exact_dna_colab_native_forms_and_runtime_selectors_are_present():
     assert "screen_gblock_sequences" in upload
     assert "credential_payload = b\"\"" in upload
     assert "IDT_GBLOCK_ONLY_PURCHASE_POLICY" in query
+    assert "max_restoration_length_bp=int(max_restoration_length_bp)" in query
+    assert "restoration cutoff" in query
+    assert "left_restore_bp" in query and "right_restore_bp" in query
+    assert "total_restore_bp" in query
+    assert "restore {row['restoration_length_bp']} bp" in query
     assert "confirm_best_exact_dna_route" in export
     assert "tempfile.TemporaryDirectory" in export
     assert "write_exact_dna_minimal_outputs" in export

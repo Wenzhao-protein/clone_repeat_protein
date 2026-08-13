@@ -39,6 +39,11 @@ Exact DNA and regulatory-element arrays: [![Open exact-DNA designer in Colab](ht
   optional download. The
   [main-branch exact-DNA link](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb)
   becomes permanent after merge.
+  Vector cutting is MCS-first: the default inclusive maximum restoration is
+  100 bp, while setting it to 0 enforces strictly MCS-internal cutters. If a
+  nearby outside cutter is used, the scored step01 primary gBlock contains the
+  exact left restoration, target seed, and right restoration so every removed
+  vector base is installed again.
 - **Local browser:** follow the commands below. The final script starts the
   Marimo app on `127.0.0.1:2718` and opens it in your browser.
 

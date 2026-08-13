@@ -5,7 +5,7 @@ import json
 import copy
 import tempfile
 import zipfile
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -31,10 +31,14 @@ from hurdler.exact_dna_design import (
     query_exact_dna,
     write_exact_dna_outputs,
     write_exact_dna_minimal_outputs,
+    _restoration_allowed,
     _retain_annotated_route_groups,
 )
 from hurdler.exact_dna_verification import verify_exact_dna_assembly
-from hurdler.plasmid_reference import load_plasmid_reference
+from hurdler.plasmid_reference import (
+    cutter_is_strictly_inside_mcs,
+    load_plasmid_reference,
+)
 from hurdler.paths import ProjectPaths
 
 
@@ -86,6 +90,33 @@ def rf00059_gblock_result():
             ),
             plasmid_allowlist=tuple(sorted(PLASMIDS)),
             purchase_policy=IDT_GBLOCK_ONLY_PURCHASE_POLICY,
+            timeout_seconds=60,
+        )
+    )
+
+
+@pytest.fixture(scope="module")
+def rf00059_gblock_mcs_only_result():
+    geometries = load_exact_dna_enzyme_catalog()
+    return query_exact_dna(
+        ExactDNAQuery(
+            schema_version=EXACT_DNA_SCHEMA_VERSION,
+            input_mode="array",
+            sequence_id=EXAMPLE["example_id"],
+            repeat_unit=EXAMPLE["repeat_unit"],
+            repeat_copies=4,
+            site_i_allowlist=tuple(
+                sorted(name for name, item in geometries.items() if item.site_i_eligible)
+            ),
+            site_ii_allowlist=tuple(
+                sorted(name for name, item in geometries.items() if item.site_ii_eligible)
+            ),
+            site_iii_allowlist=tuple(
+                sorted(name for name, item in geometries.items() if item.site_iii_eligible)
+            ),
+            plasmid_allowlist=tuple(sorted(PLASMIDS)),
+            purchase_policy=IDT_GBLOCK_ONLY_PURCHASE_POLICY,
+            max_restoration_length_bp=0,
             timeout_seconds=60,
         )
     )
@@ -191,6 +222,38 @@ def test_exact_dna_parser_preserves_one_fasta_and_rejects_non_acgt():
     )
     assert array.target_sequence == "ACGTTTACGTTTACGT"
     assert not array.target_sequence.endswith(array.spacer)
+
+
+@pytest.mark.parametrize("value", [-1, 1.5, True, "100"])
+def test_restoration_limit_rejects_invalid_values(value):
+    with pytest.raises(ValueError, match="non-negative integer or None"):
+        _rf00059_query(max_restoration_length_bp=value)
+
+
+def test_restoration_limit_defaults_to_100_and_accepts_zero_or_none():
+    assert _rf00059_query().max_restoration_length_bp == 100
+    assert _rf00059_query(max_restoration_length_bp=0).max_restoration_length_bp == 0
+    assert _rf00059_query(max_restoration_length_bp=None).max_restoration_length_bp is None
+    assert _restoration_allowed({"restoration_length_bp": 100}, 100)
+    assert not _restoration_allowed({"restoration_length_bp": 101}, 100)
+    assert _restoration_allowed({"restoration_length_bp": 101}, None)
+
+
+def test_all_inside_scheme_recognition_and_cut_coordinates_are_in_the_mcs():
+    database = load_plasmid_reference()
+    for profile in database.profiles:
+        scheme = next(
+            row
+            for row in database.schemes_for(profile.profile_id)
+            if row.left_location == row.right_location == "inside"
+        )
+        assert scheme.valid
+        assert cutter_is_strictly_inside_mcs(
+            database, profile.profile_id, scheme.left_cutter
+        )
+        assert cutter_is_strictly_inside_mcs(
+            database, profile.profile_id, scheme.right_cutter
+        )
 
 
 def test_exact_catalog_combines_broad_re_roles_with_type_iis_adapters():
@@ -341,7 +404,14 @@ def test_arbitrary_exact_dna_requires_a_shorter_seed_to_target_route():
         timeout_seconds=30,
         max_states=100,
     )
-    result = query_exact_dna(query)
+    capped = query_exact_dna(query)
+    assert capped.status == "no_complete_hurdler_route"
+    assert capped.termination_reason == "restoration_limit_exceeded"
+    assert capped.search_summary["max_restoration_length_bp"] == 100
+    assert capped.search_summary["restoration_filtered_route_count"] > 0
+    assert capped.search_summary["minimum_required_restoration_bp"] > 100
+
+    result = query_exact_dna(replace(query, max_restoration_length_bp=None))
     assert result.status == "hurdler_compatible_molecular"
     confirmed = confirm_exact_dna_route(
         result, ExactDNASelection(result.route_candidates[0]["route_id"], "batch")
@@ -351,6 +421,57 @@ def test_arbitrary_exact_dna_requires_a_shorter_seed_to_target_route():
     assert confirmed.transitions
     assert confirmed.final_insert_sequence == target
     assert confirmed.target_sequence_sha256 == hashlib.sha256(target.encode()).hexdigest()
+
+
+def test_default_and_zero_cutoff_prioritize_strict_mcs_routes(
+    rf00059_gblock_result, rf00059_gblock_mcs_only_result
+):
+    for result, cutoff in (
+        (rf00059_gblock_result, 100),
+        (rf00059_gblock_mcs_only_result, 0),
+    ):
+        assert result.status == "hurdler_compatible_molecular"
+        assert result.query["max_restoration_length_bp"] == cutoff
+        assert all(
+            int(row["restoration_length_bp"]) <= cutoff
+            for row in result.route_candidates
+        )
+        top = result.route_candidates[0]
+        assert top["profile_id"] == "pQE-3"
+        assert top["scheme_id"] == "pQE-3:inside/inside"
+        assert top["left_cutter"] == "BamHI"
+        assert top["right_cutter"] == "HindIII"
+        assert top["restoration_length_bp"] == 0
+
+
+def test_outside_cut_primary_restores_vector_around_exact_seed(
+    rf00059_gblock_result,
+):
+    route_row = next(
+        row
+        for row in rf00059_gblock_result.route_candidates
+        if 0 < int(row["restoration_length_bp"]) <= 100
+    )
+    scorer = FakeScorer(0)
+    result = confirm_exact_dna_route(
+        rf00059_gblock_result,
+        ExactDNASelection(route_row["route_id"], "api"),
+        idt_scorer=scorer,
+    )
+    route = rf00059_gblock_result._route_bodies[route_row["route_id"]]
+    primary = result.purchase_fragments[0]
+    assert primary["core_sequence"] == (
+        route["left_restoration_sequence"]
+        + route["seed"]["seed_sequence"]
+        + route["right_restoration_sequence"]
+    )
+    assert primary["restoration_length_bp"] == route["restoration_length_bp"]
+    assert result.status == "idt_accepted_route"
+    assert scorer.calls[0][1] == primary["purchase_sequence"]
+    assert all(float(row["score"]) < 10 for row in result.idt_audit)
+    assert result.independent_verification["passed"] is True
+    assert result.final_insert_sequence == EXAMPLE["repeat_unit"] * 4
+    assert result.final_plasmid["restoration_exact"] is True
 
 
 def test_budget_exhaustion_is_unclassified_not_incompatible():
@@ -432,6 +553,7 @@ def test_live_idt_strict_threshold_invalid_score_and_api_error(rf00059_result):
         site_i_allowlist=("EcoRI",),
         site_ii_allowlist=("HindIII",),
         plasmid_allowlist=("pUC18",),
+        max_restoration_length_bp=None,
         timeout_seconds=30,
         max_states=100,
     )

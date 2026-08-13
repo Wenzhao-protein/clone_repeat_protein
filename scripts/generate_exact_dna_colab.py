@@ -214,6 +214,7 @@ def main() -> int:
             #@markdown Default search limits are suitable for the regulatory-array example. Budget exhaustion is reported as `search_incomplete`, never incompatible.
             use_advanced_search_settings = False #@param {type:"boolean"}
             max_purchase_bp = 3000 #@param {type:"integer"}
+            max_restoration_length_bp = 100 #@param {type:"integer"}
             max_search_states = 10000 #@param {type:"integer"}
             search_timeout_seconds = 600 #@param {type:"integer"}
             paths_per_state = 3 #@param {type:"integer"}
@@ -222,6 +223,7 @@ def main() -> int:
             allow_right_cutter_fallback = False #@param {type:"boolean"}
             route_confirmation_mode = "Automatically use top-ranked route" #@param ["Automatically use top-ranked route", "Select route manually after query"]
             auto_download_results_zip = True #@param {type:"boolean"}
+            #@markdown `Max restoration = 0` enforces MCS-only cutting. Values above zero allow a nearby outside cutter only when the primary insert restores every removed vector base; left + right restoration must be at most this inclusive cutoff.
             """,
             cell_id="exact-dna-search-form",
             title="3. Search and annotation-aware cutter policy",
@@ -550,6 +552,7 @@ def main() -> int:
                     allow_right_cutter_in_hurdler_pair=bool(allow_right_cutter_fallback),
                     purchase_policy=IDT_GBLOCK_ONLY_PURCHASE_POLICY,
                     max_purchase_bp=int(max_purchase_bp),
+                    max_restoration_length_bp=int(max_restoration_length_bp),
                     max_states=int(max_search_states if advanced else 10000),
                     timeout_seconds=int(search_timeout_seconds if advanced else 600),
                     paths_per_state=int(paths_per_state if advanced else 3),
@@ -595,10 +598,27 @@ def main() -> int:
             def refresh_schemes(_change=None):
                 invalidate_confirmation()
                 choices = sorted({
-                    (row["scheme_id"], row["cut_scheme"])
+                    (
+                        row["scheme_id"], row["cut_scheme"],
+                        row["left_cutter"], row["right_cutter"],
+                        int(row["left_restoration_length_bp"]),
+                        int(row["right_restoration_length_bp"]),
+                        int(row["restoration_length_bp"]),
+                    )
                     for row in routes_for_current_selection(through="plasmid")
                 }) if plasmid_dropdown.value else []
-                scheme_dropdown.options = [("Choose cut scheme", None), *[(f"{label} · {identifier}", identifier) for identifier, label in choices]]
+                scheme_dropdown.options = [
+                    ("Choose cut scheme", None),
+                    *[
+                        (
+                            f"{label} · {left}/{right} · restore {total} bp "
+                            f"(L {left_bp} + R {right_bp})",
+                            identifier,
+                        )
+                        for identifier, label, left, right, left_bp, right_bp, total
+                        in choices
+                    ],
+                ]
                 scheme_dropdown.value = None
                 scheme_dropdown.disabled = not bool(choices)
 
@@ -608,7 +628,10 @@ def main() -> int:
                 options = [("Choose route", None)]
                 for rank, row in enumerate(rows, 1):
                     options.append((
-                        f"{rank}: {row['transition_count']} transitions · {row['hurdler_step_count']} cycles · {row['unique_purchase_count']} unique purchases",
+                        f"{rank}: restore {row['restoration_length_bp']} bp · "
+                        f"{row['transition_count']} transitions · "
+                        f"{row['hurdler_step_count']} cycles · "
+                        f"{row['unique_purchase_count']} unique purchases",
                         row["route_id"],
                     ))
                 route_dropdown.options = options
@@ -664,9 +687,29 @@ def main() -> int:
                             f"Target: **{query_result.target_length_bp:,} bp** · "
                             f"active hits: **{sum(row['state']=='active' for row in query_result.restriction_hits)}** · "
                             f"latent hits: **{sum(row['state']=='latent' for row in query_result.restriction_hits)}** · "
-                            f"routes: **{len(query_result.route_candidates)}** · elapsed: **{time.monotonic()-started:.1f}s**"
+                            f"routes: **{len(query_result.route_candidates)}** · "
+                            f"restoration cutoff: **{query.max_restoration_length_bp} bp** · "
+                            f"filtered routes: **{query_result.search_summary.get('restoration_filtered_route_count', 0)}** · "
+                            f"elapsed: **{time.monotonic()-started:.1f}s**"
                         ))
                         if query_result.route_candidates:
+                            route_table = pd.DataFrame([
+                                {
+                                    "rank": rank,
+                                    "RE_pair": "; ".join(
+                                        f"{item['site_i_enzyme']}/{item['site_ii_enzyme']}"
+                                        for item in row["pairs"]
+                                    ),
+                                    "plasmid": row["profile_id"],
+                                    "cut_scheme": row["cut_scheme"],
+                                    "vector_cutters": f"{row['left_cutter']}/{row['right_cutter']}",
+                                    "left_restore_bp": row["left_restoration_length_bp"],
+                                    "right_restore_bp": row["right_restoration_length_bp"],
+                                    "total_restore_bp": row["restoration_length_bp"],
+                                }
+                                for rank, row in enumerate(query_result.route_candidates, 1)
+                            ])
+                            display(route_table)
                             pairs = sorted({
                                 (item["site_i_enzyme"], item["site_ii_enzyme"])
                                 for row in query_result.route_candidates for item in row["pairs"]
@@ -703,7 +746,11 @@ def main() -> int:
                         _prepare_exact_viewer(preview, preview_only=True)
                         display(Markdown(
                             f"**Confirmed:** `{confirmed_route_id}` · "
-                            f"{route['profile_id']} · {route['cut_scheme']}. "
+                            f"{route['profile_id']} · {route['cut_scheme']} · "
+                            f"{route['left_cutter']}/{route['right_cutter']} · "
+                            f"restore {route['restoration_length_bp']} bp "
+                            f"(L {route['left_restoration_length_bp']} + "
+                            f"R {route['right_restoration_length_bp']}). "
                             "Live IDT validation is ready."
                         ))
                         if "validate_button" in globals():

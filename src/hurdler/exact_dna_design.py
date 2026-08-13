@@ -52,6 +52,7 @@ from .plasmid_reference import (
     PLASMID_REFERENCE_VERSION,
     PlasmidReferenceDatabase,
     VectorCutScheme,
+    cutter_is_strictly_inside_mcs,
     decide_cutter_silencing,
     load_plasmid_reference,
     retained_backbone_contains_site,
@@ -165,6 +166,7 @@ class ExactDNAQuery:
     pair_policy: str = EXACT_DNA_PAIR_POLICY
     purchase_policy: str = LEGACY_MIXED_PURCHASE_POLICY
     max_purchase_bp: int = DEFAULT_GBLOCK_MAX_BP
+    max_restoration_length_bp: int | None = 100
     max_states: int = DEFAULT_MAX_STATES
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     paths_per_state: int = DEFAULT_PATHS_PER_STATE
@@ -198,6 +200,15 @@ class ExactDNAQuery:
                 f"{IDT_GBLOCK_ONLY_PURCHASE_POLICY} requires max_purchase_bp "
                 f">= {DEFAULT_GBLOCK_MIN_BP}"
             )
+        if self.max_restoration_length_bp is not None:
+            if (
+                isinstance(self.max_restoration_length_bp, bool)
+                or not isinstance(self.max_restoration_length_bp, int)
+                or self.max_restoration_length_bp < 0
+            ):
+                raise ValueError(
+                    "max_restoration_length_bp must be a non-negative integer or None"
+                )
         if int(self.max_states) < 1 or int(self.timeout_seconds) < 1:
             raise ValueError("Search state and timeout limits must be positive")
         if int(self.paths_per_state) < 1 or int(self.max_complete_routes) < 1:
@@ -846,6 +857,18 @@ def _annotation_routes_for_path(
         if not scheme.valid or scheme.left_cutter is None or scheme.right_cutter is None:
             continue
         profile = database.profile(scheme.profile_id)
+        if (
+            scheme.left_location == "inside"
+            and not cutter_is_strictly_inside_mcs(
+                database, profile.profile_id, scheme.left_cutter
+            )
+        ) or (
+            scheme.right_location == "inside"
+            and not cutter_is_strictly_inside_mcs(
+                database, profile.profile_id, scheme.right_cutter
+            )
+        ):
+            continue
         if query.plasmid_allowlist and profile.profile_id not in set(query.plasmid_allowlist):
             continue
         if any(
@@ -921,6 +944,12 @@ def _annotation_routes_for_path(
                 "silencing_decisions": [asdict(item) for item in decisions],
                 "left_restoration_sequence": scheme.left_restoration_sequence,
                 "right_restoration_sequence": scheme.right_restoration_sequence,
+                "left_restoration_length_bp": len(
+                    scheme.left_restoration_sequence
+                ),
+                "right_restoration_length_bp": len(
+                    scheme.right_restoration_sequence
+                ),
                 "restoration_length_bp": len(scheme.left_restoration_sequence)
                 + len(scheme.right_restoration_sequence),
                 "retained_backbone_sha256": scheme.retained_backbone_sha256,
@@ -946,6 +975,25 @@ def _annotation_routes_for_path(
     if any(not route["cutter_reuse"] for route in routes):
         routes = [route for route in routes if not route["cutter_reuse"]]
     return routes
+
+
+def _restoration_allowed(route: Mapping[str, Any], limit: int | None) -> bool:
+    return limit is None or int(route["restoration_length_bp"]) <= int(limit)
+
+
+def _route_rank_key(route: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Rank MCS-preserving routes before molecular/purchase complexity."""
+    return (
+        str(route.get("pair_mode", "fixed")) != "fixed",
+        bool(route.get("cutter_reuse", False)),
+        int(route.get("restoration_length_bp", 0)),
+        int(route.get("hurdler_step_count", 0)),
+        int(route.get("unique_purchase_count", 0)),
+        int(route.get("total_purchase_bp", 0)),
+        str(route.get("profile_id", "")),
+        str(route.get("scheme_id", "")),
+        str(route.get("route_id", "")),
+    )
 
 
 # The geometry context is scoped to a synchronous query and avoids serializing
@@ -1039,9 +1087,20 @@ def query_exact_dna(
         progress_callback=progress_callback,
     )
     search_summaries = {"fixed_pair": fixed_summary}
+    restoration_candidates: list[dict[str, Any]] = []
     annotated: list[dict[str, Any]] = []
     for path in fixed_paths:
-        annotated.extend(_annotation_routes_for_path(path, query, database))
+        path_routes = _annotation_routes_for_path(path, query, database)
+        restoration_candidates.extend(path_routes)
+        annotated.extend(
+            route
+            for route in path_routes
+            if _restoration_allowed(route, query.max_restoration_length_bp)
+        )
+    fixed_summary["annotation_routes_before_restoration_filter"] = len(
+        restoration_candidates
+    )
+    fixed_summary["annotation_routes_after_restoration_filter"] = len(annotated)
     pair_mode = "fixed"
     if not annotated and time.monotonic() < deadline:
         variable_paths, variable_summary = search(
@@ -1053,38 +1112,28 @@ def query_exact_dna(
         )
         pair_mode = "pair_changes"
         search_summaries["pair_changes"] = variable_summary
+        before_variable = len(restoration_candidates)
+        after_variable = len(annotated)
         for path in variable_paths:
-            annotated.extend(_annotation_routes_for_path(path, query, database))
-    annotated.sort(
-        key=lambda route: (
-            route["pair_mode"] != "fixed",
-            bool(route["cutter_reuse"]),
-            int(route["hurdler_step_count"]),
-            int(route["unique_purchase_count"]),
-            int(route["total_purchase_bp"]),
-            int(route["restoration_length_bp"]),
-            str(route["profile_id"]),
-            str(route["scheme_id"]),
-            str(route["route_id"]),
+            path_routes = _annotation_routes_for_path(path, query, database)
+            restoration_candidates.extend(path_routes)
+            annotated.extend(
+                route
+                for route in path_routes
+                if _restoration_allowed(route, query.max_restoration_length_bp)
+            )
+        variable_summary["annotation_routes_before_restoration_filter"] = (
+            len(restoration_candidates) - before_variable
         )
-    )
+        variable_summary["annotation_routes_after_restoration_filter"] = (
+            len(annotated) - after_variable
+        )
+    annotated.sort(key=_route_rank_key)
     annotated = _retain_annotated_route_groups(
         annotated,
         routes_per_group=int(query.max_complete_routes),
     )
-    annotated.sort(
-        key=lambda route: (
-            route["pair_mode"] != "fixed",
-            bool(route["cutter_reuse"]),
-            int(route["hurdler_step_count"]),
-            int(route["unique_purchase_count"]),
-            int(route["total_purchase_bp"]),
-            int(route["restoration_length_bp"]),
-            str(route["profile_id"]),
-            str(route["scheme_id"]),
-            str(route["route_id"]),
-        )
-    )
+    annotated.sort(key=_route_rank_key)
     target_hits = fixed_summary.get("target_hits", [])
     pair_candidates: dict[tuple[str, str], dict[str, Any]] = {}
     for route in annotated:
@@ -1107,6 +1156,18 @@ def query_exact_dna(
         row["supported_plasmids"] = sorted(row["supported_plasmids"])
         public_pairs.append(row)
     exhaustive = all(bool(item.get("complete")) for item in search_summaries.values())
+    restoration_filtered_count = sum(
+        not _restoration_allowed(route, query.max_restoration_length_bp)
+        for route in restoration_candidates
+    )
+    minimum_required_restoration = min(
+        (
+            int(route["restoration_length_bp"])
+            for route in restoration_candidates
+        ),
+        default=None,
+    )
+    restoration_blocked = bool(restoration_candidates) and not annotated
     if annotated:
         status = "hurdler_compatible_molecular"
         message = (
@@ -1118,6 +1179,14 @@ def query_exact_dna(
         status = "search_incomplete"
         message = "The route search reached its state or time budget; compatibility is unclassified."
         termination = "search_budget_exhausted"
+    elif restoration_blocked:
+        status = "no_complete_hurdler_route"
+        message = (
+            "Complete molecular routes exist, but all require restoration longer than "
+            f"{query.max_restoration_length_bp} bp; the minimum required restoration "
+            f"is {minimum_required_restoration} bp."
+        )
+        termination = "restoration_limit_exceeded"
     elif _seed_evidence(target) is not None:
         status = "direct_purchase_only"
         message = "The exact target fits a direct synthesis product, but no complete HURDLER growth route was found."
@@ -1149,6 +1218,12 @@ def query_exact_dna(
             "pair_search_used": pair_mode,
             "elapsed_seconds": time.monotonic() - started,
             "route_count": len(annotated),
+            "annotation_routes_before_restoration_filter": len(
+                restoration_candidates
+            ),
+            "restoration_filtered_route_count": restoration_filtered_count,
+            "minimum_required_restoration_bp": minimum_required_restoration,
+            "max_restoration_length_bp": query.max_restoration_length_bp,
             "complete": exhaustive,
         },
         termination_reason=termination,
@@ -1228,16 +1303,32 @@ def _gblock_site_iii_flank(
 def _select_gblock_site_iii(
     geometries: Mapping[str, EnzymeGeometry],
     *,
-    overhang_length: int,
+    overhang_sequence: str,
     core_sequence: str,
     allowed: set[str],
 ) -> list[EnzymeGeometry]:
+    overhang = str(overhang_sequence).upper()
+
+    def template_matches(geometry: EnzymeGeometry) -> bool:
+        template = str(geometry.ovhgseq or "").upper()
+        return len(template) == len(overhang) and all(
+            expected == "N" or expected == observed
+            for expected, observed in zip(template, overhang, strict=True)
+        )
+
     candidates = [
         geometry
         for name, geometry in geometries.items()
         if geometry.site_iii_eligible
         and geometry.is_type_iis
-        and geometry.overhang_length == int(overhang_length)
+        and geometry.overhang_length == len(overhang)
+        # A disposable adapter must leave its complete recognition sequence on
+        # the discarded flank.  Enzymes such as BsrI cut partly inside their
+        # own motif and cannot release an arbitrary declared cohesive end.
+        and min(
+            int(geometry.top_cut_offset), int(geometry.bottom_cut_offset)
+        ) >= len(geometry.recognition_site)
+        and template_matches(geometry)
         and (not allowed or name in allowed)
         and _linear_motif_occurrences(core_sequence, geometry.recognition_site) == 0
     ]
@@ -1279,13 +1370,13 @@ def _build_gblock_purchase(
     allowed = set(allowed_site_iii)
     left_options = _select_gblock_site_iii(
         geometries,
-        overhang_length=len(left_overhang),
+        overhang_sequence=left_overhang,
         core_sequence=core_sequence,
         allowed=allowed,
     )
     right_options = _select_gblock_site_iii(
         geometries,
-        overhang_length=len(right_overhang),
+        overhang_sequence=right_overhang,
         core_sequence=core_sequence,
         allowed=allowed,
     )
@@ -1768,6 +1859,12 @@ def confirm_exact_dna_route(
     if selection.route_id not in bodies:
         raise ValueError("Selected route is absent or belongs to a stale query")
     route = copy.deepcopy(bodies[selection.route_id])
+    restoration_limit = query_result.query.get("max_restoration_length_bp")
+    if (
+        restoration_limit is not None
+        and int(route.get("restoration_length_bp", 0)) > int(restoration_limit)
+    ):
+        raise ValueError("Selected route exceeds the query restoration-length limit")
     expected_values = {
         "plasmid_profile": (selection.plasmid_profile, route["profile_id"]),
         "cut_scheme_id": (selection.cut_scheme_id, route["scheme_id"]),
@@ -2169,6 +2266,9 @@ def confirm_best_exact_dna_route(
     candidates.sort(
         key=lambda row: (
             row["route_id"] != selection.route_id,
+            str(row.get("pair_mode", "fixed")) != "fixed",
+            bool(row.get("cutter_reuse", False)),
+            int(row.get("restoration_length_bp", 0)),
             (
                 -int(row.get("hurdler_step_count", 0))
                 if row["route_id"] != selection.route_id
@@ -2176,6 +2276,10 @@ def confirm_best_exact_dna_route(
                 == IDT_GBLOCK_ONLY_PURCHASE_POLICY
                 else int(row.get("hurdler_step_count", 0))
             ),
+            int(row.get("unique_purchase_count", 0)),
+            int(row.get("total_purchase_bp", 0)),
+            str(row.get("profile_id", "")),
+            str(row.get("scheme_id", "")),
             str(row["route_id"]),
         )
     )
