@@ -107,9 +107,17 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
     assert 'value="split"' in controller
     assert 'full_input_panel.layout.display = "" if input_mode_widget.value == "full" else "none"' in controller
     assert "_help_card" in controller
-    assert {cell["id"] for cell in payload["cells"]} == {
-        "hurdler-introduction", "hurdler-initialize"
-    }
+    assert [cell["id"] for cell in payload["cells"]] == [
+        "hurdler-introduction",
+        "hurdler-initialize",
+        "hurdler-step-1-setup",
+        "hurdler-step-2-protein",
+        "hurdler-step-3-query",
+        "hurdler-step-4-route",
+        "hurdler-step-5-ga",
+        "hurdler-step-6-viewer",
+        "hurdler-step-7-results",
+    ]
     assert "widgets.Password(" in COLAB_NOTEBOOK.read_text()
     assert "Create Credentials" in controller
     assert "Upload idt.env" in controller
@@ -121,12 +129,18 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
         assert not re.search(rf"^{secret}\s*=.*#@param", COLAB_NOTEBOOK.read_text(), re.MULTILINE)
 
 
-def test_colab_has_one_tutorial_application_with_independent_modules():
+def test_colab_has_separate_tutorial_steps_with_viewer_after_ga():
     sources = {
         cell["metadata"]["id"]: "".join(cell["source"])
         for cell in _colab_payload()["cells"]
     }
-    assert set(sources) == {"hurdler-introduction", "hurdler-initialize"}
+    assert sources["hurdler-step-1-setup"].endswith("display(setup_module)")
+    assert sources["hurdler-step-2-protein"].endswith("display(protein_module)")
+    assert sources["hurdler-step-3-query"].endswith("display(route_filter_module)")
+    assert sources["hurdler-step-4-route"].endswith("display(route_selection_module)")
+    assert sources["hurdler-step-5-ga"].endswith("display(ga_module)")
+    assert sources["hurdler-step-6-viewer"].endswith("display(viewer_module)")
+    assert sources["hurdler-step-7-results"].endswith("display(result_module)")
     controller = _colab_runtime_sources()[2]
     assert "Select all RE" in controller
     assert "Select none" in controller
@@ -180,6 +194,9 @@ def test_colab_has_one_tutorial_application_with_independent_modules():
     assert "idt_plot_output" in controller
     assert 'status="fragment_scored"' not in controller
     assert "_ui_event_pump" in controller
+    assert "_enqueue_ui_event" in controller
+    assert "call_soon_threadsafe" in controller
+    assert "tutorial_app" not in controller
 
 
 def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
@@ -675,6 +692,62 @@ def test_colab_pause_resume_and_stop_use_cooperative_background_control(
         payload = json.loads(archive.read("checkpoint.json"))
     assert payload["run_status"] == "stopped_by_user"
     assert "best_secondary_core.fasta" not in zipfile.ZipFile(checkpoint).namelist()
+
+
+def test_colab_kernel_loop_automatically_drains_ga_feedback(tmp_path):
+    """Exercise the real ipykernel loop without manually draining the UI queue."""
+    notebook = nbformat.read(COLAB_NOTEBOOK, as_version=4)
+    output_directory = json.dumps(str(tmp_path / "kernel_feedback"))
+    notebook.cells.append(
+        nbformat.v4.new_code_cell(
+            f'''_run_query()
+pair_choice.value = pair_choice.options[1][1]
+site_iii_choice.value = site_iii_choice.options[1][1]
+profile_choice.value = profile_choice.options[1][1]
+scheme_choice.value = scheme_choice.options[1][1]
+_confirm_route()
+idt_setup_mode_widget.value = "batch"
+output_directory_widget.value = {output_directory}
+auto_download_widget.value = False
+
+def _slow_feedback_design(_request, *, progress_callback, run_control, **_kwargs):
+    for generation in range(1, 4):
+        run_control.safe_point()
+        progress_callback(DesignProgressEvent(
+            stage="ga", status="running", fragment_kind="kernel_feedback",
+            copies=12, generation=generation, generations=3,
+            ga_score=float(4 - generation), elapsed_seconds=generation * 0.1,
+        ))
+        time.sleep(0.15)
+    raise RuntimeError("intentional kernel feedback terminator")
+
+design_construct_v2 = _slow_feedback_design
+_run_design()
+assert "run_requested" in attempt_log_html.value
+observed_generations = []
+for _index in range(200):
+    observed_generations.append(generation_progress.value)
+    if state.get("run_terminal_status") == "failed":
+        break
+    await asyncio.sleep(0.05)
+assert max(observed_generations) == 3
+assert "gen=3/3" in attempt_log_html.value
+assert state["run_terminal_status"] == "failed"
+assert state["run_active"] is False
+'''
+        )
+    )
+    executed = NotebookClient(
+        notebook,
+        timeout=180,
+        kernel_name="python3",
+        resources={"metadata": {"path": str(ROOT)}},
+    ).execute(cwd=str(ROOT))
+    assert all(
+        output.get("output_type") != "error"
+        for cell in executed.cells
+        for output in cell.get("outputs", [])
+    )
 
 
 def test_readme_notebook_links_resolve():

@@ -64,9 +64,7 @@ boundary while Site II is re-silenced after ligation.
    jointly supported by the current RE, plasmid and restore-length filters.
 4. Explicitly choose Site I/II, Site III,
    plasmid and cut scheme. Changing an upstream field invalidates confirmation.
-5. Inspect the independent plasmid/insert viewer. Route confirmation immediately
-   loads the annotated circular step00 plasmid; completed GA runs add every step.
-6. Choose automatic secondary exploration (from one repeat to the physical
+5. Choose automatic secondary exploration (from one repeat to the physical
    limit) or a bounded repeat-copy range. The GA preserves translation and uses
    repeated RE sites, GC, repeated k-mers, hairpin proxies and codon usage in
    its score. In Live API mode every completed candidate is sent to IDT for
@@ -76,6 +74,10 @@ boundary while Site II is re-silenced after ligation.
    The external bundle freezes the complete request, exact Git commit, Conda
    YAML, 16-CPU/32-GB/24-hour defaults, checkpoint commands and an external
    mode-600 IDT credential path; it never copies credential values.
+6. Inspect the independent plasmid/insert viewer after the GA panel. Route
+   confirmation preloads the annotated circular step00 plasmid; completed GA
+   runs add every insert and intermediate plasmid.
+7. Review the final status and download the timestamped results ZIP.
 7. Download the UTC-stamped result ZIP. It contains purchase FASTA/CSV, IDT and GA
    audits, `step00_plasmid.gb`, every `stepXX_insert.gb` and
    `stepXX_plasmid.gb`, translations, manifests, and static plasmid maps.
@@ -1153,6 +1155,10 @@ state = {
     "progress_queue": queue.Queue(),
     "progress_lock": threading.Lock(),
     "ui_pump_task": None,
+    "ui_asyncio_loop": None,
+    "ui_io_loop": None,
+    "ui_schedule_lock": threading.Lock(),
+    "ui_drain_pending": False,
     "visible_log_lines": [],
     "idt_score_events": [],
     "run_started_monotonic": None,
@@ -2218,7 +2224,7 @@ def _progress_update(event: DesignProgressEvent, run_id=None):
         state["progress_events"].append(event.to_dict())
         state["last_progress_monotonic"] = time.monotonic()
     _persist_checkpoint(force=False)
-    state["progress_queue"].put(("progress", run_id, event))
+    _enqueue_ui_event("progress", run_id, event)
 
 
 def _drain_ui_events(max_items=100):
@@ -2242,6 +2248,61 @@ def _drain_ui_events(max_items=100):
         elif kind == "stage_html":
             stage_html.value = str(payload)
     return handled
+
+
+def _capture_ui_dispatcher():
+    """Capture Colab/ipykernel's UI loop before the GA worker starts."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    shell = get_ipython()
+    io_loop = getattr(getattr(shell, "kernel", None), "io_loop", None)
+    state["ui_asyncio_loop"] = loop
+    state["ui_io_loop"] = io_loop
+    return loop, io_loop
+
+
+def _schedule_ui_callback(callback, *args):
+    """Post one callback to the kernel UI loop from any worker thread."""
+    loop = state.get("ui_asyncio_loop")
+    if loop is not None and loop.is_running():
+        loop.call_soon_threadsafe(callback, *args)
+        return True
+    io_loop = state.get("ui_io_loop")
+    if io_loop is not None:
+        io_loop.add_callback(callback, *args)
+        return True
+    return False
+
+
+def _request_ui_drain(run_id):
+    """Coalesce worker events while guaranteeing a UI-thread drain request."""
+    with state["ui_schedule_lock"]:
+        if state.get("ui_drain_pending"):
+            return True
+        state["ui_drain_pending"] = True
+
+    def _scheduled_drain():
+        try:
+            if int(run_id) == int(state.get("run_id", 0)):
+                _drain_ui_events()
+        finally:
+            with state["ui_schedule_lock"]:
+                state["ui_drain_pending"] = False
+        if not state["progress_queue"].empty():
+            _request_ui_drain(int(state.get("run_id", 0)))
+
+    scheduled = _schedule_ui_callback(_scheduled_drain)
+    if not scheduled:
+        with state["ui_schedule_lock"]:
+            state["ui_drain_pending"] = False
+    return scheduled
+
+
+def _enqueue_ui_event(kind, run_id, payload):
+    state["progress_queue"].put((str(kind), int(run_id), payload))
+    return _request_ui_drain(int(run_id))
 
 
 async def _ui_event_pump(run_id):
@@ -2276,15 +2337,12 @@ def _start_ui_event_pump(run_id):
     previous = state.get("ui_pump_task")
     if previous is not None and not previous.done():
         previous.cancel()
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+    loop, io_loop = _capture_ui_dispatcher()
+    if loop is None:
         # Some ipykernel/Colab releases execute widget callbacks outside the
         # asyncio task while their Tornado IOLoop is still the authoritative
         # UI thread. Schedule creation there instead of letting the worker
         # thread touch widget state.
-        shell = get_ipython()
-        io_loop = getattr(getattr(shell, "kernel", None), "io_loop", None)
         if io_loop is None:
             state["ui_pump_task"] = None
             return None
@@ -2376,9 +2434,9 @@ def _checkpoint_update(payload):
             f"<b>Checkpoint saved:</b> {checkpoint['repeat_copies']} secondary copies · "
             f"IDT {checkpoint['idt_complexity_score']} · {Path(state['checkpoint_archive']).name}</div>"
         )
-        state["progress_queue"].put((
+        _enqueue_ui_event(
             "stage_html", int(state.get("run_id", 0)), message
-        ))
+        )
 
 
 def _validation_mode():
@@ -2830,18 +2888,18 @@ def _run_design_worker(request, query, output_directory, control, run_id):
             if storage_mode_widget.value == "drive"
             else None
         )
-        state["progress_queue"].put((
+        _enqueue_ui_event(
             "success", int(run_id),
             (result, files, archive, output_directory, drive_archive),
-        ))
+        )
     except DesignRunStopped:
         state["run_terminal_status"] = "stopped_by_user"
         _persist_checkpoint(force=True)
-        state["progress_queue"].put(("stopped", int(run_id), None))
+        _enqueue_ui_event("stopped", int(run_id), None)
     except Exception as exc:
-        state["progress_queue"].put((
+        _enqueue_ui_event(
             "error", int(run_id), (type(exc).__name__, str(exc))
-        ))
+        )
     finally:
         clear_idt_secret_environment()
 
@@ -2877,9 +2935,11 @@ def _run_design(_button=None):
         "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
         "<b>Status:</b> starting GA worker</div>"
     )
+    request_line = f"run_requested  run_id={run_id}  preparing credentials and GA request"
+    state["visible_log_lines"].append(request_line)
     attempt_log_html.value = (
         "<pre style='color:#111827;background:#ffffff'>"
-        + html.escape(f"run_requested  run_id={run_id}  preparing credentials and GA request")
+        + html.escape(request_line)
         + "</pre>"
     )
     if _validation_mode() == "batch":
@@ -2919,6 +2979,7 @@ def _run_design(_button=None):
             daemon=True,
         )
         state["run_thread"] = worker
+        _start_ui_event_pump(run_id)
         worker.start()
         state["visible_log_lines"].append(f"worker_started run_id={run_id} thread={worker.name}")
         attempt_log_html.value = (
@@ -2926,7 +2987,6 @@ def _run_design(_button=None):
             + html.escape("\n".join(state["visible_log_lines"]))
             + "</pre>"
         )
-        _start_ui_event_pump(run_id)
     except Exception as exc:
         clear_idt_secret_environment()
         _finish_design_error(type(exc).__name__, str(exc))
@@ -3369,35 +3429,31 @@ route_selection_module = widgets.VBox([
     pair_choice, site_iii_choice, profile_choice, scheme_choice,
     confirm_button, route_output,
 ])
-viewer_module = widgets.VBox([
-    widgets.HTML("<h2>5. Interactive plasmid and insert viewer</h2>"),
-    viewer_panel,
-])
 ga_module = widgets.VBox([
-    widgets.HTML("<h2>6. GA optimization and execution</h2>"),
+    widgets.HTML("<h2>5. GA optimization and execution</h2>"),
     ga_panel,
+])
+viewer_module = widgets.VBox([
+    widgets.HTML("<h2>6. Interactive plasmid and insert viewer</h2>"),
+    viewer_panel,
 ])
 result_module = widgets.VBox([
     widgets.HTML("<h2>7. Results and downloads</h2>"),
     results_panel,
 ])
-tutorial_app = widgets.VBox([
-    widgets.HTML(
-        "<div style='border:2px solid #2d6a4f;background:#effaf4;color:#111827;"
-        "padding:10px;border-radius:8px'><b>HURDLER initialized.</b> Work through the seven "
-        "interactive modules below; internal setup output is intentionally hidden.</div>"
-    ),
-    setup_module,
-    protein_module,
-    route_filter_module,
-    route_selection_module,
-    viewer_module,
-    ga_module,
-    result_module,
-])
-display(tutorial_app)
 None
 '''
+
+
+COLAB_TUTORIAL_STEPS = (
+    ("hurdler-step-1-setup", "1. Storage and IDT setup", "display(setup_module)"),
+    ("hurdler-step-2-protein", "2. Protein sequence and repeat definition", "display(protein_module)"),
+    ("hurdler-step-3-query", "3. Enzyme/plasmid filters and HURDLER query", "display(route_filter_module)"),
+    ("hurdler-step-4-route", "4. Route selection and confirmation", "display(route_selection_module)"),
+    ("hurdler-step-5-ga", "5. GA optimization and execution", "display(ga_module)"),
+    ("hurdler-step-6-viewer", "6. Interactive plasmid and insert viewer", "display(viewer_module)"),
+    ("hurdler-step-7-results", "7. Results and downloads", "display(result_module)"),
+)
 
 
 COLAB_ENZYME_SELECTOR = r'''display(widgets.VBox([
@@ -3493,6 +3549,15 @@ def notebook(*, colab: bool = False):
                 title='Initialize HURDLER tutorial { display-mode: "form" }',
             )
         )
+        for cell_id, title, source in COLAB_TUTORIAL_STEPS:
+            cells.append(
+                _code_cell(
+                    source,
+                    colab=True,
+                    cell_id=cell_id,
+                    title=title,
+                )
+            )
     else:
         cells.extend([
             _code_cell(
