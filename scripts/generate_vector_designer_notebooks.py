@@ -39,7 +39,7 @@ order**. Run the notebook once with **Runtime → Run all**, then work through t
 numbered panels from top to bottom.
 
 Colab does not persist trusted third-party widget views when a GitHub notebook
-page is refreshed. If the runtime is still connected, run the final
+page is refreshed. If the runtime is still connected, run the near-top
 **Reconnect interface after a browser refresh** cell once: it remounts all seven
 panels as tabs and reconnects the GA progress bridge without restarting the GA.
 If the runtime itself was replaced, use **Runtime → Run all** instead.
@@ -466,6 +466,150 @@ elif importlib.util.find_spec("hurdler") is None:
 
 hurdler_package = importlib.import_module("hurdler")
 hurdler_initialization_message = f"HURDLER ready: {Path(hurdler_package.__file__).resolve()}"
+'''
+
+
+COLAB_RESET_SESSION = r'''import os
+import shutil
+import sys
+import time
+from pathlib import Path
+
+import ipywidgets as widgets
+from IPython.display import HTML, Javascript, display
+
+try:
+    from google.colab import output as _reset_colab_output
+    _reset_colab_output.enable_custom_widget_manager()
+except ImportError:
+    pass
+
+reset_session_confirm = widgets.Checkbox(
+    value=False,
+    description="I understand this removes the temporary HURDLER checkout and in-memory session",
+    indent=False,
+)
+reset_runtime_outputs = widgets.Checkbox(
+    value=False,
+    description="Also delete /content/hurdler_runs/current (Drive archives are never deleted)",
+    indent=False,
+)
+reset_session_button = widgets.Button(
+    description="Reset HURDLER session",
+    icon="refresh",
+    button_style="danger",
+    disabled=True,
+    layout=widgets.Layout(width="260px", height="42px"),
+)
+reset_session_status = widgets.HTML(
+    "<div style='border:2px solid #b7a57a;background:#fffaf0;color:#111827;"
+    "border-radius:8px;padding:10px'><b>Optional reset.</b> Use this when an old "
+    "checkout, imported package, widget session or interrupted GA must be discarded. "
+    "Checkpoints and final ZIP files are preserved by default.</div>"
+)
+
+
+def _reset_confirmation_changed(change):
+    reset_session_button.disabled = not bool(change.get("new"))
+
+
+def _wipe_reset_bytearray(value):
+    if isinstance(value, bytearray):
+        for index in range(len(value)):
+            value[index] = 0
+
+
+def _reset_hurdler_session(_button=None):
+    if not reset_session_confirm.value:
+        reset_session_status.value = (
+            "<div style='color:#b31b1b'><b>Reset not started:</b> select the confirmation checkbox first.</div>"
+        )
+        return
+    reset_session_button.disabled = True
+    reset_session_status.value = "<b>Resetting HURDLER session…</b>"
+    current_state = globals().get("state")
+    if isinstance(current_state, dict):
+        control = current_state.get("run_control")
+        if control is not None:
+            try:
+                control.stop()
+            except Exception:
+                pass
+        worker = current_state.get("run_thread")
+        if worker is not None and getattr(worker, "is_alive", lambda: False)():
+            worker.join(timeout=5.0)
+            if worker.is_alive():
+                reset_session_status.value = (
+                    "<div style='color:#b31b1b'><b>Reset paused:</b> the GA worker is still inside an "
+                    "active fitness/API unit. Wait for Stop to reach a safe point, then click Reset again.</div>"
+                )
+                reset_session_button.disabled = False
+                return
+        pump = current_state.get("ui_pump_task")
+        if pump is not None:
+            try:
+                pump.cancel()
+            except Exception:
+                pass
+        _wipe_reset_bytearray(current_state.get("credential_payload"))
+        _wipe_reset_bytearray(current_state.get("pending_credential_upload"))
+        current_state.clear()
+    for field in (
+        "IDT_ACCESS_TOKEN", "IDT_CLIENT_ID", "IDT_CLIENT_SECRET", "IDT_USERNAME",
+        "IDT_PASSWORD", "HURDLER_IDT_EPHEMERAL_CREDENTIALS",
+    ):
+        os.environ.pop(field, None)
+    checkout = Path(os.environ.get("HURDLER_COLAB_CHECKOUT", "/content/clone_repeat_protein"))
+    runtime_current = Path(
+        os.environ.get("HURDLER_COLAB_CURRENT_RUN", "/content/hurdler_runs/current")
+    )
+    test_root_value = os.environ.get("HURDLER_COLAB_RESET_TEST_ROOT")
+    test_root = Path(test_root_value).resolve() if test_root_value else None
+    allowed_checkout = checkout == Path("/content/clone_repeat_protein") or (
+        test_root is not None and checkout.resolve().is_relative_to(test_root)
+    )
+    if not allowed_checkout:
+        raise RuntimeError(f"Refusing to remove unexpected checkout path: {checkout}")
+    source_path = str(checkout / "src")
+    sys.path[:] = [entry for entry in sys.path if str(entry) != source_path]
+    for module_name in tuple(sys.modules):
+        if module_name == "hurdler" or module_name.startswith("hurdler."):
+            del sys.modules[module_name]
+    if checkout.is_dir():
+        shutil.rmtree(checkout)
+    removed_runtime = False
+    if reset_runtime_outputs.value and runtime_current.is_dir():
+        allowed_runtime = runtime_current == Path("/content/hurdler_runs/current") or (
+            test_root is not None and runtime_current.resolve().is_relative_to(test_root)
+        )
+        if not allowed_runtime:
+            raise RuntimeError(f"Refusing to remove unexpected runtime path: {runtime_current}")
+        shutil.rmtree(runtime_current)
+        removed_runtime = True
+    display(Javascript(
+        "if (window.__hurdlerUiDrainTimer) { clearInterval(window.__hurdlerUiDrainTimer); "
+        "window.__hurdlerUiDrainTimer = null; }"
+    ))
+    reset_session_confirm.value = False
+    reset_session_status.value = (
+        "<div style='border:2px solid #2d6a4f;background:#effaf4;color:#111827;"
+        "border-radius:8px;padding:10px'><b>Reset complete.</b> Temporary checkout and imported "
+        f"HURDLER modules were removed. Current runtime outputs removed: {removed_runtime}. "
+        "Drive files were not touched. Now choose <b>Runtime → Run all</b> to clone, install and "
+        "re-import the complete application.</div>"
+    )
+
+
+reset_session_confirm.observe(_reset_confirmation_changed, names="value")
+reset_session_button.on_click(_reset_hurdler_session)
+display(widgets.VBox([
+    widgets.HTML("<h2>0. Reset or cleanly re-import HURDLER</h2>"),
+    reset_session_status,
+    reset_session_confirm,
+    reset_runtime_outputs,
+    reset_session_button,
+]))
+None
 '''
 
 
@@ -3925,6 +4069,15 @@ def notebook(*, colab: bool = False):
     intro.metadata["id"] = "hurdler-introduction"
     cells = [intro]
     if colab:
+        cells.append(
+            _code_cell(
+                COLAB_RESET_SESSION,
+                colab=True,
+                cell_id="hurdler-reset-session",
+                title="0. Reset HURDLER session (optional)",
+                form_view=True,
+            )
+        )
         application_source = "\n\n".join(
             (COLAB_BOOTSTRAP, PARAMETERS, COLAB_IMPORTS, COLAB_CONTROLLER_V2, SMOKE)
         )
@@ -3934,6 +4087,16 @@ def notebook(*, colab: bool = False):
                 colab=True,
                 cell_id="hurdler-initialize",
                 title="Initialize HURDLER tutorial",
+                form_view=True,
+            )
+        )
+        reconnect_id, reconnect_title, reconnect_source = COLAB_RECONNECT_STEP
+        cells.append(
+            _code_cell(
+                reconnect_source,
+                colab=True,
+                cell_id=reconnect_id,
+                title=reconnect_title,
                 form_view=True,
             )
         )
@@ -3947,16 +4110,6 @@ def notebook(*, colab: bool = False):
                     form_view=True,
                 )
             )
-        reconnect_id, reconnect_title, reconnect_source = COLAB_RECONNECT_STEP
-        cells.append(
-            _code_cell(
-                reconnect_source,
-                colab=True,
-                cell_id=reconnect_id,
-                title=reconnect_title,
-                form_view=True,
-            )
-        )
     else:
         cells.extend([
             _code_cell(

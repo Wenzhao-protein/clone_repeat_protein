@@ -111,7 +111,9 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
     assert "_help_card" in controller
     assert [cell["id"] for cell in payload["cells"]] == [
         "hurdler-introduction",
+        "hurdler-reset-session",
         "hurdler-initialize",
+        "hurdler-reconnect-interface",
         "hurdler-step-1-setup",
         "hurdler-step-2-protein",
         "hurdler-step-3-query",
@@ -119,7 +121,6 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
         "hurdler-step-5-ga",
         "hurdler-step-6-viewer",
         "hurdler-step-7-results",
-        "hurdler-reconnect-interface",
     ]
     assert "widgets.Password(" in COLAB_NOTEBOOK.read_text()
     assert "Create Credentials" in controller
@@ -213,6 +214,77 @@ def test_colab_has_separate_tutorial_steps_with_viewer_after_ga():
     assert "reconnect_tabs" in controller
     assert "call_soon_threadsafe" in controller
     assert "tutorial_app" not in controller
+
+
+def test_colab_reset_is_first_action_and_is_confirmation_gated():
+    payload = _colab_payload()
+    assert payload["cells"][1]["id"] == "hurdler-reset-session"
+    source = _colab_cell_source("hurdler-reset-session")
+    assert 'description="Reset HURDLER session"' in source
+    assert 'value=False' in source
+    assert 'reset_session_button.disabled = not bool(change.get("new"))' in source
+    assert 'Path("/content/clone_repeat_protein")' in source
+    assert 'Path("/content/hurdler_runs/current")' in source
+    assert "shutil.rmtree(checkout)" in source
+    assert "shutil.rmtree(runtime_current)" in source
+    assert "Runtime → Run all" in source
+
+
+def test_colab_reset_removes_only_checkout_and_optional_current_run(tmp_path):
+    checkout = tmp_path / "clone_repeat_protein"
+    runtime_current = tmp_path / "hurdler_runs" / "current"
+    drive_archive = tmp_path / "drive" / "keep.zip"
+    (checkout / "src").mkdir(parents=True)
+    runtime_current.mkdir(parents=True)
+    drive_archive.parent.mkdir(parents=True)
+    (checkout / "stale.txt").write_text("stale")
+    (runtime_current / "partial.txt").write_text("partial")
+    drive_archive.write_bytes(b"keep")
+    test_script = r'''
+import json
+from pathlib import Path
+source = Path("notebooks/workflows/02_colab_hurdler_designer.ipynb")
+payload = json.loads(source.read_text())
+cell = next(item for item in payload["cells"] if item["id"] == "hurdler-reset-session")
+namespace = {"display": lambda *_args, **_kwargs: None}
+exec(compile("".join(cell["source"]), "hurdler-reset-session", "exec"), namespace)
+namespace["reset_session_confirm"].value = True
+namespace["reset_session_button"].click()
+checkout = Path(__import__("os").environ["HURDLER_COLAB_CHECKOUT"])
+runtime = Path(__import__("os").environ["HURDLER_COLAB_CURRENT_RUN"])
+default_preserved_runtime = runtime.exists()
+checkout.mkdir(parents=True)
+namespace["reset_runtime_outputs"].value = True
+namespace["reset_session_confirm"].value = True
+namespace["reset_session_button"].click()
+print(json.dumps({
+    "default_preserved_runtime": default_preserved_runtime,
+    "checkout_exists": checkout.exists(),
+    "runtime_exists": runtime.exists(),
+    "status": namespace["reset_session_status"].value,
+}))
+'''
+    environment = os.environ.copy()
+    environment.update({
+        "HURDLER_COLAB_CHECKOUT": str(checkout),
+        "HURDLER_COLAB_CURRENT_RUN": str(runtime_current),
+        "HURDLER_COLAB_RESET_TEST_ROOT": str(tmp_path),
+        "IDT_ACCESS_TOKEN": "temporary-reset-test-token",
+    })
+    completed = __import__("subprocess").run(
+        [sys.executable, "-c", test_script],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert result["default_preserved_runtime"] is True
+    assert result["checkout_exists"] is False
+    assert result["runtime_exists"] is False
+    assert "Reset complete" in result["status"]
+    assert drive_archive.read_bytes() == b"keep"
 
 
 def test_colab_bootstrap_does_not_depend_on_optional_release_tag():
