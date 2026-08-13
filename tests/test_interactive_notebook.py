@@ -132,9 +132,11 @@ def test_colab_has_separate_individual_re_plasmid_route_and_ga_cells():
         for cell in _colab_payload()["cells"]
     }
     assert "Select all RE" in sources["hurdler-controller-v2"]
-    assert "Select no RE" in sources["hurdler-controller-v2"]
+    assert "Select none" in sources["hurdler-controller-v2"]
     assert "Select all plasmids" in sources["hurdler-controller-v2"]
-    assert "Select no plasmids" in sources["hurdler-controller-v2"]
+    assert "enzyme_checkboxes" in sources["hurdler-controller-v2"]
+    assert "plasmid_checkboxes" in sources["hurdler-controller-v2"]
+    assert "widgets.GridBox" in sources["hurdler-controller-v2"]
     assert "hurdler-enzyme-selector" in sources
     assert "hurdler-plasmid-selector" in sources
     assert "hurdler-re-route-panel" in sources
@@ -260,17 +262,42 @@ def test_colab_uploaded_env_clears_read_only_value_by_replacing_widget(
 def test_colab_shared_enzyme_and_plasmid_select_all_none_controls(colab_runtime_namespace):
     namespace = colab_runtime_namespace
     assert len(namespace["all_enzyme_options"]) == 47
+    assert len(namespace["enzyme_checkboxes"]) == 47
+    assert all(box.value for box in namespace["enzyme_checkboxes"].values())
+    assert namespace["enzyme_bulk_control"].value == "all"
+
+    first_enzyme = namespace["all_enzyme_options"][0]
+    namespace["enzyme_checkboxes"][first_enzyme].value = False
+    assert namespace["enzyme_bulk_control"].value == "custom"
+    assert first_enzyme not in namespace["_selected_role_enzymes"]("site_i") + namespace["_selected_role_enzymes"]("site_ii") + namespace["_selected_role_enzymes"]("site_iii")
+
     namespace["_set_no_enzymes"]()
-    assert namespace["enzyme_selector"].value == ()
+    assert not any(box.value for box in namespace["enzyme_checkboxes"].values())
+    assert namespace["enzyme_bulk_control"].value == "none"
     with pytest.raises(ValueError, match="Site I"):
         namespace["_current_query"]()
-    namespace["_set_all_enzymes"]()
-    assert len(namespace["enzyme_selector"].value) == 47
-    namespace["_set_no_plasmids"]()
+
+    namespace["enzyme_bulk_control"].value = "all"
+    assert all(box.value for box in namespace["enzyme_checkboxes"].values())
+    assert namespace["enzyme_bulk_control"].value == "all"
+    namespace["enzyme_bulk_control"].value = "custom"
+    assert namespace["enzyme_bulk_control"].value == "all"
+
+    first_plasmid = namespace["PLASMID_OPTIONS"][0]
+    namespace["plasmid_checkboxes"][first_plasmid].value = False
+    assert namespace["plasmid_bulk_control"].value == "custom"
+    assert first_plasmid not in namespace["_selected_plasmids"]()
+
+    namespace["plasmid_bulk_control"].value = "none"
+    assert not any(box.value for box in namespace["plasmid_checkboxes"].values())
+    assert namespace["plasmid_bulk_control"].value == "none"
     with pytest.raises(ValueError, match="plasmid"):
         namespace["_current_query"]()
+
     namespace["_set_all_plasmids"]()
-    assert namespace["plasmid_selector"].value == namespace["PLASMID_OPTIONS"]
+    assert all(box.value for box in namespace["plasmid_checkboxes"].values())
+    assert namespace["_selected_plasmids"]() == namespace["PLASMID_OPTIONS"]
+    assert namespace["plasmid_bulk_control"].value == "all"
 
 
 @pytest.mark.parametrize(

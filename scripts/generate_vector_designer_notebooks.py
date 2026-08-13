@@ -863,18 +863,52 @@ all_enzyme_options = tuple(sorted(
     set(enzyme_roles["site_i"]) | set(enzyme_roles["site_ii"]) | set(declared_site_iii)
 ))
 
-enzyme_selector = widgets.SelectMultiple(
-    options=all_enzyme_options, value=all_enzyme_options, rows=18,
-    description="Allowed RE", layout=widgets.Layout(width="98%"),
+def _individual_checkbox_group(options, *, columns):
+    boxes = {
+        str(option): widgets.Checkbox(
+            value=True,
+            description=str(option),
+            indent=False,
+            layout=widgets.Layout(width="auto"),
+        )
+        for option in options
+    }
+    grid = widgets.GridBox(
+        children=tuple(boxes.values()),
+        layout=widgets.Layout(
+            width="98%",
+            grid_template_columns=f"repeat({columns}, minmax(0, 1fr))",
+            grid_gap="4px 12px",
+            border="1px solid #ddd",
+            padding="8px",
+        ),
+    )
+    return boxes, grid
+
+
+enzyme_checkboxes, enzyme_checkbox_grid = _individual_checkbox_group(
+    all_enzyme_options, columns=4
 )
-enzyme_all_button = widgets.Button(description="Select all RE", icon="check-square")
-enzyme_none_button = widgets.Button(description="Select no RE", icon="square-o")
-plasmid_selector = widgets.SelectMultiple(
-    options=PLASMID_OPTIONS, value=PLASMID_OPTIONS, rows=8,
-    description="Plasmids", layout=widgets.Layout(width="98%"),
+enzyme_bulk_control = widgets.ToggleButtons(
+    options=(("Select all RE", "all"), ("Select none", "none"), ("Custom", "custom")),
+    value="all",
+    description="RE selection",
+    button_style="",
 )
-plasmid_all_button = widgets.Button(description="Select all plasmids", icon="check-square")
-plasmid_none_button = widgets.Button(description="Select no plasmids", icon="square-o")
+enzyme_selection_status = widgets.HTML()
+
+plasmid_checkboxes, plasmid_checkbox_grid = _individual_checkbox_group(
+    PLASMID_OPTIONS, columns=2
+)
+plasmid_bulk_control = widgets.ToggleButtons(
+    options=(("Select all plasmids", "all"), ("Select none", "none"), ("Custom", "custom")),
+    value="all",
+    description="Plasmid selection",
+    button_style="",
+)
+plasmid_selection_status = widgets.HTML()
+
+_selection_sync = {"enzymes": False, "plasmids": False}
 
 state = {
     "query_result": None,
@@ -910,7 +944,9 @@ route_output = widgets.Output()
 
 
 def _selected_role_enzymes(role):
-    selected = set(enzyme_selector.value)
+    selected = {
+        name for name, checkbox in enzyme_checkboxes.items() if checkbox.value
+    }
     values = tuple(name for name in enzyme_roles[role] if name in selected)
     if not values:
         raise ValueError(f"Select at least one enzyme eligible for {role.replace('_', ' ').title()}")
@@ -918,7 +954,9 @@ def _selected_role_enzymes(role):
 
 
 def _selected_plasmids():
-    selected = tuple(str(value) for value in plasmid_selector.value)
+    selected = tuple(
+        name for name in PLASMID_OPTIONS if plasmid_checkboxes[name].value
+    )
     if not selected:
         raise ValueError("Select at least one plasmid profile")
     return selected
@@ -981,20 +1019,82 @@ def _selection_changed(_change=None):
         _invalidate_confirmation("**Selection changed. Re-run the query and confirm a new route.**")
 
 
+def _selection_mode(boxes):
+    selected_count = sum(bool(checkbox.value) for checkbox in boxes.values())
+    if selected_count == len(boxes):
+        return "all", selected_count
+    if selected_count == 0:
+        return "none", selected_count
+    return "custom", selected_count
+
+
+def _refresh_selection_group(group):
+    if group == "enzymes":
+        boxes = enzyme_checkboxes
+        control = enzyme_bulk_control
+        status = enzyme_selection_status
+        label = "RE enzymes"
+    else:
+        boxes = plasmid_checkboxes
+        control = plasmid_bulk_control
+        status = plasmid_selection_status
+        label = "plasmids"
+    mode, selected_count = _selection_mode(boxes)
+    _selection_sync[group] = True
+    try:
+        control.value = mode
+    finally:
+        _selection_sync[group] = False
+    status.value = (
+        f"<b>{selected_count}/{len(boxes)}</b> {label} selected"
+        + ("" if mode != "custom" else " · individual selection")
+    )
+
+
+def _set_selection_group(group, selected):
+    boxes = enzyme_checkboxes if group == "enzymes" else plasmid_checkboxes
+    _selection_sync[group] = True
+    try:
+        for checkbox in boxes.values():
+            checkbox.value = bool(selected)
+    finally:
+        _selection_sync[group] = False
+    _refresh_selection_group(group)
+    _selection_changed()
+
+
+def _individual_selection_changed(group, _change=None):
+    if _selection_sync[group]:
+        return
+    _refresh_selection_group(group)
+    _selection_changed()
+
+
+def _bulk_selection_changed(group, change):
+    if _selection_sync[group]:
+        return
+    if change.get("name") != "value":
+        return
+    if change.get("new") == "custom":
+        _refresh_selection_group(group)
+        return
+    _set_selection_group(group, change["new"] == "all")
+
+
 def _set_all_enzymes(_button=None):
-    enzyme_selector.value = all_enzyme_options
+    _set_selection_group("enzymes", True)
 
 
 def _set_no_enzymes(_button=None):
-    enzyme_selector.value = ()
+    _set_selection_group("enzymes", False)
 
 
 def _set_all_plasmids(_button=None):
-    plasmid_selector.value = PLASMID_OPTIONS
+    _set_selection_group("plasmids", True)
 
 
 def _set_no_plasmids(_button=None):
-    plasmid_selector.value = ()
+    _set_selection_group("plasmids", False)
 
 
 def _routes_for_pair():
@@ -1129,12 +1229,24 @@ def _confirm_route(_button=None):
         ))
 
 
-enzyme_all_button.on_click(_set_all_enzymes)
-enzyme_none_button.on_click(_set_no_enzymes)
-plasmid_all_button.on_click(_set_all_plasmids)
-plasmid_none_button.on_click(_set_no_plasmids)
-enzyme_selector.observe(_selection_changed, names="value")
-plasmid_selector.observe(_selection_changed, names="value")
+for checkbox in enzyme_checkboxes.values():
+    checkbox.observe(
+        lambda change: _individual_selection_changed("enzymes", change),
+        names="value",
+    )
+for checkbox in plasmid_checkboxes.values():
+    checkbox.observe(
+        lambda change: _individual_selection_changed("plasmids", change),
+        names="value",
+    )
+enzyme_bulk_control.observe(
+    lambda change: _bulk_selection_changed("enzymes", change), names="value"
+)
+plasmid_bulk_control.observe(
+    lambda change: _bulk_selection_changed("plasmids", change), names="value"
+)
+_refresh_selection_group("enzymes")
+_refresh_selection_group("plasmids")
 pair_choice.observe(_update_site_iii, names="value")
 site_iii_choice.observe(_update_profiles, names="value")
 profile_choice.observe(_update_schemes, names="value")
@@ -1522,13 +1634,15 @@ COLAB_ENZYME_SELECTOR = r'''display(widgets.VBox([
         f"({len(enzyme_roles['site_iii'])} occur in the current protein-pair index). "
         f"Each selected enzyme is used only in legal roles.</p>"
     ),
-    widgets.HBox([enzyme_all_button, enzyme_none_button]), enzyme_selector,
+    widgets.HBox([enzyme_bulk_control, enzyme_selection_status]),
+    enzyme_checkbox_grid,
 ]))'''
 
 
 COLAB_PLASMID_SELECTOR = r'''display(widgets.VBox([
     widgets.HTML("<h2>3. Select plasmid profiles</h2>"),
-    widgets.HBox([plasmid_all_button, plasmid_none_button]), plasmid_selector,
+    widgets.HBox([plasmid_bulk_control, plasmid_selection_status]),
+    plasmid_checkbox_grid,
 ]))'''
 
 
