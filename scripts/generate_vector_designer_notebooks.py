@@ -1159,6 +1159,7 @@ state = {
     "external_bundle_error": None,
     "credential_payload": None,
     "credential_auth_method": None,
+    "pending_credential_upload": None,
     "run_control": None,
     "run_thread": None,
     "run_active": False,
@@ -2513,8 +2514,10 @@ def _wipe_bytearray(payload):
 
 def _wipe_cached_credentials():
     _wipe_bytearray(state.get("credential_payload"))
+    _wipe_bytearray(state.get("pending_credential_upload"))
     state["credential_payload"] = None
     state["credential_auth_method"] = None
+    state["pending_credential_upload"] = None
     clear_idt_secret_environment()
 
 
@@ -2544,12 +2547,75 @@ def _dotenv_payload(values):
     return ("\n".join(f"{name}={values.get(name, '')}" for name in ordered) + "\n").encode()
 
 
-def _uploaded_payload():
-    uploaded = credential_upload.value
+def _payload_from_upload_value(uploaded):
+    """Normalize ipywidgets 7/8 and hosted-Colab FileUpload values."""
     if not uploaded:
         return None
-    item = next(iter(uploaded.values())) if isinstance(uploaded, dict) else uploaded[0]
-    return bytes(item["content"] if isinstance(item, dict) else item.content)
+    if isinstance(uploaded, dict):
+        # ipywidgets 7 uses {filename: {metadata..., content: bytes}}.  Some
+        # hosted frontends expose a single file record directly instead.
+        items = [uploaded] if "content" in uploaded else list(uploaded.values())
+    elif isinstance(uploaded, (tuple, list)):
+        # ipywidgets 8 uses a tuple of dict-like Bunch records.
+        items = list(uploaded)
+    else:
+        items = [uploaded]
+    if len(items) != 1:
+        raise ValueError("Upload exactly one idt.env file")
+    item = items[0]
+    if isinstance(item, dict):
+        content = item.get("content")
+        # Be liberal toward Colab's native filename->bytes mapping while still
+        # accepting only one uploaded file.
+        if content is None and len(item) == 1:
+            content = next(iter(item.values()))
+    else:
+        content = getattr(item, "content", item)
+    if content is None:
+        raise ValueError("The uploaded idt.env record contains no file bytes")
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    try:
+        payload = bytes(content)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("The uploaded idt.env content is not byte-readable") from exc
+    if not payload:
+        raise ValueError("The uploaded idt.env file is empty")
+    return payload
+
+
+def _capture_credential_upload(change):
+    """Copy uploaded bytes immediately; Colab may later expose an empty trait."""
+    try:
+        payload = _payload_from_upload_value(change.get("new"))
+        if payload is None:
+            # Do not erase a successfully captured upload when a hosted widget
+            # transiently resets its value after transfer.
+            return
+        _wipe_bytearray(state.get("pending_credential_upload"))
+        state["pending_credential_upload"] = bytearray(payload)
+        credential_status.value = (
+            "<div style='color:#2d6a4f'><b>IDT status: one credential file received "
+            "in kernel memory.</b> Click Test uploaded credentials.</div>"
+        )
+    except Exception as exc:
+        _wipe_bytearray(state.get("pending_credential_upload"))
+        state["pending_credential_upload"] = None
+        credential_status.value = (
+            f"<div style='color:#b31b1b'><b>IDT upload could not be read:</b> "
+            f"{type(exc).__name__}: {str(exc)[:300]}</div>"
+        )
+
+
+def _uploaded_payload(upload_widget=None):
+    active_upload = upload_widget if upload_widget is not None else credential_upload
+    payload = _payload_from_upload_value(getattr(active_upload, "value", None))
+    if payload is not None:
+        return payload
+    pending = state.get("pending_credential_upload")
+    if isinstance(pending, bytearray) and pending:
+        return bytes(pending)
+    return None
 
 
 def _clear_credential_upload():
@@ -2560,6 +2626,8 @@ def _clear_credential_upload():
         accept=".env,text/plain", multiple=False,
         description="Upload idt.env",
     )
+    credential_upload.observe(_capture_credential_upload, names="value")
+    credential_upload_test_button._hurdler_upload_widget = credential_upload
     credential_upload_panel.children = (
         credential_upload_panel.children[0],
         credential_upload_panel.children[1],
@@ -2573,7 +2641,7 @@ def _clear_credential_upload():
         pass
 
 
-def _configure_api_credentials():
+def _configure_api_credentials(*, upload_widget=None):
     if _validation_mode() != "api":
         raise RuntimeError("IDT credentials are not used in Bulk Input mode")
     cached = state.get("credential_payload")
@@ -2592,7 +2660,7 @@ def _configure_api_credentials():
         finally:
             values.clear()
             _clear_create_secret_widgets()
-    payload = _uploaded_payload()
+    payload = _uploaded_payload(upload_widget)
     if payload is None:
         raise FileNotFoundError("Upload one idt.env file before testing or running Live IDT scoring")
     try:
@@ -2602,6 +2670,8 @@ def _configure_api_credentials():
         return status
     finally:
         payload = b""
+        _wipe_bytearray(state.get("pending_credential_upload"))
+        state["pending_credential_upload"] = None
         _clear_credential_upload()
 
 
@@ -2642,7 +2712,8 @@ def _test_idt_credentials(_button=None):
     credential_upload_test_button.disabled = True
     credential_status.value = "<b>IDT status:</b> testing OAuth and one 125-bp complexity request…"
     try:
-        status = _configure_api_credentials()
+        upload_widget = getattr(_button, "_hurdler_upload_widget", None)
+        status = _configure_api_credentials(upload_widget=upload_widget)
         with tempfile.TemporaryDirectory(prefix="hurdler_idt_test_") as temporary:
             scorer = IDTComplexityScorer(Path(temporary) / "audit.jsonl")
             summary = scorer.score("hurdler_credential_test", "ACGT" * 31 + "A")
@@ -2701,6 +2772,8 @@ def _download_credential_env(_button=None):
 
 idt_auth_method_widget.observe(_sync_idt_auth_fields, names="value")
 idt_setup_mode_widget.observe(_sync_idt_setup, names="value")
+credential_upload.observe(_capture_credential_upload, names="value")
+credential_upload_test_button._hurdler_upload_widget = credential_upload
 credential_test_button.on_click(_test_idt_credentials)
 credential_upload_test_button.on_click(_test_idt_credentials)
 credential_download_button.on_click(_download_credential_env)

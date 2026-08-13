@@ -378,6 +378,7 @@ def test_colab_uploaded_env_clears_read_only_value_by_replacing_widget(
         "content": memoryview(payload),
         "last_modified": datetime.now(timezone.utc),
     },)
+    assert bytes(namespace["state"]["pending_credential_upload"]) == payload
     value_trait = upload.traits()["value"]
     original_read_only = value_trait.read_only
     value_trait.read_only = True
@@ -391,6 +392,47 @@ def test_colab_uploaded_env_clears_read_only_value_by_replacing_widget(
     assert namespace["credential_upload"] is not upload
     assert namespace["credential_upload"].value == ()
     assert namespace["credential_upload_panel"].children[2].children[0] is namespace["credential_upload"]
+    assert namespace["credential_upload_test_button"]._hurdler_upload_widget is namespace["credential_upload"]
+    assert namespace["state"]["pending_credential_upload"] is None
+    clear_idt_secret_environment()
+
+
+@pytest.mark.parametrize(
+    "uploaded",
+    [
+        ({"name": "idt.env", "content": memoryview(b"IDT_ACCESS_TOKEN=test-token\n")},),
+        {"idt.env": {"content": b"IDT_ACCESS_TOKEN=test-token\n"}},
+        {"idt.env": b"IDT_ACCESS_TOKEN=test-token\n"},
+        {"content": "IDT_ACCESS_TOKEN=test-token\n"},
+    ],
+)
+def test_colab_upload_parser_accepts_hosted_widget_value_shapes(
+    colab_runtime_namespace, uploaded
+):
+    namespace = colab_runtime_namespace
+    assert namespace["_payload_from_upload_value"](uploaded) == b"IDT_ACCESS_TOKEN=test-token\n"
+
+
+def test_colab_upload_observer_survives_transient_empty_widget_value(
+    colab_runtime_namespace,
+):
+    namespace = colab_runtime_namespace
+    namespace["idt_setup_mode_widget"].value = "upload"
+    upload = namespace["credential_upload"]
+    payload = b"IDT_ACCESS_TOKEN=transient-upload-token\n"
+    upload.value = ({
+        "name": "idt.env",
+        "type": "text/plain",
+        "size": len(payload),
+        "content": memoryview(payload),
+        "last_modified": datetime.now(timezone.utc),
+    },)
+    assert bytes(namespace["state"]["pending_credential_upload"]) == payload
+    upload.value = ()
+    assert namespace["_uploaded_payload"](upload) == payload
+    status = namespace["_configure_api_credentials"](upload_widget=upload)
+    assert status["credential_mode"] == "upload"
+    assert namespace["state"]["pending_credential_upload"] is None
     clear_idt_secret_environment()
 
 
