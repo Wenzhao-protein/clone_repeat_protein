@@ -73,6 +73,8 @@ class DesignProgressEvent:
     phase: str = ""
     generations: int | None = None
     generation: int | None = None
+    candidate_index: int | None = None
+    candidate_total: int | None = None
     ga_score: float | None = None
     selected_pair_re_site_excess: int | None = None
     feedback_round: int | None = None

@@ -710,6 +710,11 @@ idt_setup_mode_widget.value = "batch"
 output_directory_widget.value = {output_directory}
 auto_download_widget.value = False
 
+def _unexpected_early_checkpoint(*_args, **_kwargs):
+    raise AssertionError("ordinary progress must not write an immediate checkpoint")
+
+write_secondary_checkpoint = _unexpected_early_checkpoint
+
 def _slow_feedback_design(_request, *, progress_callback, run_control, **_kwargs):
     for generation in range(1, 4):
         run_control.safe_point()
@@ -731,6 +736,7 @@ for _index in range(200):
         break
     await asyncio.sleep(0.05)
 assert max(observed_generations) == 3
+assert "worker_entered" in attempt_log_html.value
 assert "gen=3/3" in attempt_log_html.value
 assert state["run_terminal_status"] == "failed"
 assert state["run_active"] is False

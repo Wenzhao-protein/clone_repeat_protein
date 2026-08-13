@@ -1159,6 +1159,7 @@ state = {
     "ui_io_loop": None,
     "ui_schedule_lock": threading.Lock(),
     "ui_drain_pending": False,
+    "checkpoint_thread": None,
     "visible_log_lines": [],
     "idt_score_events": [],
     "run_started_monotonic": None,
@@ -2067,6 +2068,9 @@ stage_html = widgets.HTML(
     "<b>Status:</b> waiting for route confirmation</div>"
 )
 generation_progress = widgets.IntProgress(value=0, min=0, max=1, description="GA")
+candidate_progress = widgets.IntProgress(
+    value=0, min=0, max=1, description="Fitness", bar_style="info"
+)
 current_html = widgets.HTML("")
 attempt_log_html = widgets.HTML(
     "<pre style='color:#111827;background:#ffffff'>Waiting for a confirmed route and GA start.</pre>",
@@ -2153,6 +2157,10 @@ def _render_idt_trajectory():
 
 
 def _should_log_progress(event):
+    if event.stage == "ga" and event.status == "fitness_running":
+        index = int(event.candidate_index or 0)
+        total = int(event.candidate_total or 0)
+        return bool(index == 1 or index == total or index % 4 == 0)
     if event.stage == "ga" and event.status == "running":
         generation = int(event.generation or 0)
         final_generation = int(event.generations or 0)
@@ -2163,7 +2171,9 @@ def _should_log_progress(event):
             or generation % 5 == 0
         )
     return event.status in {
-        "started", "attempt_started", "attempt_completed", "request_started",
+        "started", "worker_entered", "preparing", "population_initializing", "fitness_started",
+        "baseline_fitness_started", "baseline_fitness_completed",
+        "attempt_started", "attempt_completed", "request_started",
         "fragment_scored", "request_completed", "completed", "failed",
         "parameters_adjusted", "no_novel_candidate",
     }
@@ -2177,6 +2187,8 @@ def _progress_line(event):
         f"{event.max_feedback_rounds if event.max_feedback_rounds is not None else '-'} "
         f"gen={event.generation if event.generation is not None else '-'}/"
         f"{event.generations if event.generations is not None else '-'} "
+        f"candidate={event.candidate_index if event.candidate_index is not None else '-'}/"
+        f"{event.candidate_total if event.candidate_total is not None else '-'} "
         f"ga={event.ga_score if event.ga_score is not None else '-'} "
         f"idt={event.idt_score if event.idt_score is not None else '-'}"
     )
@@ -2190,12 +2202,19 @@ def _render_progress(event: DesignProgressEvent):
     if event.generations:
         generation_progress.max = max(1, int(event.generations))
         generation_progress.value = min(generation_progress.max, int(event.generation or 0))
+    if event.candidate_total:
+        candidate_progress.max = max(1, int(event.candidate_total))
+        candidate_progress.value = min(
+            candidate_progress.max, int(event.candidate_index or 0)
+        )
     current_html.value = (
         f"<b>{event.fragment_kind or 'design'}</b> · copies={event.copies if event.copies is not None else '—'} "
         f"· feedback={event.feedback_round if event.feedback_round is not None else '—'}/"
         f"{event.max_feedback_rounds if event.max_feedback_rounds is not None else '—'} "
         f"· generation={event.generation if event.generation is not None else '—'}/"
         f"{event.generations if event.generations is not None else '—'} "
+        f"· fitness candidate={event.candidate_index if event.candidate_index is not None else '—'}/"
+        f"{event.candidate_total if event.candidate_total is not None else '—'} "
         f"· best score={event.ga_score if event.ga_score is not None else '—'} "
         f"· IDT={event.idt_score if event.idt_score is not None else '—'} "
         f"· pop/mut/xover={event.population_size or '—'}/"
@@ -2223,7 +2242,6 @@ def _progress_update(event: DesignProgressEvent, run_id=None):
     with state["progress_lock"]:
         state["progress_events"].append(event.to_dict())
         state["last_progress_monotonic"] = time.monotonic()
-    _persist_checkpoint(force=False)
     _enqueue_ui_event("progress", run_id, event)
 
 
@@ -2321,6 +2339,11 @@ async def _ui_event_pump(run_id):
                         "border-radius:8px;padding:10px'><b>Status:</b> GA worker active inside the current "
                         f"fitness/API unit · elapsed {elapsed:.1f}s · last event {idle:.1f}s ago</div>"
                     )
+                if (
+                    time.monotonic() - float(state.get("last_checkpoint_write") or 0.0)
+                    >= 180.0
+                ):
+                    _start_periodic_checkpoint()
             worker = state.get("run_thread")
             if state.get("run_active") and worker is not None and not worker.is_alive() and state["progress_queue"].empty():
                 _finish_design_error("WorkerExited", "GA worker ended without a terminal event")
@@ -2365,6 +2388,33 @@ def _checkpoint_local_path():
     root.mkdir(parents=True, exist_ok=True)
     safe_id = "".join(character if character.isalnum() or character in "._-" else "_" for character in str(sequence_id_widget.value or "interactive_design"))
     return root / f"hurdler_{safe_id}_checkpoint_latest.zip"
+
+
+def _start_periodic_checkpoint():
+    """Write the 180-second heartbeat checkpoint without blocking the UI/GA."""
+    existing = state.get("checkpoint_thread")
+    if existing is not None and existing.is_alive():
+        return existing
+    # Reserve the interval before starting so a slow Drive mount cannot spawn
+    # duplicate writers while the previous copy is still in progress.
+    state["last_checkpoint_write"] = time.monotonic()
+
+    def _write():
+        try:
+            _persist_checkpoint(force=True)
+        except Exception as exc:
+            _enqueue_ui_event(
+                "stage_html", int(state.get("run_id", 0)),
+                "<div style='border:2px solid #b7a57a;background:#fffaf0;color:#111827;"
+                f"border-radius:8px;padding:10px'><b>Checkpoint warning:</b> {html.escape(str(exc)[:300])}</div>",
+            )
+
+    worker = threading.Thread(
+        target=_write, name="hurdler-checkpoint-writer", daemon=True
+    )
+    state["checkpoint_thread"] = worker
+    worker.start()
+    return worker
 
 
 def _copy_archive_to_drive(path):
@@ -2864,6 +2914,15 @@ def _finish_design_error(error_type, message):
 
 def _run_design_worker(request, query, output_directory, control, run_id):
     try:
+        _enqueue_ui_event(
+            "progress", int(run_id),
+            DesignProgressEvent(
+                stage="design",
+                status="worker_entered",
+                message="GA worker entered the design engine",
+                elapsed_seconds=0.0,
+            ),
+        )
         scorer = (
             IDTComplexityScorer(output_directory / "idt_audit.jsonl")
             if request.validation_mode == "api"
@@ -2931,8 +2990,9 @@ def _run_design(_button=None):
     state["run_started_monotonic"] = time.monotonic()
     state["last_progress_monotonic"] = state["run_started_monotonic"]
     generation_progress.value = 0
+    candidate_progress.value = 0
     stage_html.value = (
-        "<div style='border:2px solid #4b2e83;background:#f4f0fa;border-radius:8px;padding:10px'>"
+        "<div style='border:2px solid #4b2e83;background:#f4f0fa;color:#111827;border-radius:8px;padding:10px'>"
         "<b>Status:</b> starting GA worker</div>"
     )
     request_line = f"run_requested  run_id={run_id}  preparing credentials and GA request"
@@ -2961,6 +3021,7 @@ def _run_design(_button=None):
         output_directory = Path(output_directory_widget.value)
         output_directory.mkdir(parents=True, exist_ok=True)
         state["run_directory"] = output_directory
+        state["last_checkpoint_write"] = time.monotonic()
         if storage_mode_widget.value == "drive" and not storage_state.get("drive_mounted"):
             raise RuntimeError("Google Drive was selected but is not mounted; click Mount Google Drive in Step 0")
         if _validation_mode() == "api":
@@ -3000,13 +3061,19 @@ def _pause_or_resume(_button=None):
         control.resume()
         pause_button.description = "Pause GA"
         pause_button.icon = "pause"
-        stage_html.value = "<b>Status:</b> resume requested; continuing from the same GA population"
+        stage_html.value = (
+            "<div style='background:#f4f0fa;color:#111827;padding:8px'>"
+            "<b>Status:</b> resume requested; continuing from the same GA population</div>"
+        )
     else:
         control.pause()
         _persist_checkpoint(force=True)
         pause_button.description = "Resume GA"
         pause_button.icon = "play"
-        stage_html.value = "<b>Status:</b> pause requested; waiting for the next safe point"
+        stage_html.value = (
+            "<div style='background:#fffaf0;color:#111827;padding:8px'>"
+            "<b>Status:</b> pause requested; waiting for the next candidate safe point</div>"
+        )
 
 
 def _stop_design(_button=None):
@@ -3018,7 +3085,10 @@ def _stop_design(_button=None):
     _persist_checkpoint(force=True)
     pause_button.disabled = True
     stop_button.disabled = True
-    stage_html.value = "<b>Status:</b> stop requested; finishing the current safe unit"
+    stage_html.value = (
+        "<div style='background:#fff2f2;color:#111827;padding:8px'>"
+        "<b>Status:</b> stop requested; finishing the current candidate/API unit</div>"
+    )
 
 
 def _back_to_ga_settings(_button=None):
@@ -3370,7 +3440,7 @@ ga_panel = widgets.VBox([
     colab_execution_panel,
     external_execution_panel,
     widgets.HTML("<h3 style='color:#3b1f69'>Live GA / IDT log</h3>"),
-    stage_html, generation_progress, current_html, attempt_log_html,
+    stage_html, generation_progress, candidate_progress, current_html, attempt_log_html,
     widgets.HTML("<h3 style='color:#3b1f69'>IDT score trajectory</h3>"),
     idt_plot_status, idt_plot_output, idt_score_table_output,
 ])

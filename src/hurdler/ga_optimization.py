@@ -657,6 +657,20 @@ def genetic_refine_dna(
     run_control: DesignRunControl | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Refine synonymous codons with the RE-repeat term in every fitness call."""
+    started = time.monotonic()
+    context = dict(progress_context or {})
+    emit_progress(
+        progress_callback,
+        stage="ga",
+        status="preparing",
+        message="Preparing locked codons and the initial GA population",
+        generations=int(generations),
+        generation=0,
+        elapsed_seconds=0.0,
+        **context,
+    )
+    if run_control is not None:
+        run_control.safe_point()
     if translate_dna(dna) == "":
         raise ValueError("DNA cannot be empty")
     if isinstance(ga_workers, bool) or not isinstance(ga_workers, int) or ga_workers < 1:
@@ -681,7 +695,6 @@ def genetic_refine_dna(
         **GA_SCORE_PROFILE,
         **({} if score_profile is None else score_profile),
     }
-    context = dict(progress_context or {})
     guidance = dict(idt_feedback_guidance or {})
     hotspot_codons: set[int] = set()
     for raw_range in guidance.get("target_ranges", []):
@@ -692,11 +705,11 @@ def genetic_refine_dna(
         if end > start:
             hotspot_codons.update(range(start // 3, (end - 1) // 3 + 1))
     hotspot_mutation_rate = float(guidance.get("hotspot_mutation_rate", 0.65))
-    started = time.monotonic()
     emit_progress(
         progress_callback,
         stage="ga",
-        status="started",
+        status="population_initializing",
+        message="Locked codons prepared; building synonymous candidates",
         generations=int(generations),
         generation=0,
         elapsed_seconds=0.0,
@@ -719,19 +732,76 @@ def genetic_refine_dna(
 
     worker_process_ids: set[int] = set()
 
-    def serial_metrics_many(sequences: Sequence[str]) -> None:
-        for sequence in sorted(set(sequences)):
+    def serial_metrics_many(sequences: Sequence[str], generation: int) -> None:
+        unique = sorted(set(sequences))
+        total = len(unique)
+        emit_progress(
+            progress_callback,
+            stage="ga",
+            status="fitness_started",
+            message=f"Evaluating {total} unique candidates",
+            generations=int(generations),
+            generation=int(generation - 1),
+            candidate_index=0,
+            candidate_total=total,
+            elapsed_seconds=time.monotonic() - started,
+            **context,
+        )
+        for candidate_index, sequence in enumerate(unique, start=1):
+            if run_control is not None:
+                run_control.safe_point()
             metrics(sequence)
+            emit_progress(
+                progress_callback,
+                stage="ga",
+                status="fitness_running",
+                generations=int(generations),
+                generation=int(generation - 1),
+                candidate_index=int(candidate_index),
+                candidate_total=total,
+                elapsed_seconds=time.monotonic() - started,
+                **context,
+            )
+            if run_control is not None:
+                run_control.safe_point()
 
     def parallel_metrics_many(
-        sequences: Sequence[str], executor: ProcessPoolExecutor
+        sequences: Sequence[str], generation: int, executor: ProcessPoolExecutor
     ) -> None:
         missing = [sequence for sequence in sorted(set(sequences)) if sequence not in cache]
         if not missing:
             return
-        for sequence, row, worker_pid in executor.map(_ga_metric_worker, missing):
+        total = len(missing)
+        emit_progress(
+            progress_callback,
+            stage="ga",
+            status="fitness_started",
+            message=f"Evaluating {total} unique candidates in parallel",
+            generations=int(generations),
+            generation=int(generation - 1),
+            candidate_index=0,
+            candidate_total=total,
+            elapsed_seconds=time.monotonic() - started,
+            **context,
+        )
+        for candidate_index, (sequence, row, worker_pid) in enumerate(
+            executor.map(_ga_metric_worker, missing), start=1
+        ):
             cache[sequence] = row
             worker_process_ids.add(int(worker_pid))
+            emit_progress(
+                progress_callback,
+                stage="ga",
+                status="fitness_running",
+                generations=int(generations),
+                generation=int(generation - 1),
+                candidate_index=int(candidate_index),
+                candidate_total=total,
+                elapsed_seconds=time.monotonic() - started,
+                **context,
+            )
+            if run_control is not None:
+                run_control.safe_point()
 
     def mutate(sequence: str, rate: float) -> str:
         child = [sequence[index : index + 3] for index in range(0, len(sequence), 3)]
@@ -792,14 +862,42 @@ def genetic_refine_dna(
     while len(population) < population_size:
         parent = seed_pool[len(population) % len(seed_pool)]
         population.append(mutate(parent, max(mutation_rate, 0.03)))
+    emit_progress(
+        progress_callback,
+        stage="ga",
+        status="baseline_fitness_started",
+        message="Evaluating the starting coding sequence",
+        generations=int(generations),
+        generation=0,
+        candidate_index=0,
+        candidate_total=1,
+        elapsed_seconds=time.monotonic() - started,
+        **context,
+    )
+    if run_control is not None:
+        run_control.safe_point()
     initial_metrics = metrics(dna)
+    emit_progress(
+        progress_callback,
+        stage="ga",
+        status="baseline_fitness_completed",
+        generations=int(generations),
+        generation=0,
+        candidate_index=1,
+        candidate_total=1,
+        ga_score=float(initial_metrics["ga_score"]),
+        elapsed_seconds=time.monotonic() - started,
+        **context,
+    )
+    if run_control is not None:
+        run_control.safe_point()
     best = repaired
-    def run_generations(evaluate_many: Callable[[Sequence[str]], None]) -> None:
+    def run_generations(evaluate_many: Callable[[Sequence[str], int], None]) -> None:
         nonlocal population, best
         for _generation in range(generations):
             if run_control is not None:
                 run_control.safe_point()
-            evaluate_many([*population, best])
+            evaluate_many([*population, best], int(_generation + 1))
             if run_control is not None:
                 run_control.safe_point()
             population = sorted(
@@ -858,7 +956,11 @@ def genetic_refine_dna(
                 guidance,
             ),
         ) as executor:
-            run_generations(lambda sequences: parallel_metrics_many(sequences, executor))
+            run_generations(
+                lambda sequences, generation: parallel_metrics_many(
+                    sequences, generation, executor
+                )
+            )
     ranked_population = sorted(
         set([best, *population]),
         key=lambda sequence: (metrics(sequence)["ga_score"], sequence),

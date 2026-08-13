@@ -56,6 +56,39 @@ def test_ga_refinement_preserves_translation_and_selected_site_limits():
     assert metrics["ga_repeated_re_site_excess_removed"] >= 0
 
 
+def test_ga_reports_candidate_fitness_inside_first_generation():
+    events = []
+    original = "GCA" * 12
+    genetic_refine_dna(
+        original,
+        locked_positions=set(),
+        selected_site_limits={},
+        recognition_sites=("GCAGCA",),
+        codon_weights={"GCG": 1.0, "GCC": 1.0, "GCA": 1.0, "GCT": 1.0},
+        seed=42,
+        population_size=8,
+        generations=2,
+        progress_callback=events.append,
+        run_control=DesignRunControl(),
+    )
+    statuses = [event.status for event in events]
+    assert statuses[:3] == [
+        "preparing", "population_initializing", "baseline_fitness_started"
+    ]
+    candidate_events = [
+        event for event in events
+        if event.status == "fitness_running" and event.generation == 0
+    ]
+    assert candidate_events
+    assert candidate_events[-1].candidate_index == candidate_events[-1].candidate_total
+    assert candidate_events[-1].candidate_total >= 2
+    first_generation_complete = next(
+        index for index, event in enumerate(events)
+        if event.status == "running" and event.generation == 1
+    )
+    assert events.index(candidate_events[0]) < first_generation_complete
+
+
 def test_cooperative_pause_resume_is_deterministic_and_stop_raises_at_safe_point():
     original = "GCA" * 18
     weights = {"GCG": 1.0, "GCC": 1.0, "GCA": 1.0, "GCT": 1.0}
