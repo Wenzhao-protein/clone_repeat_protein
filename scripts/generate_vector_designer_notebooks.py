@@ -1160,6 +1160,7 @@ state = {
     "credential_payload": None,
     "credential_auth_method": None,
     "pending_credential_upload": None,
+    "credential_test_active": False,
     "run_control": None,
     "run_thread": None,
     "run_active": False,
@@ -1759,6 +1760,7 @@ idt_setup_mode_widget = widgets.ToggleButtons(
     options=(
         ("Create Credentials", "create"),
         ("Upload idt.env", "upload"),
+        ("Manual credential input", "manual"),
         ("Do not use IDT API — export batch input", "batch"),
     ),
     value="create",
@@ -1767,26 +1769,39 @@ idt_setup_mode_widget = widgets.ToggleButtons(
 )
 idt_create_mode_button = widgets.Button(
     description="Create Credentials", icon="key", button_style="info",
-    layout=widgets.Layout(width="31%"),
+    layout=widgets.Layout(width="24%"),
 )
 idt_auth_method_widget = widgets.ToggleButtons(
     options=(("Client credentials", "password"), ("Access token", "access_token")),
     value="password", description="Authentication",
 )
-idt_client_id_widget = widgets.Password(description="Client ID", layout=widgets.Layout(width="49%"))
-idt_client_secret_widget = widgets.Password(description="Client secret", layout=widgets.Layout(width="49%"))
-idt_username_widget = widgets.Password(description="IDT username", layout=widgets.Layout(width="49%"))
-idt_password_widget = widgets.Password(description="IDT password", layout=widgets.Layout(width="49%"))
-idt_access_token_widget = widgets.Password(description="Access token", layout=widgets.Layout(width="98%"))
-credential_upload = widgets.FileUpload(
-    accept=".env,text/plain", multiple=False, description="Upload idt.env",
-    icon="upload", layout=widgets.Layout(width="31%"),
+idt_client_id_widget = widgets.Password(
+    description="Client ID", continuous_update=False, layout=widgets.Layout(width="49%")
+)
+idt_client_secret_widget = widgets.Password(
+    description="Client secret", continuous_update=False, layout=widgets.Layout(width="49%")
+)
+idt_username_widget = widgets.Password(
+    description="IDT username", continuous_update=False, layout=widgets.Layout(width="49%")
+)
+idt_password_widget = widgets.Password(
+    description="IDT password", continuous_update=False, layout=widgets.Layout(width="49%")
+)
+idt_access_token_widget = widgets.Password(
+    description="Access token", continuous_update=False, layout=widgets.Layout(width="98%")
+)
+idt_upload_mode_button = widgets.Button(
+    description="Upload idt.env", icon="upload",
+    layout=widgets.Layout(width="24%"),
+)
+idt_manual_mode_button = widgets.Button(
+    description="Manual credential input", icon="edit",
+    layout=widgets.Layout(width="25%"),
 )
 idt_batch_mode_button = widgets.Button(
     description="Do not use IDT API", icon="download",
-    layout=widgets.Layout(width="36%"),
+    layout=widgets.Layout(width="27%"),
 )
-credential_test_button = widgets.Button(description="Test credentials", icon="check", button_style="info")
 credential_download_button = widgets.Button(description="Download idt.env", icon="download")
 credential_status = widgets.HTML("<b>IDT status:</b> credentials not configured")
 output_directory_widget = widgets.Text(value="/content/hurdler_runs/current", description="Runtime work folder", layout=widgets.Layout(width="98%"))
@@ -2027,7 +2042,8 @@ credential_registration_help = widgets.HTML(
     "Sign in or create an IDT account</a>.</li>"
     "<li>Open <b>My Account → API access → Request new API key</b>.</li>"
     "<li>Choose a unique Client ID, accept the API terms, and securely copy the generated Client secret.</li>"
-    "<li>Enter the four password-grant fields below, or choose Access token.</li></ol>"
+    "<li>Return here and choose <b>Upload idt.env</b> or <b>Manual credential input</b>; "
+    "both paths test automatically.</li></ol>"
     "<b style='color:#111827'>Password-grant file</b><pre style='background:#f9fafb;color:#111827;"
     "border:1px solid #d1d5db;padding:8px'>IDT_CLIENT_ID=your_client_id\nIDT_CLIENT_SECRET=your_client_secret\n"
     "IDT_USERNAME=your_idt_username\nIDT_PASSWORD=your_idt_password</pre>"
@@ -2048,19 +2064,33 @@ idt_password_fields_panel = widgets.VBox([
 idt_token_field_panel = widgets.VBox([idt_access_token_widget])
 credential_create_panel = widgets.VBox([
     credential_registration_help,
+    widgets.HTML(
+        "<div style='border-left:5px solid #b7a57a;background:#fffaf0;color:#111827;padding:10px'>"
+        "After creating the API client, choose <b>Upload idt.env</b> or "
+        "<b>Manual credential input</b>. Both paths test credentials automatically.</div>"
+    ),
+])
+credential_manual_panel = widgets.VBox([
+    widgets.HTML(
+        "<div style='border-left:5px solid #4b2e83;background:#f4f0fa;color:#111827;padding:10px'>"
+        "<b>Manual input.</b> Values are hidden and remain only in kernel memory. "
+        "Testing starts automatically after all required fields are complete and the final field loses focus.</div>"
+    ),
     idt_auth_method_widget,
     idt_password_fields_panel,
     idt_token_field_panel,
-    widgets.HBox([credential_test_button, credential_download_button]),
+    credential_download_button,
 ])
+credential_upload_output = widgets.Output()
 credential_upload_panel = widgets.VBox([
     widgets.HTML(
         "<div style='border-left:5px solid #4b2e83;background:#f4f0fa;color:#111827;padding:12px'>"
-        "<b>Upload mode.</b> Selecting <b>Upload idt.env</b> above opens the file chooser. "
+        "<b>Upload mode.</b> Selecting <b>Upload idt.env</b> opens Colab's native in-memory file chooser. "
         "One UTF-8 file is accepted and tested automatically through OAuth and the 125-bp complexity control. "
-        "No second Upload or Test button is required. The uploaded bytes stay in kernel memory and are never "
+        "There is no second persistent Upload or Test button. The uploaded bytes stay in kernel memory and are never "
         "included in an output archive.</div>"
     ),
+    credential_upload_output,
 ])
 back_to_ga_button = widgets.Button(description="Back to GA settings", icon="arrow-up")
 credential_batch_panel = widgets.VBox([
@@ -2074,13 +2104,14 @@ credential_batch_panel = widgets.VBox([
 ])
 idt_mode_action_row = widgets.HBox([
     idt_create_mode_button,
-    credential_upload,
+    idt_upload_mode_button,
+    idt_manual_mode_button,
     idt_batch_mode_button,
 ], layout=widgets.Layout(width="100%"))
 idt_mode_action_panel = widgets.VBox([
     widgets.HTML(
         "<b>IDT scoring setup</b> <span style='color:#4b5563'>[mode]</span><br>"
-        "<b>Default:</b> Create Credentials · <b>Allowed:</b> create, upload, or no API<br>"
+        "<b>Default:</b> Create Credentials · <b>Allowed:</b> create, upload, manual input, or no API<br>"
         "<b>Purpose:</b> Choose live complexity scoring from an in-memory credential or an offline Bulk Input export.<br>"
         "<b>Effect:</b> Only the two live modes may report IDT score-sum &lt;10 acceptance."
     ),
@@ -2091,6 +2122,7 @@ idt_credential_panel = widgets.VBox([
     credential_security_notice,
     credential_create_panel,
     credential_upload_panel,
+    credential_manual_panel,
     credential_batch_panel,
     credential_status,
 ])
@@ -2603,82 +2635,37 @@ def _payload_from_upload_value(uploaded):
     return payload
 
 
-def _capture_credential_upload(change):
-    """Copy uploaded bytes immediately; Colab may later expose an empty trait."""
+def _choose_colab_credential_payload():
+    """Open Colab's native chooser and return one file without writing it."""
     try:
-        payload = _payload_from_upload_value(change.get("new"))
-        if payload is None:
-            # Do not erase a successfully captured upload when a hosted widget
-            # transiently resets its value after transfer.
-            return
-        _wipe_bytearray(state.get("pending_credential_upload"))
-        state["pending_credential_upload"] = bytearray(payload)
-        credential_status.value = (
-            "<div style='color:#2d6a4f'><b>IDT status: one credential file received "
-            "in kernel memory.</b> Testing it automatically…</div>"
-        )
-        return True
-    except Exception as exc:
-        _wipe_bytearray(state.get("pending_credential_upload"))
-        state["pending_credential_upload"] = None
-        credential_status.value = (
-            f"<div style='color:#b31b1b'><b>IDT upload could not be read:</b> "
-            f"{type(exc).__name__}: {str(exc)[:300]}</div>"
-        )
-        return False
+        from google.colab import files as colab_files
+    except ImportError as exc:
+        raise RuntimeError("The one-click credential chooser requires a hosted Colab runtime") from exc
+    picker = getattr(colab_files, "_upload_files", None)
+    if not callable(picker):
+        raise RuntimeError("This Colab runtime does not expose its in-memory file chooser")
+    with credential_upload_output:
+        clear_output(wait=True)
+        uploaded = picker(multiple=False)
+    payload = _payload_from_upload_value(uploaded)
+    if payload is None:
+        raise FileNotFoundError("No idt.env file was selected")
+    return payload
 
 
-def _credential_upload_changed(change):
-    """Select Upload mode and immediately validate each newly uploaded env."""
-    if not change.get("new"):
-        return
-    if idt_setup_mode_widget.value != "upload":
-        idt_setup_mode_widget.value = "upload"
-    if _capture_credential_upload(change):
-        _test_idt_credentials(upload_widget=change.get("owner"))
-
-
-def _uploaded_payload(upload_widget=None):
-    active_upload = upload_widget if upload_widget is not None else credential_upload
-    payload = _payload_from_upload_value(getattr(active_upload, "value", None))
-    if payload is not None:
-        return payload
-    pending = state.get("pending_credential_upload")
-    if isinstance(pending, bytearray) and pending:
-        return bytes(pending)
-    return None
-
-
-def _clear_credential_upload():
-    """Drop uploaded bytes without assigning Colab's read-only value trait."""
-    global credential_upload
-    previous = credential_upload
-    credential_upload = widgets.FileUpload(
-        accept=".env,text/plain", multiple=False,
-        description="Upload idt.env",
-        icon="upload", layout=widgets.Layout(width="31%"),
-    )
-    credential_upload.observe(_credential_upload_changed, names="value")
-    idt_mode_action_row.children = (
-        idt_create_mode_button,
-        credential_upload,
-        idt_batch_mode_button,
-    )
-    try:
-        previous.close()
-    except Exception:
-        # Replacement already removed the only live UI reference.  Some
-        # hosted widget backends do not implement close() completely.
-        pass
-
-
-def _configure_api_credentials(*, upload_widget=None):
+def _configure_api_credentials():
     if _validation_mode() != "api":
         raise RuntimeError("IDT credentials are not used in Bulk Input mode")
     cached = state.get("credential_payload")
     if isinstance(cached, bytearray) and cached:
         return configure_idt_credentials_from_bytes(bytes(cached))
-    if idt_setup_mode_widget.value == "create":
+    mode = str(idt_setup_mode_widget.value)
+    if mode == "create":
+        raise RuntimeError(
+            "Create Credentials provides registration instructions only; choose Upload idt.env "
+            "or Manual credential input before running Live IDT scoring"
+        )
+    if mode == "manual":
         values = _create_credential_values()
         try:
             status = configure_idt_credentials_from_values(
@@ -2691,9 +2678,12 @@ def _configure_api_credentials(*, upload_widget=None):
         finally:
             values.clear()
             _clear_create_secret_widgets()
-    payload = _uploaded_payload(upload_widget)
-    if payload is None:
-        raise FileNotFoundError("Upload one idt.env file before testing or running Live IDT scoring")
+    if mode != "upload":
+        raise RuntimeError(f"Unsupported IDT credential mode: {mode}")
+    pending = state.get("pending_credential_upload")
+    if not isinstance(pending, bytearray) or not pending:
+        raise FileNotFoundError("Click Upload idt.env and select one credential file")
+    payload = bytes(pending)
     try:
         status = configure_idt_credentials_from_bytes(payload)
         state["credential_payload"] = bytearray(payload)
@@ -2703,13 +2693,14 @@ def _configure_api_credentials(*, upload_widget=None):
         payload = b""
         _wipe_bytearray(state.get("pending_credential_upload"))
         state["pending_credential_upload"] = None
-        _clear_credential_upload()
 
 
 def _sync_idt_auth_fields(_change=None):
     password = idt_auth_method_widget.value == "password"
     idt_password_fields_panel.layout.display = "" if password else "none"
     idt_token_field_panel.layout.display = "none" if password else ""
+    if _change is not None and idt_setup_mode_widget.value == "manual":
+        _manual_credentials_changed()
 
 
 def _sync_idt_setup(change=None):
@@ -2719,15 +2710,24 @@ def _sync_idt_setup(change=None):
     mode = idt_setup_mode_widget.value
     credential_create_panel.layout.display = "" if mode == "create" else "none"
     credential_upload_panel.layout.display = "" if mode == "upload" else "none"
+    credential_manual_panel.layout.display = "" if mode == "manual" else "none"
     credential_batch_panel.layout.display = "" if mode == "batch" else "none"
     idt_create_mode_button.button_style = "info" if mode == "create" else ""
-    credential_upload.button_style = "info" if mode == "upload" else ""
+    idt_upload_mode_button.button_style = "info" if mode == "upload" else ""
+    idt_manual_mode_button.button_style = "info" if mode == "manual" else ""
     idt_batch_mode_button.button_style = "warning" if mode == "batch" else ""
-    credential_status.value = (
-        "<b>IDT status:</b> offline Bulk Input mode; no credentials or API calls"
-        if mode == "batch"
-        else "<b>IDT status:</b> credentials remain only in this kernel and have not been tested"
-    )
+    if mode == "batch":
+        credential_status.value = "<b>IDT status:</b> offline Bulk Input mode; no credentials or API calls"
+    elif mode == "create":
+        credential_status.value = (
+            "<b>IDT status:</b> registration instructions shown; choose Upload or Manual input after creating credentials"
+        )
+    elif mode == "manual":
+        credential_status.value = (
+            "<b>IDT status:</b> waiting for all required hidden fields; testing is automatic"
+        )
+    else:
+        credential_status.value = "<b>IDT status:</b> choose one idt.env file in the native Colab picker"
     if "idt_plot_status" in globals() and not state.get("run_active"):
         if mode == "batch":
             _set_idt_plot_placeholder(
@@ -2741,15 +2741,17 @@ def _sync_idt_setup(change=None):
         _invalidate_external_bundle()
 
 
-def _test_idt_credentials(_button=None, *, upload_widget=None):
-    credential_test_button.disabled = True
+def _test_idt_credentials():
+    if state.get("credential_test_active"):
+        return
+    state["credential_test_active"] = True
     idt_create_mode_button.disabled = True
+    idt_upload_mode_button.disabled = True
+    idt_manual_mode_button.disabled = True
     idt_batch_mode_button.disabled = True
-    active_upload = upload_widget if upload_widget is not None else credential_upload
-    active_upload.disabled = True
     credential_status.value = "<b>IDT status:</b> testing OAuth and one 125-bp complexity request…"
     try:
-        status = _configure_api_credentials(upload_widget=upload_widget)
+        status = _configure_api_credentials()
         with tempfile.TemporaryDirectory(prefix="hurdler_idt_test_") as temporary:
             scorer = IDTComplexityScorer(Path(temporary) / "audit.jsonl")
             summary = scorer.score("hurdler_credential_test", "ACGT" * 31 + "A")
@@ -2767,17 +2769,68 @@ def _test_idt_credentials(_button=None, *, upload_widget=None):
         )
     finally:
         clear_idt_secret_environment()
-        credential_test_button.disabled = False
+        state["credential_test_active"] = False
         idt_create_mode_button.disabled = bool(state.get("run_active"))
+        idt_upload_mode_button.disabled = bool(state.get("run_active"))
+        idt_manual_mode_button.disabled = bool(state.get("run_active"))
         idt_batch_mode_button.disabled = bool(state.get("run_active"))
-        credential_upload.disabled = bool(state.get("run_active"))
+
+
+def _upload_and_test_credentials(_button=None):
+    if state.get("run_active") or state.get("credential_test_active"):
+        return
+    if idt_setup_mode_widget.value != "upload":
+        idt_setup_mode_widget.value = "upload"
+    else:
+        _wipe_cached_credentials()
+    idt_upload_mode_button.disabled = True
+    credential_status.value = "<b>IDT status:</b> waiting for one idt.env selection…"
+    try:
+        payload = _choose_colab_credential_payload()
+        _wipe_bytearray(state.get("pending_credential_upload"))
+        state["pending_credential_upload"] = bytearray(payload)
+        payload = b""
+        credential_status.value = (
+            "<b>IDT status:</b> credential file received in kernel memory; testing automatically…"
+        )
+        _test_idt_credentials()
+    except Exception as exc:
+        _wipe_bytearray(state.get("pending_credential_upload"))
+        state["pending_credential_upload"] = None
+        credential_status.value = (
+            f"<div style='color:#b31b1b'><b>IDT upload failed safely:</b> {type(exc).__name__}: "
+            f"{str(exc)[:300]}</div>"
+        )
+    finally:
+        idt_upload_mode_button.disabled = bool(state.get("run_active"))
+
+
+def _manual_credentials_complete():
+    values = _create_credential_values()
+    try:
+        return bool(values) and all(bool(str(value).strip()) for value in values.values())
+    finally:
+        values.clear()
+
+
+def _manual_credentials_changed(_change=None):
+    if idt_setup_mode_widget.value != "manual" or state.get("credential_test_active"):
+        return
+    _wipe_cached_credentials()
+    if _manual_credentials_complete():
+        _test_idt_credentials()
+    else:
+        credential_status.value = (
+            "<b>IDT status:</b> waiting for all required hidden fields; "
+            "leave the final field to start the automatic test"
+        )
 
 
 def _download_credential_env(_button=None):
     try:
         if state.get("credential_payload") is None:
-            if idt_setup_mode_widget.value != "create":
-                raise RuntimeError("Create credentials in the hidden form before downloading idt.env")
+            if idt_setup_mode_widget.value != "manual":
+                raise RuntimeError("Enter and verify credentials in Manual credential input before downloading idt.env")
             values = _create_credential_values()
             try:
                 configure_idt_credentials_from_values(
@@ -2814,11 +2867,16 @@ def _select_idt_mode(mode):
 
 idt_auth_method_widget.observe(_sync_idt_auth_fields, names="value")
 idt_setup_mode_widget.observe(_sync_idt_setup, names="value")
-credential_upload.observe(_credential_upload_changed, names="value")
 idt_create_mode_button.on_click(lambda _button: _select_idt_mode("create"))
+idt_upload_mode_button.on_click(_upload_and_test_credentials)
+idt_manual_mode_button.on_click(lambda _button: _select_idt_mode("manual"))
 idt_batch_mode_button.on_click(lambda _button: _select_idt_mode("batch"))
-credential_test_button.on_click(_test_idt_credentials)
 credential_download_button.on_click(_download_credential_env)
+for manual_widget in (
+    idt_client_id_widget, idt_client_secret_widget, idt_username_widget,
+    idt_password_widget, idt_access_token_widget,
+):
+    manual_widget.observe(_manual_credentials_changed, names="value")
 _sync_idt_auth_fields()
 _sync_idt_setup()
 
@@ -2948,8 +3006,9 @@ def _set_run_active(active):
     state["run_active"] = bool(active)
     for widget in ga_request_widgets:
         widget.disabled = bool(active)
-    credential_upload.disabled = bool(active)
     idt_create_mode_button.disabled = bool(active)
+    idt_upload_mode_button.disabled = bool(active)
+    idt_manual_mode_button.disabled = bool(active)
     idt_batch_mode_button.disabled = bool(active)
     confirmed = state.get("confirmed_route") is not None
     design_button.disabled = bool(active) or not confirmed or execution_target_widget.value != "colab"
@@ -3515,10 +3574,10 @@ ga_request_widgets = (
     storage_mode_widget, drive_root_widget, mount_drive_button,
     execution_target_widget,
     settings_mode, idt_setup_mode_widget, idt_auth_method_widget,
-    idt_create_mode_button, idt_batch_mode_button,
+    idt_create_mode_button, idt_upload_mode_button,
+    idt_manual_mode_button, idt_batch_mode_button,
     idt_client_id_widget, idt_client_secret_widget, idt_username_widget,
-    idt_password_widget, idt_access_token_widget, credential_upload,
-    credential_test_button, credential_download_button,
+    idt_password_widget, idt_access_token_widget, credential_download_button,
     secondary_search_mode_widget, secondary_copy_range_widget,
     minimum_secondary_number, maximum_secondary_number,
     population_number, mutation_number, crossover_number, elite_number,

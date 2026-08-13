@@ -4,10 +4,11 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import time
 import zipfile
-from datetime import datetime, timezone
+from types import ModuleType, SimpleNamespace
 from pathlib import Path
 
 import nbformat
@@ -122,9 +123,12 @@ def test_colab_tutorial_uses_two_mutually_exclusive_input_panels():
     assert "widgets.Password(" in COLAB_NOTEBOOK.read_text()
     assert "Create Credentials" in controller
     assert "Upload idt.env" in controller
+    assert "Manual credential input" in controller
     assert "Do not use IDT API — export batch input" in controller
     assert 'description="Test uploaded credentials"' not in controller
     assert "credential_upload_test_button" not in controller
+    assert "credential_test_button" not in controller
+    assert "widgets.FileUpload(" not in controller
     for secret in (
         "IDT_ACCESS_TOKEN", "IDT_CLIENT_ID", "IDT_CLIENT_SECRET",
         "IDT_USERNAME", "IDT_PASSWORD",
@@ -176,7 +180,7 @@ def test_colab_has_separate_tutorial_steps_with_viewer_after_ga():
     assert "feedback={event.feedback_round" in controller
     assert 'ga_panel.layout.display = "none"' not in controller
     assert "credential_upload.value = ()" not in controller
-    assert "_clear_credential_upload()" in controller
+    assert "_choose_colab_credential_payload()" in controller
     imports = _colab_runtime_sources()[1]
     assert "colab_output.enable_custom_widget_manager()" in imports
     assert "write_secondary_checkpoint" in imports
@@ -352,19 +356,29 @@ def test_colab_external_bundle_freezes_request_and_is_invalidated_by_ga_edits(
     assert namespace["state"]["external_bundle"] is None
 
 
-def test_colab_create_credentials_uses_hidden_fields_and_clears_secret_widgets(colab_runtime_namespace):
+def test_colab_manual_credentials_are_hidden_auto_tested_and_cleared(colab_runtime_namespace):
     namespace = colab_runtime_namespace
-    namespace["idt_setup_mode_widget"].value = "create"
+
+    class PassingScorer:
+        def __init__(self, _audit_path):
+            pass
+
+        def score(self, _sequence_id, _sequence):
+            return {"idt_complexity_score": 0.0}
+
+    namespace["IDTComplexityScorer"] = PassingScorer
+    namespace["idt_manual_mode_button"].click()
     namespace["idt_auth_method_widget"].value = "access_token"
     namespace["idt_access_token_widget"].value = "temporary-token"
-    status = namespace["_configure_api_credentials"]()
-    assert status["auth_method"] == "access_token"
-    assert os.environ["IDT_ACCESS_TOKEN"] == "temporary-token"
+    assert namespace["idt_setup_mode_widget"].value == "manual"
+    assert namespace["credential_create_panel"].layout.display == "none"
+    assert namespace["credential_manual_panel"].layout.display == ""
+    assert "IDT status: verified" in namespace["credential_status"].value
     assert namespace["idt_access_token_widget"].value == ""
     assert isinstance(namespace["state"]["credential_payload"], bytearray)
     assert b"temporary-token" in bytes(namespace["state"]["credential_payload"])
-    clear_idt_secret_environment()
     assert "IDT_ACCESS_TOKEN" not in os.environ
+    clear_idt_secret_environment()
 
 
 def test_colab_uploaded_env_is_selected_and_tested_automatically(
@@ -380,27 +394,68 @@ def test_colab_uploaded_env_is_selected_and_tested_automatically(
             return {"idt_complexity_score": 0.0}
 
     namespace["IDTComplexityScorer"] = PassingScorer
-    upload = namespace["credential_upload"]
     payload = b"IDT_ACCESS_TOKEN=temporary-upload-token\n"
-    upload.value = ({
-        "name": "idt.env",
-        "type": "text/plain",
-        "size": len(payload),
-        "content": memoryview(payload),
-        "last_modified": datetime.now(timezone.utc),
-    },)
+    namespace["_choose_colab_credential_payload"] = lambda: payload
+    namespace["idt_upload_mode_button"].click()
     assert namespace["idt_setup_mode_widget"].value == "upload"
     assert namespace["credential_create_panel"].layout.display == "none"
     assert namespace["credential_upload_panel"].layout.display == ""
     assert "IDT status: verified" in namespace["credential_status"].value
     assert isinstance(namespace["state"]["credential_payload"], bytearray)
     assert bytes(namespace["state"]["credential_payload"]) == payload
-    assert namespace["credential_upload"] is not upload
-    assert namespace["credential_upload"].value == ()
-    assert namespace["idt_mode_action_row"].children[1] is namespace["credential_upload"]
-    assert namespace["credential_upload"].icon == "upload"
+    assert namespace["idt_mode_action_row"].children[1] is namespace["idt_upload_mode_button"]
+    assert namespace["idt_upload_mode_button"].icon == "upload"
     assert namespace["state"]["pending_credential_upload"] is None
     assert "IDT_ACCESS_TOKEN" not in os.environ
+    clear_idt_secret_environment()
+
+
+def test_colab_native_chooser_returns_bytes_without_public_disk_upload(
+    monkeypatch, colab_runtime_namespace,
+):
+    namespace = colab_runtime_namespace
+    payload = b"IDT_ACCESS_TOKEN=native-picker-token\n"
+    calls = []
+    fake_files = SimpleNamespace(
+        _upload_files=lambda *, multiple: calls.append(multiple) or {"idt.env": payload}
+    )
+    google_module = ModuleType("google")
+    colab_module = ModuleType("google.colab")
+    colab_module.files = fake_files
+    google_module.colab = colab_module
+    monkeypatch.setitem(sys.modules, "google", google_module)
+    monkeypatch.setitem(sys.modules, "google.colab", colab_module)
+    assert namespace["_choose_colab_credential_payload"]() == payload
+    assert calls == [False]
+
+
+def test_colab_manual_password_grant_auto_tests_after_fourth_field(
+    colab_runtime_namespace,
+):
+    namespace = colab_runtime_namespace
+
+    class PassingScorer:
+        def __init__(self, _audit_path):
+            pass
+
+        def score(self, _sequence_id, _sequence):
+            return {"idt_complexity_score": 0.0}
+
+    namespace["IDTComplexityScorer"] = PassingScorer
+    namespace["idt_manual_mode_button"].click()
+    namespace["idt_client_id_widget"].value = "client-id"
+    namespace["idt_client_secret_widget"].value = "client-secret"
+    namespace["idt_username_widget"].value = "username"
+    assert "waiting for all required" in namespace["credential_status"].value
+    namespace["idt_password_widget"].value = "password"
+    assert "IDT status: verified" in namespace["credential_status"].value
+    assert namespace["idt_client_secret_widget"].value == ""
+    assert namespace["idt_password_widget"].value == ""
+    assert namespace["idt_client_id_widget"].value == "client-id"
+    assert namespace["idt_username_widget"].value == "username"
+    assert "IDT_CLIENT_SECRET" in bytes(namespace["state"]["credential_payload"]).decode()
+    assert "IDT_PASSWORD" in bytes(namespace["state"]["credential_payload"]).decode()
+    assert "IDT_PASSWORD" not in os.environ
     clear_idt_secret_environment()
 
 
@@ -420,45 +475,36 @@ def test_colab_upload_parser_accepts_hosted_widget_value_shapes(
     assert namespace["_payload_from_upload_value"](uploaded) == b"IDT_ACCESS_TOKEN=test-token\n"
 
 
-def test_colab_upload_observer_survives_transient_empty_widget_value(
+def test_colab_native_upload_cancel_stays_in_upload_mode_without_testing(
     colab_runtime_namespace,
 ):
     namespace = colab_runtime_namespace
-    namespace["idt_setup_mode_widget"].value = "upload"
-    upload = namespace["credential_upload"]
-    payload = b"IDT_ACCESS_TOKEN=transient-upload-token\n"
-    change = {"new": ({
-        "name": "idt.env",
-        "type": "text/plain",
-        "size": len(payload),
-        "content": memoryview(payload),
-        "last_modified": datetime.now(timezone.utc),
-    },)}
-    assert namespace["_capture_credential_upload"](change) is True
-    assert bytes(namespace["state"]["pending_credential_upload"]) == payload
-    assert namespace["_capture_credential_upload"]({"new": ()}) is None
-    assert namespace["_uploaded_payload"](upload) == payload
-    status = namespace["_configure_api_credentials"](upload_widget=upload)
-    assert status["credential_mode"] == "upload"
+    namespace["_choose_colab_credential_payload"] = lambda: (_ for _ in ()).throw(
+        FileNotFoundError("selection cancelled")
+    )
+    namespace["idt_upload_mode_button"].click()
+    assert namespace["idt_setup_mode_widget"].value == "upload"
+    assert "selection cancelled" in namespace["credential_status"].value
     assert namespace["state"]["pending_credential_upload"] is None
-    clear_idt_secret_environment()
 
 
-def test_colab_idt_mode_row_has_one_upload_action_and_no_duplicate_upload_panel_button(
+def test_colab_idt_mode_row_has_four_actions_and_no_duplicate_upload_or_test_button(
     colab_runtime_namespace,
 ):
     namespace = colab_runtime_namespace
     row = namespace["idt_mode_action_row"]
     assert row.children == (
         namespace["idt_create_mode_button"],
-        namespace["credential_upload"],
+        namespace["idt_upload_mode_button"],
+        namespace["idt_manual_mode_button"],
         namespace["idt_batch_mode_button"],
     )
-    assert namespace["credential_upload"].description == "Upload idt.env"
-    assert namespace["credential_upload"].icon == "upload"
-    assert len(namespace["credential_upload_panel"].children) == 1
+    assert namespace["idt_upload_mode_button"].description == "Upload idt.env"
+    assert namespace["idt_upload_mode_button"].icon == "upload"
+    assert len(namespace["credential_upload_panel"].children) == 2
     assert namespace["credential_registration_help"] not in namespace["credential_upload_panel"].children
     assert "credential_upload_test_button" not in namespace
+    assert "credential_test_button" not in namespace
 
 
 def test_colab_shared_enzyme_and_plasmid_select_all_none_controls(colab_runtime_namespace):
@@ -665,7 +711,7 @@ def test_colab_mock_secrets_api_flow_clears_credentials(
 ):
     namespace = colab_runtime_namespace
     _confirm_first_colab_route(namespace)
-    namespace["idt_setup_mode_widget"].value = "create"
+    namespace["idt_setup_mode_widget"].value = "manual"
     namespace["idt_auth_method_widget"].value = "access_token"
     namespace["population_number"].value = 4
     namespace["generation_schedule_widget"].value = "10,100"
