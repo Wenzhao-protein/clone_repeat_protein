@@ -1762,8 +1762,12 @@ idt_setup_mode_widget = widgets.ToggleButtons(
         ("Do not use IDT API — export batch input", "batch"),
     ),
     value="create",
-    description="IDT setup",
-    layout=widgets.Layout(width="100%"),
+    description="IDT setup state",
+    layout=widgets.Layout(display="none"),
+)
+idt_create_mode_button = widgets.Button(
+    description="Create Credentials", icon="key", button_style="info",
+    layout=widgets.Layout(width="31%"),
 )
 idt_auth_method_widget = widgets.ToggleButtons(
     options=(("Client credentials", "password"), ("Access token", "access_token")),
@@ -1775,10 +1779,14 @@ idt_username_widget = widgets.Password(description="IDT username", layout=widget
 idt_password_widget = widgets.Password(description="IDT password", layout=widgets.Layout(width="49%"))
 idt_access_token_widget = widgets.Password(description="Access token", layout=widgets.Layout(width="98%"))
 credential_upload = widgets.FileUpload(
-    accept=".env,text/plain", multiple=False, description="Upload idt.env"
+    accept=".env,text/plain", multiple=False, description="Upload idt.env",
+    icon="upload", layout=widgets.Layout(width="31%"),
+)
+idt_batch_mode_button = widgets.Button(
+    description="Do not use IDT API", icon="download",
+    layout=widgets.Layout(width="36%"),
 )
 credential_test_button = widgets.Button(description="Test credentials", icon="check", button_style="info")
-credential_upload_test_button = widgets.Button(description="Test uploaded credentials", icon="check", button_style="info")
 credential_download_button = widgets.Button(description="Download idt.env", icon="download")
 credential_status = widgets.HTML("<b>IDT status:</b> credentials not configured")
 output_directory_widget = widgets.Text(value="/content/hurdler_runs/current", description="Runtime work folder", layout=widgets.Layout(width="98%"))
@@ -2047,11 +2055,12 @@ credential_create_panel = widgets.VBox([
 ])
 credential_upload_panel = widgets.VBox([
     widgets.HTML(
-        "<b>Upload one UTF-8 <code>idt.env</code>.</b> It must contain exactly one of the two formats shown above. "
-        "The uploaded bytes are parsed in memory and are never included in any output archive."
+        "<div style='border-left:5px solid #4b2e83;background:#f4f0fa;color:#111827;padding:12px'>"
+        "<b>Upload mode.</b> Selecting <b>Upload idt.env</b> above opens the file chooser. "
+        "One UTF-8 file is accepted and tested automatically through OAuth and the 125-bp complexity control. "
+        "No second Upload or Test button is required. The uploaded bytes stay in kernel memory and are never "
+        "included in an output archive.</div>"
     ),
-    credential_registration_help,
-    widgets.HBox([credential_upload, credential_upload_test_button]),
 ])
 back_to_ga_button = widgets.Button(description="Back to GA settings", icon="arrow-up")
 credential_batch_panel = widgets.VBox([
@@ -2063,12 +2072,22 @@ credential_batch_panel = widgets.VBox([
     ),
     back_to_ga_button,
 ])
-idt_credential_panel = widgets.VBox([
-    _help_card(
-        "IDT scoring setup", idt_setup_mode_widget, unit="mode", default="Create Credentials",
-        purpose="Chooses live complexity scoring from an in-memory credential or an offline Bulk Input export.",
-        allowed="create, upload, or no API", effect="Only the two live modes may report IDT score-sum <10 acceptance.",
+idt_mode_action_row = widgets.HBox([
+    idt_create_mode_button,
+    credential_upload,
+    idt_batch_mode_button,
+], layout=widgets.Layout(width="100%"))
+idt_mode_action_panel = widgets.VBox([
+    widgets.HTML(
+        "<b>IDT scoring setup</b> <span style='color:#4b5563'>[mode]</span><br>"
+        "<b>Default:</b> Create Credentials · <b>Allowed:</b> create, upload, or no API<br>"
+        "<b>Purpose:</b> Choose live complexity scoring from an in-memory credential or an offline Bulk Input export.<br>"
+        "<b>Effect:</b> Only the two live modes may report IDT score-sum &lt;10 acceptance."
     ),
+    idt_mode_action_row,
+], layout=widgets.Layout(border="1px solid #d1d5db", padding="8px"))
+idt_credential_panel = widgets.VBox([
+    idt_mode_action_panel,
     credential_security_notice,
     credential_create_panel,
     credential_upload_panel,
@@ -2596,8 +2615,9 @@ def _capture_credential_upload(change):
         state["pending_credential_upload"] = bytearray(payload)
         credential_status.value = (
             "<div style='color:#2d6a4f'><b>IDT status: one credential file received "
-            "in kernel memory.</b> Click Test uploaded credentials.</div>"
+            "in kernel memory.</b> Testing it automatically…</div>"
         )
+        return True
     except Exception as exc:
         _wipe_bytearray(state.get("pending_credential_upload"))
         state["pending_credential_upload"] = None
@@ -2605,6 +2625,17 @@ def _capture_credential_upload(change):
             f"<div style='color:#b31b1b'><b>IDT upload could not be read:</b> "
             f"{type(exc).__name__}: {str(exc)[:300]}</div>"
         )
+        return False
+
+
+def _credential_upload_changed(change):
+    """Select Upload mode and immediately validate each newly uploaded env."""
+    if not change.get("new"):
+        return
+    if idt_setup_mode_widget.value != "upload":
+        idt_setup_mode_widget.value = "upload"
+    if _capture_credential_upload(change):
+        _test_idt_credentials(upload_widget=change.get("owner"))
 
 
 def _uploaded_payload(upload_widget=None):
@@ -2625,13 +2656,13 @@ def _clear_credential_upload():
     credential_upload = widgets.FileUpload(
         accept=".env,text/plain", multiple=False,
         description="Upload idt.env",
+        icon="upload", layout=widgets.Layout(width="31%"),
     )
-    credential_upload.observe(_capture_credential_upload, names="value")
-    credential_upload_test_button._hurdler_upload_widget = credential_upload
-    credential_upload_panel.children = (
-        credential_upload_panel.children[0],
-        credential_upload_panel.children[1],
-        widgets.HBox([credential_upload, credential_upload_test_button]),
+    credential_upload.observe(_credential_upload_changed, names="value")
+    idt_mode_action_row.children = (
+        idt_create_mode_button,
+        credential_upload,
+        idt_batch_mode_button,
     )
     try:
         previous.close()
@@ -2689,6 +2720,9 @@ def _sync_idt_setup(change=None):
     credential_create_panel.layout.display = "" if mode == "create" else "none"
     credential_upload_panel.layout.display = "" if mode == "upload" else "none"
     credential_batch_panel.layout.display = "" if mode == "batch" else "none"
+    idt_create_mode_button.button_style = "info" if mode == "create" else ""
+    credential_upload.button_style = "info" if mode == "upload" else ""
+    idt_batch_mode_button.button_style = "warning" if mode == "batch" else ""
     credential_status.value = (
         "<b>IDT status:</b> offline Bulk Input mode; no credentials or API calls"
         if mode == "batch"
@@ -2707,12 +2741,14 @@ def _sync_idt_setup(change=None):
         _invalidate_external_bundle()
 
 
-def _test_idt_credentials(_button=None):
+def _test_idt_credentials(_button=None, *, upload_widget=None):
     credential_test_button.disabled = True
-    credential_upload_test_button.disabled = True
+    idt_create_mode_button.disabled = True
+    idt_batch_mode_button.disabled = True
+    active_upload = upload_widget if upload_widget is not None else credential_upload
+    active_upload.disabled = True
     credential_status.value = "<b>IDT status:</b> testing OAuth and one 125-bp complexity request…"
     try:
-        upload_widget = getattr(_button, "_hurdler_upload_widget", None)
         status = _configure_api_credentials(upload_widget=upload_widget)
         with tempfile.TemporaryDirectory(prefix="hurdler_idt_test_") as temporary:
             scorer = IDTComplexityScorer(Path(temporary) / "audit.jsonl")
@@ -2732,7 +2768,9 @@ def _test_idt_credentials(_button=None):
     finally:
         clear_idt_secret_environment()
         credential_test_button.disabled = False
-        credential_upload_test_button.disabled = False
+        idt_create_mode_button.disabled = bool(state.get("run_active"))
+        idt_batch_mode_button.disabled = bool(state.get("run_active"))
+        credential_upload.disabled = bool(state.get("run_active"))
 
 
 def _download_credential_env(_button=None):
@@ -2770,12 +2808,16 @@ def _download_credential_env(_button=None):
         credential_status.value = f"<b>IDT download failed safely:</b> {type(exc).__name__}: {str(exc)[:300]}"
 
 
+def _select_idt_mode(mode):
+    idt_setup_mode_widget.value = str(mode)
+
+
 idt_auth_method_widget.observe(_sync_idt_auth_fields, names="value")
 idt_setup_mode_widget.observe(_sync_idt_setup, names="value")
-credential_upload.observe(_capture_credential_upload, names="value")
-credential_upload_test_button._hurdler_upload_widget = credential_upload
+credential_upload.observe(_credential_upload_changed, names="value")
+idt_create_mode_button.on_click(lambda _button: _select_idt_mode("create"))
+idt_batch_mode_button.on_click(lambda _button: _select_idt_mode("batch"))
 credential_test_button.on_click(_test_idt_credentials)
-credential_upload_test_button.on_click(_test_idt_credentials)
 credential_download_button.on_click(_download_credential_env)
 _sync_idt_auth_fields()
 _sync_idt_setup()
@@ -2907,6 +2949,8 @@ def _set_run_active(active):
     for widget in ga_request_widgets:
         widget.disabled = bool(active)
     credential_upload.disabled = bool(active)
+    idt_create_mode_button.disabled = bool(active)
+    idt_batch_mode_button.disabled = bool(active)
     confirmed = state.get("confirmed_route") is not None
     design_button.disabled = bool(active) or not confirmed or execution_target_widget.value != "colab"
     export_bundle_button.disabled = bool(active) or not confirmed or execution_target_widget.value != "external"
@@ -3471,9 +3515,10 @@ ga_request_widgets = (
     storage_mode_widget, drive_root_widget, mount_drive_button,
     execution_target_widget,
     settings_mode, idt_setup_mode_widget, idt_auth_method_widget,
+    idt_create_mode_button, idt_batch_mode_button,
     idt_client_id_widget, idt_client_secret_widget, idt_username_widget,
     idt_password_widget, idt_access_token_widget, credential_upload,
-    credential_test_button, credential_upload_test_button, credential_download_button,
+    credential_test_button, credential_download_button,
     secondary_search_mode_widget, secondary_copy_range_widget,
     minimum_secondary_number, maximum_secondary_number,
     population_number, mutation_number, crossover_number, elite_number,
@@ -3745,6 +3790,7 @@ def notebook(*, colab: bool = False):
                     colab=True,
                     cell_id=cell_id,
                     title=title,
+                    form_view=True,
                 )
             )
     else:
