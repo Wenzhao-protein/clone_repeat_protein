@@ -84,6 +84,10 @@ exact DNA translated correctly, had no selected-pair excess sites, carried a
 maximum-copy proof, and received a live IDT rule-score sum strictly below 10.
 The accompanying [designed-module citation guide](docs/designed_repeat_protein_citations.md)
 maps all 182 designed rows to 17 DOI papers and two PDB-only records.
+The same results directory also contains the
+[exact-DNA complete-route purchase audit](data/results/exact_dna_complete_route_purchase_orderability.csv):
+15,535/15,535 already-found molecular routes had every seed and donor
+representable as an explicit DNA-oligo pair or a live-IDT-accepted gBlock.
 
 The v2 interactive designer is the fastest user entry point. It first queries
 all 776 protein-level Site-I/Site-II pairs, then evaluates the retained long

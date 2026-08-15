@@ -1,0 +1,38 @@
+{
+  "analysis_version": "complete-route-purchase-orderability-v1",
+  "purchase_policy": "idt-custom-dna-oligo-pair-or-gblock-v1",
+  "input_analysis": "arbitrary-dna-complete-route-v2/run004_complete_route_v2_primer_fix",
+  "production_job_id": "18226641",
+  "production_status": "passed",
+  "results": {
+    "catalog_unique_elements": 29042,
+    "catalog_target_configurations": 145210,
+    "elements_with_found_routes": 3129,
+    "found_route_targets": 15535,
+    "routes_every_component_orderable": 15535,
+    "orderable_fraction_among_found_routes": 1.0,
+    "routes_requiring_at_least_one_ultramer_pair": 175,
+    "elements_requiring_an_ultramer_seed_pair": 35,
+    "routes_orderable_with_standard_primers_or_gblocks_only": 15360,
+    "standard_primer_or_gblock_only_fraction": 0.9887351142581268,
+    "found_route_fraction_of_catalog": 0.10698299015219337,
+    "component_occurrences_checked": 129564,
+    "unique_logical_purchase_components": 9916
+  },
+  "unique_purchase_components": {
+    "sticky_end_standard_primer_pairs": 6787,
+    "complementary_standard_primer_pairs": 3083,
+    "complementary_ultramer_pairs": 35,
+    "live_idt_accepted_gblocks": 11,
+    "maximum_live_idt_gblock_score": 2.1
+  },
+  "criteria": {
+    "custom_dna_oligos_nt_inclusive": [20, 200],
+    "standard_primer_reporting_cutoff_nt": 89,
+    "gblocks_bp_inclusive": [125, 3000],
+    "gblock_policy": "idt-rule-score-sum-lt10-v1",
+    "gblock_threshold": "strictly less than 10",
+    "all_actual_sticky_end_primers_nt_range": [25, 64]
+  },
+  "interpretation": "All selected complete molecular routes passed when IDT Ultramers are included as long primer/oligo pairs. If primer is restricted to the <=89-nt reporting class and Ultramers are excluded, 15,360 of 15,535 routes pass without redesign. This does not mean every catalog target had a route, and it is not a purchase transaction or a full annotation-aware MCS/vector rerun."
+}

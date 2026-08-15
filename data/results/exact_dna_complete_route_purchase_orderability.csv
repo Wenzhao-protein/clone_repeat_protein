@@ -1,0 +1,5 @@
+analysis_version,purchase_policy,source_database,catalog_unique_elements,catalog_target_configurations,elements_with_found_routes,found_route_targets,every_component_orderable_targets,orderable_fraction_among_found_routes,found_route_fraction_of_catalog,elements_requiring_ultramer,routes_requiring_ultramer,routes_orderable_with_standard_primers_or_gblocks_only,standard_primer_or_gblock_only_fraction
+complete-route-purchase-orderability-v1,idt-custom-dna-oligo-pair-or-gblock-v1,CRISPRCasdb,28539,142695,3033,15055,15055,1.0,0.10550474788885385,0,0,15055,1.0
+complete-route-purchase-orderability-v1,idt-custom-dna-oligo-pair-or-gblock-v1,Rfam,15,75,4,20,20,1.0,0.26666666666666666,2,10,10,0.5
+complete-route-purchase-orderability-v1,idt-custom-dna-oligo-pair-or-gblock-v1,Ribocentre_Aptamer,488,2440,92,460,460,1.0,0.1885245901639344,33,165,295,0.6413043478260869
+complete-route-purchase-orderability-v1,idt-custom-dna-oligo-pair-or-gblock-v1,ALL,29042,145210,3129,15535,15535,1.0,0.10698299015219337,35,175,15360,0.9887351142581268

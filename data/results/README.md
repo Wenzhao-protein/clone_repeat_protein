@@ -1,5 +1,20 @@
 # Natural/Designed repeat-protein results
 
+The exact-DNA production purchase audit is provided separately as
+[`exact_dna_complete_route_purchase_orderability.csv`](exact_dna_complete_route_purchase_orderability.csv)
+with a compact machine-readable
+[`JSON summary`](exact_dna_complete_route_purchase_orderability.json). It asks,
+only among the 15,535 exact target configurations that already had a verified
+complete molecular route, whether every seed and donor can be supplied as an
+explicit complementary DNA-oligo pair or as a 125--3,000-bp gBlock. All 15,535
+passed. The 11 unique gBlocks were re-evaluated through the live IDT API and
+had finite rule-score sums below 10; oligo pairs were checked against their
+actual strand sequences and the 20--200-nt product interval.
+Of these routes, 175 (35 source elements) require a 90--124-nt Ultramer seed
+pair. If “primer” is restricted to the report's conventional <=89-nt class
+and Ultramers are excluded, the direct-order count is therefore
+15,360/15,535 (98.87%) rather than 100%.
+
 For the paper-level provenance of all 182 designed modules, see the
 [designed-module citation guide](../../docs/designed_repeat_protein_citations.md)
 and its machine-readable

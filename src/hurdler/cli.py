@@ -32,6 +32,7 @@ from .complete_route import (
     finalize_complete_route_shards,
     plan_complete_route_catalog,
 )
+from .purchase_orderability import audit_complete_route_purchase_orderability
 from .exact_dna_design import (
     ExactDNAQuery,
     ExactDNASelection,
@@ -457,6 +458,26 @@ def build_parser() -> argparse.ArgumentParser:
     dna_complete_finalize.add_argument("--expected-elements", type=int)
     dna_complete_finalize.add_argument("--expected-real-targets", type=int)
     dna_complete_finalize.add_argument("--figure-dir", type=Path)
+
+    dna_purchase_audit = dna_sub.add_parser(
+        "audit-purchases",
+        help="Audit whether every component of each selected route is an orderable oligo pair or gBlock",
+    )
+    dna_purchase_audit.add_argument("--raw-root", type=Path, required=True)
+    dna_purchase_audit.add_argument("--output-dir", type=Path, required=True)
+    dna_purchase_audit.add_argument("--expected-shards", type=int)
+    dna_purchase_audit.add_argument("--expected-routes", type=int)
+    dna_purchase_audit.add_argument("--expected-elements", type=int)
+    dna_purchase_audit.add_argument("--use-idt", action="store_true")
+    dna_purchase_audit.add_argument(
+        "--credential-mode", choices=["path", "manual"], default="path"
+    )
+    dna_purchase_audit.add_argument(
+        "--credential-path", type=Path, default=IDT_CREDENTIAL_PATH
+    )
+    dna_purchase_audit.add_argument(
+        "--auth-method", choices=["password", "access_token"], default=None
+    )
 
     dna_interactive = dna_sub.add_parser(
         "interactive-design",
@@ -1237,6 +1258,36 @@ def main(argv: list[str] | None = None) -> int:
                     "rows": {name: len(frame) for name, frame in tables.items()},
                     "figures": [str(path) for path in figures],
                     "output_dir": str(args.output_dir),
+                }
+            )
+        elif args.dna_assembly_command == "audit-purchases":
+            scorer = None
+            credential_status = None
+            try:
+                if args.use_idt:
+                    credential_status = configure_idt_credentials(
+                        mode=args.credential_mode,
+                        path=args.credential_path,
+                        auth_method=args.auth_method,
+                        headless=not sys.stdin.isatty(),
+                        include_path_in_status=False,
+                    )
+                    scorer = IDTComplexityScorer(args.output_dir / "idt_audit.jsonl")
+                tables = audit_complete_route_purchase_orderability(
+                    args.raw_root,
+                    args.output_dir,
+                    idt_scorer=scorer,
+                    expected_shards=args.expected_shards,
+                    expected_routes=args.expected_routes,
+                    expected_elements=args.expected_elements,
+                )
+            finally:
+                clear_idt_secret_environment()
+            _print(
+                {
+                    "rows": {name: len(frame) for name, frame in tables.items()},
+                    "output_dir": str(args.output_dir),
+                    "credential_status": credential_status,
                 }
             )
         elif args.dna_assembly_command == "interactive-design":
