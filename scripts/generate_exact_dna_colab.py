@@ -41,7 +41,7 @@ def code(source: str, *, cell_id: str, title: str, tags: list[str] | None = None
     return cell
 
 
-def main() -> int:
+def notebook():
     book = nbf.v4.new_notebook()
     book.metadata.update(
         {
@@ -79,7 +79,7 @@ def main() -> int:
         code(
             """
             repository_url = "https://github.com/Wenzhao-protein/clone_repeat_protein.git" #@param {type:"string"}
-            repository_ref = "agent/vector-aware-designer-v2" #@param {type:"string"}
+            repository_ref = "main" #@param {type:"string"}
             force_fresh_clone = True #@param {type:"boolean"}
 
             import importlib, os, shutil, subprocess, sys
@@ -1046,7 +1046,11 @@ def main() -> int:
         ),
     ]
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    nbf.write(book, OUTPUT)
+    return book
+
+
+def main() -> int:
+    nbf.write(notebook(), OUTPUT)
     print(OUTPUT)
     return 0
 

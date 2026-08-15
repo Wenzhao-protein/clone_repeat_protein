@@ -1,0 +1,21 @@
+{
+  "schema_version": "hurdler-notebook-catalog-v2",
+  "suite_version": "2026.1",
+  "default_git_ref": "main",
+  "notebooks": [
+    {"id": "01_reference_database", "file": "01_reference_database.ipynb", "backend": "reference_database", "title": "Reference database builder"},
+    {"id": "02_lookup_plasmid", "file": "02_lookup_plasmid.ipynb", "backend": "lookup_plasmid", "title": "Lookup and plasmid database"},
+    {"id": "03_module_corpus", "file": "03_module_corpus.ipynb", "backend": "module_corpus", "title": "Repeat-module corpus"},
+    {"id": "04_query_batch", "file": "04_query_batch.ipynb", "backend": "query_batch", "title": "Query and batch screen"},
+    {"id": "05_repeat_designer", "file": "05_repeat_designer.ipynb", "backend": "repeat_designer", "title": "Repeat-protein designer V3"},
+    {"id": "06_exact_dna_designer", "file": "06_exact_dna_designer.ipynb", "backend": "exact_dna_designer", "title": "Exact-DNA designer V2"},
+    {"id": "07_production_builder", "file": "07_production_builder.ipynb", "backend": "production_builder", "title": "Production bundle builder"},
+    {"id": "08_success_landscape_analysis", "file": "08_success_landscape_analysis.ipynb", "backend": "success_landscape_analysis", "title": "Success landscape analysis"},
+    {"id": "09_module_result_analysis", "file": "09_module_result_analysis.ipynb", "backend": "module_result_analysis", "title": "Repeat-module, GA, codon and IDT analysis"},
+    {"id": "10_exact_dna_result_analysis", "file": "10_exact_dna_result_analysis.ipynb", "backend": "exact_dna_result_analysis", "title": "Exact-DNA production analysis"},
+    {"id": "11_reproducibility", "file": "11_reproducibility.ipynb", "backend": "reproducibility", "title": "Reproducibility dashboard"},
+    {"id": "12_agarose", "file": "12_agarose.ipynb", "backend": "agarose", "title": "Agarose gel analysis"},
+    {"id": "13_sec", "file": "13_sec.ipynb", "backend": "sec", "title": "SEC analysis"},
+    {"id": "14_plasmid_sequencing", "file": "14_plasmid_sequencing.ipynb", "backend": "plasmid_sequencing", "title": "Plasmid sequencing QC"}
+  ]
+}

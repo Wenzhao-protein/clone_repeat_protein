@@ -403,7 +403,7 @@ SMOKE = r'''if headless_smoke or os.environ.get("HURDLER_NOTEBOOK_SMOKE") == "1"
 
 
 COLAB_BOOTSTRAP = r'''#@markdown Select the Git branch used by this notebook preview.
-repository_ref = "agent/vector-aware-designer-v2" #@param ["agent/vector-aware-designer-v2", "main"] {allow-input: true}
+repository_ref = "main" #@param ["main"] {allow-input: true}
 
 # Colab-only bootstrap: computation and credentials stay in this runtime.
 import importlib

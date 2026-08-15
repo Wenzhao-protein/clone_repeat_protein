@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .artifacts import ArtifactRegistry, registry_rows
 from .design import (
     DesignRequest,
     bundled_index_dir,
@@ -58,6 +59,12 @@ from .progress import DesignProgressEvent
 from .index import PatternIndex, build_pattern_index
 from .io import write_json_atomic
 from .protein_index import ProteinPatternIndex, build_protein_pattern_index
+from .production_bundle import (
+    WORKFLOWS,
+    ProductionBundleRequest,
+    build_production_bundle,
+    validate_production_bundle,
+)
 from .plasmid_reference import (
     build_plasmid_reference,
     bundled_plasmid_reference_path,
@@ -343,6 +350,20 @@ def build_parser() -> argparse.ArgumentParser:
     adaptive.add_argument("--short-generations", type=int, default=10)
     adaptive.add_argument("--generation-schedule", type=int, nargs="+", default=[10, 20, 40, 60, 80, 100])
     adaptive.add_argument("--idt-policy", default=IDT_SCORE_POLICY, choices=[IDT_SCORE_POLICY])
+    adaptive.add_argument(
+        "--credential-path",
+        type=Path,
+        default=IDT_CREDENTIAL_PATH,
+        help="External mode-600 IDT env file used by live adaptive scoring",
+    )
+    adaptive.add_argument(
+        "--auth-method", choices=["password", "access_token"], default=None
+    )
+    adaptive.add_argument(
+        "--idt-batch",
+        action="store_true",
+        help="Do not call IDT; emit optimized candidates that require later batch validation",
+    )
     adaptive.add_argument("--scatter-output", type=Path)
     adaptive.add_argument("--fragment-limits", type=int, nargs="+", default=[1800, 3000])
     adaptive.add_argument("--external-deduction-bp", type=int, default=0)
@@ -550,6 +571,30 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--source-dir", type=Path, default=paths.output)
     validate.add_argument("--index-dir", type=Path, default=paths.output / "artifacts" / "legacy-optimized-v1")
     validate.add_argument("--output", type=Path, default=paths.output / "artifacts" / "legacy_qc.json")
+
+    artifacts = subparsers.add_parser("artifacts", help="List, fetch and verify V2 notebook artifacts")
+    artifacts_sub = artifacts.add_subparsers(dest="artifacts_command", required=True)
+    artifacts_list = artifacts_sub.add_parser("list")
+    artifacts_list.add_argument("--registry", type=Path, default=paths.root / "data/artifact_registry_v2.json")
+    artifacts_list.add_argument("--level", choices=["fixture", "snapshot", "compact_result", "production_raw"])
+    artifacts_fetch = artifacts_sub.add_parser("fetch")
+    artifacts_fetch.add_argument("artifact_id")
+    artifacts_fetch.add_argument("--registry", type=Path, default=paths.root / "data/artifact_registry_v2.json")
+    artifacts_fetch.add_argument("--output", type=Path)
+    artifacts_fetch.add_argument("--allow-production-raw", action="store_true")
+    artifacts_verify = artifacts_sub.add_parser("verify")
+    artifacts_verify.add_argument("artifact_id")
+    artifacts_verify.add_argument("--registry", type=Path, default=paths.root / "data/artifact_registry_v2.json")
+    artifacts_verify.add_argument("--path", type=Path)
+
+    production = subparsers.add_parser("production", help="Generate portable Digs production bundles")
+    production_sub = production.add_subparsers(dest="production_command", required=True)
+    production_sub.add_parser("list")
+    production_build = production_sub.add_parser("bundle")
+    production_build.add_argument("--request", type=Path, required=True)
+    production_build.add_argument("--output-dir", type=Path, required=True)
+    production_validate = production_sub.add_parser("validate-bundle")
+    production_validate.add_argument("bundle", type=Path)
     return parser
 
 
@@ -881,7 +926,14 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
             return 0
-        load_idt_credentials()
+        if not args.idt_batch:
+            configure_idt_credentials(
+                mode="path",
+                path=args.credential_path,
+                auth_method=args.auth_method,
+                headless=True,
+                include_path_in_status=False,
+            )
         constructs_path = args.constructs
         if args.compatibility is not None:
             if constructs_path is not None:
@@ -905,7 +957,7 @@ def main(argv: list[str] | None = None) -> int:
             shard_count=args.shard_count,
             population_size=args.population_size,
             seed=args.seed,
-            use_idt=True,
+            use_idt=not args.idt_batch,
             adaptive_copy_search_enabled=True,
             short_generations=args.short_generations,
             generation_schedule=tuple(args.generation_schedule),
@@ -1339,6 +1391,33 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             raise AssertionError(f"Unhandled dna-assembly command: {args.dna_assembly_command}")
+    elif args.command == "artifacts":
+        registry = ArtifactRegistry(args.registry)
+        if args.artifacts_command == "list":
+            _print(registry_rows(registry.list(level=args.level)))
+        elif args.artifacts_command == "fetch":
+            path = registry.fetch(
+                args.artifact_id,
+                args.output,
+                allow_production_raw=args.allow_production_raw,
+            )
+            _print({"artifact_id": args.artifact_id, "path": str(path), "status": "verified"})
+        elif args.artifacts_command == "verify":
+            path = registry.verify(args.artifact_id, args.path)
+            _print({"artifact_id": args.artifact_id, "path": str(path), "status": "verified"})
+        else:  # pragma: no cover - argparse guards this
+            raise AssertionError(f"Unhandled artifacts command: {args.artifacts_command}")
+    elif args.command == "production":
+        if args.production_command == "list":
+            _print({key: value.__dict__ for key, value in WORKFLOWS.items()})
+        elif args.production_command == "bundle":
+            request = ProductionBundleRequest.from_dict(json.loads(args.request.read_text()))
+            output = build_production_bundle(request, args.output_dir)
+            _print({"bundle": str(output), **validate_production_bundle(output)})
+        elif args.production_command == "validate-bundle":
+            _print(validate_production_bundle(args.bundle))
+        else:  # pragma: no cover - argparse guards this
+            raise AssertionError(f"Unhandled production command: {args.production_command}")
     elif args.command == "validate-run":
         _print(legacy_qc(args.source_dir, args.index_dir, args.output))
     else:

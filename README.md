@@ -1,15 +1,33 @@
 # HURDLER repeat-protein cloning
 
-**[Repeat-protein Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb) · [Exact-DNA/latent-RE Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb) · [Run the local web designer](#local-web-designer)**
+**[Authoritative V2 notebook suite](notebooks/v2/README.md) · [Repeat-protein Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb) · [Exact-DNA/latent-RE Colab](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb) · [Run the local web designer](#local-web-designer)**
 
-Repeat protein: [![Open repeat-protein designer in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/02_colab_hurdler_designer.ipynb)
+Repeat protein: [![Open repeat-protein designer in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/02_colab_hurdler_designer.ipynb)
 
-Exact DNA and regulatory-element arrays: [![Open exact-DNA designer in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/agent/vector-aware-designer-v2/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb)
+Exact DNA and regulatory-element arrays: [![Open exact-DNA designer in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wenzhao-protein/clone_repeat_protein/blob/main/notebooks/workflows/03_colab_exact_dna_hurdler_designer.ipynb)
+
+## Authoritative notebook suite V2
+
+The additive [`notebooks/v2/`](notebooks/v2/README.md) suite contains 14
+generated, output-free, Colab-compatible tutorials covering reference and
+lookup construction, module acquisition, both designers, Digs production
+bundle creation, production-result analysis, reproducibility, agarose gels,
+SEC and plasmid sequencing. Every notebook delegates science to a dedicated
+module in `hurdler.notebook_backends` and exchanges a credential-free,
+hash-tracked workspace. Large production jobs are never submitted from Colab:
+notebook 07 generates an inspectable taskrunner bundle with explicit
+preflight, add, dry-run, submit, status, missing-only recovery and finalization
+steps.
+
+Compact inputs are registered in
+[`data/artifact_registry_v2.json`](data/artifact_registry_v2.json). Use
+`hurdler artifacts list/fetch/verify` and
+`hurdler production list/bundle/validate-bundle` from scripts or notebooks.
 
 ## Test in a browser
 
 - **Colab:** use the badge above to open the review branch immediately. The
-  notebook clones that exact branch, installs the locked project extras, and
+  notebook clones `main`, installs the locked project extras, and
   opens as an English step-by-step tutorial. Choose **Runtime → Run all** once
   to install the package and reveal mutually exclusive split/full-protein input,
   opt-in Drive storage, separate individual-enzyme,

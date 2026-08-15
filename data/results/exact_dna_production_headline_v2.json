@@ -1,0 +1,16 @@
+{
+  "api_unclassified_targets": 5,
+  "analysis_version": "arbitrary-dna-complete-route-v2",
+  "elements_all_five_complete": 3095,
+  "legacy_final_step_success_fraction": 0.5367,
+  "legacy_value_is_reviewer_eligible": false,
+  "live_idt_scored_complete_targets": 225,
+  "primer_only_complete_targets": 15305,
+  "real_exact_targets": 145210,
+  "real_exact_targets_complete": 15530,
+  "reviewer_eligible_elements": 29041,
+  "reviewer_eligible_exact_targets": 145205,
+  "reviewer_response_text": "We tested 29,042 unique public DNA elements as exact 2-, 4-, 8-, 16- and 32-copy arrays. 3,095 elements admitted complete in-silico HURDLER routes from a purchasable seed at all five lengths. Across 145,210 exact targets, 145,205 had classifiable API evidence; among those, 15,530 completed the full route with a sequence-identical final product.",
+  "unique_public_elements": 29042,
+  "valid_hurdler_rescues": 12517
+}
