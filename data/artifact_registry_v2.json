@@ -19,6 +19,24 @@
       "version": "1"
     },
     {
+      "artifact_id": "exact-dna-complete-route-production-raw-v2",
+      "citation": "studies/hurdler_validation/step06_repetitive_dna_assembly/DATA_PROVENANCE_AND_VALIDATION.md",
+      "download_date": "2026-08-15",
+      "generated_by": "10_exact_dna_result_analysis",
+      "level": "production_raw",
+      "license": "source-specific; see provenance",
+      "media_type": "application/zstd",
+      "release_url": "https://github.com/Wenzhao-protein/clone_repeat_protein/releases/download/notebook-suite-v2-artifacts-2026.1/exact-dna-complete-route-production-v2-2026.1.tar.zst",
+      "repo_path": "",
+      "role": "Credential-free 512-shard exact-DNA route audit, purchase audit and strict finalized production tables",
+      "row_count": null,
+      "schema_version": "arbitrary-dna-complete-route-v2-production-archive",
+      "sha256": "368b45f70db75bcc0e8bc3713fb8208b92735daad129db173cbf9c7554f05b1a",
+      "size_bytes": 156099599,
+      "source": "validated Digs run004 routes, run005 purchase audit and run006 strict finalization",
+      "version": "2026.1"
+    },
+    {
       "artifact_id": "exact-dna-purchase-compact-v2",
       "citation": "",
       "download_date": "2026-08-15",
@@ -233,6 +251,24 @@
       "size_bytes": 22505,
       "source": "Rows projected from the active module production catalog",
       "version": "2"
+    },
+    {
+      "artifact_id": "notebook-suite-v2-executed-2026.1",
+      "citation": "notebooks/v2/README.md",
+      "download_date": "2026-08-15",
+      "generated_by": "scripts/generate_notebook_suite_v2.py",
+      "level": "snapshot",
+      "license": "repository LICENSE",
+      "media_type": "application/zip",
+      "release_url": "https://github.com/Wenzhao-protein/clone_repeat_protein/releases/download/notebook-suite-v2-artifacts-2026.1/notebook-suite-v2-executed-2026.1.zip",
+      "repo_path": "",
+      "role": "Clean-kernel executed IPYNB and HTML reports for all 14 authoritative V2 notebooks",
+      "row_count": null,
+      "schema_version": "hurdler.notebook_execution_manifest.v2",
+      "sha256": "d2a79c92cca7056b5efdf4bfa3cdb504960f4f589f1a4d6e212ac56d47c5df76",
+      "size_bytes": 1639899,
+      "source": "all 14 output-free source notebooks executed from repo commit 01112c38bfc80fd5456714819ad5ff16f25bce4c",
+      "version": "2026.1"
     },
     {
       "artifact_id": "module-selected-3mer-v1",
