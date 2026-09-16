@@ -36,7 +36,12 @@ jobs:
               --notes "Versioned HURDLER data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and validation records."
           fi
 
+      - name: Report missing Zenodo authorization
+        if: ${{ env.ZENODO_ACCESS_TOKEN == '' && env.ZENODO_TOKEN == '' }}
+        run: echo "::notice::Zenodo publication is prepared but no Zenodo token secret is configured."
+
       - name: Publish Zenodo deposition when a repository secret is available
+        if: ${{ env.ZENODO_ACCESS_TOKEN != '' || env.ZENODO_TOKEN != '' }}
         env:
           REPOSITORY: ${{ github.repository }}
         run: |
