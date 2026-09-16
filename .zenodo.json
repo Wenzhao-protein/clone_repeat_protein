@@ -1,0 +1,27 @@
+{
+  "title": "HURDLER construct designs and sequencing results",
+  "description": "Versioned HURDLER data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and a validation report. The deposition corresponds to the nar-r2-data-deposition release of Wenzhao-protein/clone_repeat_protein.",
+  "creators": [
+    {
+      "name": "Dai, Wenzhao"
+    }
+  ],
+  "keywords": [
+    "HURDLER",
+    "repeat proteins",
+    "recursive directional ligation",
+    "plasmid assembly",
+    "Nanopore sequencing"
+  ],
+  "license": "MIT",
+  "upload_type": "dataset",
+  "access_right": "open",
+  "version": "nar-r2-data-deposition",
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/Wenzhao-protein/clone_repeat_protein/releases/tag/nar-r2-data-deposition",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

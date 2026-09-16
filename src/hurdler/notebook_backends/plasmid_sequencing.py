@@ -31,7 +31,11 @@ def get_spec() -> dict[str, Any]:
 
 
 def _folder(request: Mapping[str, Any]) -> Path:
-    return Path(str(request.get("construct_dir", repo_root() / "plasmid_sequencing_result/Na4M13A")))
+    return Path(str(request.get(
+        "construct_dir",
+        repo_root()
+        / "constructs_and_sequencing_result/extended_armrp/3_plasmid_sequencing_result/Na4M13A",
+    )))
 
 
 def preflight(context: NotebookContext, request: Mapping[str, Any]) -> dict[str, Any]:
