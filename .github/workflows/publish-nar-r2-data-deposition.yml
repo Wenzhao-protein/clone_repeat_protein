@@ -27,13 +27,13 @@ jobs:
             gh release edit nar-r2-data-deposition \
               --repo "${{ github.repository }}" \
               --title "HURDLER construct designs and sequencing results" \
-              --notes "Versioned HURDLER data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and validation records."
+              --notes "Versioned HURDLER data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and validation records. Zenodo DOI: https://doi.org/10.5281/zenodo.22787560"
           else
             gh release create nar-r2-data-deposition \
               --repo "${{ github.repository }}" \
               --target "$TARGET_SHA" \
               --title "HURDLER construct designs and sequencing results" \
-              --notes "Versioned HURDLER data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and validation records."
+              --notes "Versioned HURDLER data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and validation records. Zenodo DOI: https://doi.org/10.5281/zenodo.22787560"
           fi
 
       - name: Report missing Zenodo authorization
