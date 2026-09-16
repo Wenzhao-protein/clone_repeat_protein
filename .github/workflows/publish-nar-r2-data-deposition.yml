@@ -1,0 +1,27 @@
+name: Publish NAR R2 data deposition
+
+on:
+  push:
+    branches:
+      - nar-r2-data-deposition
+    paths:
+      - .github/workflows/publish-nar-r2-data-deposition.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create immutable tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: fec29ff75c8d51ed3186a1a00dfc4b0cd47da59f
+        run: |
+          gh release create nar-r2-data-deposition \
+            --repo "${{ github.repository }}" \
+            --target "$TARGET_SHA" \
+            --title "HURDLER construct designs and sequencing results" \
+            --notes "Personal-project data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and validation records. Creator: Wenzhao Dai. No institutional affiliation is asserted."
