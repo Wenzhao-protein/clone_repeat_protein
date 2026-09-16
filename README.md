@@ -150,9 +150,12 @@ traceability but do not define the current scientific result.
 
 ## Data deposition
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22787560.svg)](https://doi.org/10.5281/zenodo.22787560)
+
 The complete fragment designs, assembled plasmid constructs, Nanopore
 sequencing results, deterministic SI file tree, and validation report are in
-[`constructs_and_sequencing_result/`](constructs_and_sequencing_result/).
+[`constructs_and_sequencing_result/`](constructs_and_sequencing_result/) and
+the versioned [Zenodo data record](https://doi.org/10.5281/zenodo.22787560).
 
 ## Frozen result contract
 
