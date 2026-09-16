@@ -1,0 +1,107 @@
+# Hidden CLC-native metadata files (.acl, .clcinfo, .orderlist2) are present in the repository but omitted from this listing.
+# CLC project files (.clc), navigation README.md files, VALIDATION.md, and this generated listing are repository-only and omitted from the SI tree.
+constructs_and_sequencing_result/
+├── extended_armrp/
+│   ├── 1_fragment/
+│   │   ├── hurdler_extended_armrp_primary.gbk
+│   │   ├── hurdler_extended_armrp_secondary_M12.gbk
+│   │   └── hurdler_extended_armrp_secondary_M6Q6.gbk
+│   ├── 2_plasmid_construct/
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M13A.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M25A.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M37A.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M49A.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M6Q6_1_MA.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M6Q6_2_MA.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M6Q6_3_MA.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M6Q6_4_MA.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M6Q6_5_MA.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M6Q6_6_MA.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_Na4M6Q6_7_MA.gbk
+│   │   └── hurdler_extended_armrp_plasmid_Na4MA.gbk
+│   └── 3_plasmid_sequencing_result/
+│       ├── Na4_M6Q6_2MA/
+│       │   ├── Dai_R6W_4_Na4_M6Q6_2MA.fasta
+│       │   ├── Dai_R6W_4_Na4_M6Q6_2MA.png
+│       │   ├── Dai_R6W_4_Na4_M6Q6_2MA_pLann.gbk
+│       │   ├── Dai_R6W_4_Na4_M6Q6_2MA_pLann.html
+│       │   └── Dai_R6W_4_Na4_M6Q6_2MA_stats.csv
+│       ├── Na4_M6Q6_4MA/
+│       │   ├── Dai_N6J_1_Na4_M6Q6_4MA.fasta
+│       │   ├── Dai_N6J_1_Na4_M6Q6_4MA.fastq
+│       │   ├── Dai_N6J_1_Na4_M6Q6_4MA.png
+│       │   ├── Dai_N6J_1_Na4_M6Q6_4MA_pLann.gbk
+│       │   ├── Dai_N6J_1_Na4_M6Q6_4MA_pLann.html
+│       │   └── Dai_N6J_1_Na4_M6Q6_4MA_stats.csv
+│       ├── Na4_M6Q6_5MA/
+│       │   ├── Dai_N6J_2_Na4_M6Q6_5MA.fasta
+│       │   ├── Dai_N6J_2_Na4_M6Q6_5MA.fastq
+│       │   ├── Dai_N6J_2_Na4_M6Q6_5MA.png
+│       │   ├── Dai_N6J_2_Na4_M6Q6_5MA_pLann.gbk
+│       │   ├── Dai_N6J_2_Na4_M6Q6_5MA_pLann.html
+│       │   └── Dai_N6J_2_Na4_M6Q6_5MA_stats.csv
+│       ├── Na4_M6Q6_7_MA/
+│       │   ├── Dai_X7J_5_Na4M6Q6_7_MA.fasta
+│       │   ├── Dai_X7J_5_Na4M6Q6_7_MA.fastq
+│       │   ├── Dai_X7J_5_Na4M6Q6_7_MA.png
+│       │   ├── Dai_X7J_5_Na4M6Q6_7_MA_pLann.gbk
+│       │   ├── Dai_X7J_5_Na4M6Q6_7_MA_pLann.html
+│       │   └── Dai_X7J_5_Na4M6Q6_7_MA_stats.csv
+│       ├── Na4M13A/
+│       │   ├── Dai_R6W_1_Na4M13A.fasta
+│       │   ├── Dai_R6W_1_Na4M13A.png
+│       │   ├── Dai_R6W_1_Na4M13A_pLann.gbk
+│       │   ├── Dai_R6W_1_Na4M13A_pLann.html
+│       │   └── Dai_R6W_1_Na4M13A_stats.csv
+│       ├── Na4M25A/
+│       │   ├── Dai_R6W_2_Na4M25A.fasta
+│       │   ├── Dai_R6W_2_Na4M25A.png
+│       │   ├── Dai_R6W_2_Na4M25A_pLann.gbk
+│       │   ├── Dai_R6W_2_Na4M25A_pLann.html
+│       │   └── Dai_R6W_2_Na4M25A_stats.csv
+│       ├── Na4M37A/
+│       │   ├── Dai_R6W_3_Na4M37A.fasta
+│       │   ├── Dai_R6W_3_Na4M37A.png
+│       │   ├── Dai_R6W_3_Na4M37A_pLann.gbk
+│       │   ├── Dai_R6W_3_Na4M37A_pLann.html
+│       │   └── Dai_R6W_3_Na4M37A_stats.csv
+│       └── Na4M49A/
+│           ├── Dai_R6W_7_Na4M49A.png
+│           ├── Dai_R6W_7_Na4M49A_LOW_COVERAGE.fasta
+│           ├── Dai_R6W_7_Na4M49A_pLann.gbk
+│           ├── Dai_R6W_7_Na4M49A_pLann.html
+│           └── Dai_R6W_7_Na4M49A_stats.csv
+├── single_chain_armrp_assembly/
+│   ├── 1_fragment/
+│   │   ├── designed_model.pse
+│   │   ├── hurdler_single_chain_fragment_1.gbk
+│   │   ├── hurdler_single_chain_fragment_2.gbk
+│   │   ├── hurdler_single_chain_fragment_3.gbk
+│   │   ├── hurdler_single_chain_fragment_4.gbk
+│   │   ├── hurdler_single_chain_fragment_5.gbk
+│   │   └── hurdler_single_chain_fragment_6.gbk
+│   ├── 2_plasmid_construct/
+│   │   ├── hurdler_extended_armrp_plasmid_triangle_step1.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_triangle_step2.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_triangle_step3.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_triangle_step4.gbk
+│   │   ├── hurdler_extended_armrp_plasmid_triangle_step5.gbk
+│   │   └── hurdler_extended_armrp_plasmid_triangle_step6.gbk
+│   └── 3_sequencing_result/
+│       └── dArmRP_triangle_step6/
+│           ├── dArmRP-triangle-step6-2-1.gbk
+│           ├── dArmRP-triangle-step6-2.Addendum_dArmRP-triangle-step6-2.cleaned.html
+│           ├── dArmRP-triangle-step6-2.Addendum_dArmRP-triangle-step6-2.distribution.tsv
+│           ├── dArmRP-triangle-step6-2.Addendum_dArmRP-triangle-step6-2.reads.fastq
+│           ├── dArmRP-triangle-step6-2.annotation.html
+│           ├── dArmRP-triangle-step6-2.fastq
+│           ├── dArmRP-triangle-step6-2.gbk
+│           ├── dArmRP-triangle-step6-2.variable.tsv
+│           ├── dArmRP-triangle-step6-2_1-2500.gbk
+│           ├── dArmRP-triangle-step6-2_10001-12500.gbk
+│           ├── dArmRP-triangle-step6-2_12501-12831.gbk
+│           ├── dArmRP-triangle-step6-2_2501-5000.gbk
+│           ├── dArmRP-triangle-step6-2_5001-7500.gbk
+│           ├── dArmRP-triangle-step6-2_7501-10000.gbk
+│           └── README-5.pdf
+└── get_file_tree.ipynb

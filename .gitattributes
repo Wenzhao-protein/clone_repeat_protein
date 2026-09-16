@@ -1,0 +1,3 @@
+# Deposited GenBank records preserve source bytes; blank DEFINITION fields
+# legitimately contain padding spaces required by the flat-file layout.
+constructs_and_sequencing_result/**/*.gbk whitespace=-trailing-space

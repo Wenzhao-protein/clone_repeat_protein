@@ -36,4 +36,4 @@ guides above instead.
 - `codon_opt_benchmark_extended/README.md` — Codon-optimisation benchmark.
 - `agarose_gel_analysis/` — Agarose-gel image analysis (notebook-driven).
 - `SEC/` — Size-exclusion chromatography analysis (notebook-driven).
-- `plasmid_sequencing_result/` — Reference sequencing data.
+- `constructs_and_sequencing_result/` — Deposited fragment/plasmid designs and reference sequencing data.

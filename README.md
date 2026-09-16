@@ -148,6 +148,12 @@ package, thin parameterized notebooks, and recoverable Digs task manifests.
 Historical notebooks and adjacent experimental workflows remain available for
 traceability but do not define the current scientific result.
 
+## Data deposition
+
+The complete fragment designs, assembled plasmid constructs, Nanopore
+sequencing results, deterministic SI file tree, and validation report are in
+[`constructs_and_sequencing_result/`](constructs_and_sequencing_result/).
+
 ## Frozen result contract
 
 The primary rule profile is `legacy-optimized-v1`:
