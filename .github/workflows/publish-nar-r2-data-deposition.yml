@@ -12,10 +12,13 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  release-and-zenodo:
     runs-on: ubuntu-latest
+    env:
+      ZENODO_ACCESS_TOKEN: ${{ secrets.ZENODO_ACCESS_TOKEN }}
+      ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
     steps:
-      - name: Update immutable tag and GitHub release
+      - name: Update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: fec29ff75c8d51ed3186a1a00dfc4b0cd47da59f
@@ -32,3 +35,126 @@ jobs:
               --title "HURDLER construct designs and sequencing results" \
               --notes "Versioned HURDLER data deposition containing repeat-protein fragment designs, assembled plasmid constructs, Nanopore sequencing outputs, a deterministic Supplementary Information file tree, and validation records."
           fi
+
+      - name: Publish Zenodo deposition when a repository secret is available
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          import requests
+
+          token = os.environ.get("ZENODO_ACCESS_TOKEN") or os.environ.get("ZENODO_TOKEN")
+          if not token:
+              print("No Zenodo token secret is configured.")
+              sys.exit(2)
+
+          api = "https://zenodo.org/api"
+          headers = {"Authorization": f"Bearer {token}"}
+          title = "HURDLER construct designs and sequencing results"
+          repository = os.environ["REPOSITORY"]
+          release_url = f"https://github.com/{repository}/releases/tag/nar-r2-data-deposition"
+
+          response = requests.get(
+              f"{api}/deposit/depositions",
+              headers=headers,
+              params={"q": f'title:\"{title}\"', "size": 100},
+              timeout=60,
+          )
+          response.raise_for_status()
+          matches = [
+              item for item in response.json()
+              if item.get("metadata", {}).get("title") == title
+          ]
+          published = next((item for item in matches if item.get("submitted")), None)
+          if published:
+              doi = published.get("doi") or published.get("metadata", {}).get("doi")
+              print(f"Already published: {doi}")
+              raise SystemExit(0)
+
+          metadata = {
+              "title": title,
+              "upload_type": "dataset",
+              "description": (
+                  "Versioned HURDLER data deposition containing repeat-protein "
+                  "fragment designs, assembled plasmid constructs, Nanopore "
+                  "sequencing outputs, a deterministic Supplementary Information "
+                  "file tree, and validation records."
+              ),
+              "creators": [{"name": "Dai, Wenzhao"}],
+              "keywords": [
+                  "HURDLER",
+                  "repeat proteins",
+                  "recursive directional ligation",
+                  "plasmid assembly",
+                  "Nanopore sequencing",
+              ],
+              "access_right": "open",
+              "license": "mit",
+              "version": "nar-r2-data-deposition",
+              "related_identifiers": [{
+                  "identifier": release_url,
+                  "relation": "isSupplementTo",
+                  "scheme": "url",
+              }],
+          }
+
+          if matches:
+              deposition = matches[0]
+              dep_id = deposition["id"]
+              response = requests.put(
+                  f"{api}/deposit/depositions/{dep_id}",
+                  headers={**headers, "Content-Type": "application/json"},
+                  json={"metadata": metadata},
+                  timeout=60,
+              )
+              response.raise_for_status()
+              deposition = response.json()
+          else:
+              response = requests.post(
+                  f"{api}/deposit/depositions",
+                  headers={**headers, "Content-Type": "application/json"},
+                  json={"metadata": metadata},
+                  timeout=60,
+              )
+              response.raise_for_status()
+              deposition = response.json()
+
+          dep_id = deposition["id"]
+          bucket = deposition["links"]["bucket"]
+          filename = "clone_repeat_protein-nar-r2-data-deposition.zip"
+          existing = {item["filename"] for item in deposition.get("files", [])}
+          if filename not in existing:
+              archive_url = (
+                  f"https://github.com/{repository}/archive/refs/tags/"
+                  "nar-r2-data-deposition.zip"
+              )
+              archive_path = pathlib.Path(filename)
+              with requests.get(archive_url, stream=True, timeout=120) as download:
+                  download.raise_for_status()
+                  with archive_path.open("wb") as handle:
+                      for chunk in download.iter_content(chunk_size=8 * 1024 * 1024):
+                          if chunk:
+                              handle.write(chunk)
+              with archive_path.open("rb") as handle:
+                  upload = requests.put(
+                      f"{bucket}/{filename}",
+                      data=handle,
+                      headers=headers,
+                      timeout=3600,
+                  )
+              upload.raise_for_status()
+
+          publish = requests.post(
+              f"{api}/deposit/depositions/{dep_id}/actions/publish",
+              headers=headers,
+              timeout=300,
+          )
+          publish.raise_for_status()
+          record = publish.json()
+          doi = record.get("doi") or record.get("metadata", {}).get("doi")
+          print(json.dumps({"id": record.get("record_id"), "doi": doi}))
+          PY
